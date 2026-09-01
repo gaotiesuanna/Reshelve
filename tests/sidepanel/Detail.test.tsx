@@ -17,4 +17,11 @@ describe('Detail', () => {
     expect(disclosure.getAttribute('aria-expanded')).toBe('true')
     expect(screen.getByText('这次整理可以撤销。').closest('dd')).toBeTruthy()
   })
+
+  it('defaultOpen 时说明一开始就是展开的', () => {
+    render(<Detail defaultOpen label="说明">这次整理可以撤销。</Detail>)
+    const disclosure = screen.getByRole('button', { name: '说明' })
+    expect(disclosure.getAttribute('aria-expanded')).toBe('true')
+    expect(screen.getByText('这次整理可以撤销。').closest('dd')).toBeTruthy()
+  })
 })

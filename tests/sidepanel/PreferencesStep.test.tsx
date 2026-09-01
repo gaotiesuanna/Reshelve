@@ -95,26 +95,26 @@ describe('PreferencesStep 清理空文件夹的说明', () => {
   // 源文件夹会被清空删除，而且删不删跟这个开关无关（apply.ts 里是
   // `removeEmptyFolders === true || mergeRootId !== null`）。
   // 界面上唯一一处讲「什么不会被删」的地方说了假话，比不讲更糟。
-  async function openCleanDetail(): Promise<HTMLElement> {
+  function cleanDetail(): HTMLElement {
     setup(messyScan)
     render(<PreferencesStep />)
     // 查这张卡而不是 label：说明已经从 label 里搬出来，成了卡片里勾选行下面的一行
     // （dl 套在 label 里是无效 HTML，两条边框还会和卡片的行间线叠成双线）。
     const card = screen.getByTestId('prefs-clean-option')
     expect(within(card).getByText('整理后清理空文件夹')).toBeTruthy()
-    await userEvent.click(within(card).getByRole('button', { name: '说明' }))
+    expect(within(card).getByRole('button', { name: '说明' }).getAttribute('aria-expanded')).toBe('true')
     return within(card).getByText(/删除范围内不含任何书签的文件夹/)
   }
 
-  it('交代合并时源文件夹会被删除，且不受这个开关约束', async () => {
-    const body = await openCleanDetail()
+  it('交代合并时源文件夹会被删除，且不受这个开关约束', () => {
+    const body = cleanDetail()
     expect(body.textContent).toMatch(/合并/)
     expect(body.textContent).toMatch(/删除/)
     expect(body.textContent).toMatch(/不受.*开关/)
   })
 
-  it('例外那半句本身要带上「可撤销」——删除很吓人，撤销才是让人敢按的那句', async () => {
-    const body = (await openCleanDetail()).textContent ?? ''
+  it('例外那半句本身要带上「可撤销」——删除很吓人，撤销才是让人敢按的那句', () => {
+    const body = cleanDetail().textContent ?? ''
     // 只查整段里有没有「撤销」是查不出东西的：原文早就有「撤销时会连同目录一起还原」，
     // 那句讲的是别的事。要看的是「合并」之后那半句自己有没有交代可撤销。
     const exception = body.slice(body.indexOf('合并'))
@@ -149,6 +149,14 @@ describe('PreferencesStep 只处理散落书签', () => {
     expect(checkbox.checked).toBe(false)
     await userEvent.click(checkbox)
     expect(useStore.getState().settings.onlyLooseInAdditive).toBe(true)
+  })
+
+  it('说明默认展开', () => {
+    setup(tidyScan)
+    render(<PreferencesStep />)
+    const card = screen.getByTestId('prefs-loose-only-option')
+    expect(within(card).getByRole('button', { name: '说明' }).getAttribute('aria-expanded')).toBe('true')
+    expect(within(card).getByText(/只把直接散落在范围根下/)).toBeTruthy()
   })
 
   // 推翻模式本来就要从零设计整棵树，不存在「只处理一部分」这回事——

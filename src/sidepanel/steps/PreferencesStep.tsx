@@ -147,7 +147,7 @@ export function PreferencesStep() {
             />
             <span className="min-w-0 flex-1">{t('prefsCleanTitle')}</span>
           </label>
-          <Detail flush label={detailLabel()}>
+          <Detail flush defaultOpen label={detailLabel()}>
             {`${t('prefsCleanSummary')} ${t('prefsCleanBody')}`}
           </Detail>
         </div>
@@ -165,7 +165,7 @@ export function PreferencesStep() {
               />
               <span className="min-w-0 flex-1">{t('prefsLooseOnlyTitle')}</span>
             </label>
-            <Detail flush label={detailLabel()}>
+            <Detail flush defaultOpen label={detailLabel()}>
               {`${t('prefsLooseOnlySummary')} ${t('prefsLooseOnlyBody')}`}
             </Detail>
           </div>
