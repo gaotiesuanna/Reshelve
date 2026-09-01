@@ -12,7 +12,7 @@ import { detectMode } from '@/core/mode'
 import { planTitleRewrites } from '@/core/titles'
 import { buildCategoryTree, MAX_SIBLINGS as PRODUCT_MAX_SIBLINGS } from '@/core/tree'
 import { deriveShape, FALLBACK_SHARE_LIMIT, MAX_LEAF, SHAPE_MAX_SIBLINGS } from '@/core/shape'
-import { clusterHomeless, dropAlreadyGrouped, planNewFolders, MIN_NEW_FOLDER_SIZE } from '@/core/newTopics'
+import { clusterHomeless, dropAlreadyGrouped, planFallbackFolder, planNewFolders } from '@/core/newTopics'
 import type { Ports } from '@/core/ports'
 import type { OrganizePlan, TagResult } from '@/core/types'
 import { applyPlan } from '@/engine/apply'
@@ -426,6 +426,14 @@ export async function handle(
           if (droppedByGuard > 0) {
             log('tree', t('logNewFoldersGrouped', String(droppedByGuard)))
           }
+          // 「已聚齐」丢弃的书签 targetCategoryId 同样是 null，但那不是「没地方去」，
+          // 是「已经在正确的地方，不用再动」——下面的「其他」兜底不能把它们扫进去，
+          // 否则会把 dropAlreadyGrouped 存在的理由（防 churn）原样破坏：第二轮把
+          // 已经建好、已经落位的书签又判一次「无处可去」，churn 只是换了个目的地。
+          const survivingKeys = new Set(clusters.map((c) => c.key))
+          const alreadyGroupedIds = new Set(
+            allClusters.filter((c) => !survivingKeys.has(c.key)).flatMap((c) => c.bookmarkIds),
+          )
           // 只数模型真正判过的「无合适目录」，请求失败落下的 source: 'none' 不算——
           // 那批已经在上面的全军覆没判断里处理过了，这里再数进去只会让日志说谎
           const homelessCount = classifications.filter(
@@ -467,8 +475,32 @@ export async function handle(
             }
           } else if (homelessCount > 0 && droppedByGuard === 0) {
             // droppedByGuard > 0 时上面已经说明过原因（已聚齐），这里不再重复一句
-            // 「没有任何主题攒够」——那会跟已聚齐的真实原因矛盾
-            log('tree', t('logNewFoldersNone', String(homelessCount), String(MIN_NEW_FOLDER_SIZE)))
+            // 「没有给出可用的主题名」——那会跟已聚齐的真实原因矛盾
+            log('tree', t('logNewFoldersNone', String(homelessCount)))
+          }
+
+          // 上面这轮不管走哪条分支，仍可能有书签卡在 targetCategoryId === null——
+          // 没给出可用主题名（走进了 logNewFoldersNone 那条）、命名撞名被跳过
+          // （logNewFoldersNameCollision）、或超出同层上限被截断（logNewFoldersCapped）。
+          // 「实在不行，就建一个文件夹叫做其他」：这里不区分成因，一视同仁地兜底，
+          // 不再让任何书签原地不动（issues/42-loose-bookmark-always-lands-somewhere.md，
+          // 正面推翻 issues/05-homeless-bookmarks.md 决定 2 的「非推翻模式不建其他」）。
+          // alreadyGroupedIds 里的不算——那些是「已经在正确的地方」，不是「没地方去」。
+          if (classifications.some((c) => (
+            c.targetCategoryId === null && c.source !== 'none' && !alreadyGroupedIds.has(c.bookmarkId)
+          ))) {
+            const rootId = roots[0]?.id
+            if (rootId === undefined) return { ok: false, error: t('errNoScope') }
+            const fallback = planFallbackFolder({
+              classifications, rootId, folders: scan.folders, newFolders, candidates, locale,
+              excludeIds: alreadyGroupedIds,
+            })
+            if (fallback.newFolder !== null) newFolders = [...newFolders, fallback.newFolder]
+            if (fallback.candidate !== null) candidates = [...candidates, fallback.candidate]
+            classifications = fallback.classifications
+            if (fallback.strandedCount > 0) {
+              log('tree', t('logNewFoldersFallback', String(fallback.strandedCount)))
+            }
           }
         }
 

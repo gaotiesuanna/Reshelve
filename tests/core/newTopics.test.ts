@@ -1,8 +1,10 @@
 import { describe, it, expect } from 'vitest'
-import { clusterHomeless, dropAlreadyGrouped, MIN_NEW_FOLDER_SIZE, planNewFolders } from '@/core/newTopics'
+import {
+  clusterHomeless, dropAlreadyGrouped, MIN_NEW_FOLDER_SIZE, planFallbackFolder, planNewFolders,
+} from '@/core/newTopics'
+import type { NewFolderSpec } from '@/core/plan'
 import { MAX_SIBLINGS } from '@/core/tree'
-import type { BookmarkItem, Classification } from '@/core/types'
-import type { FolderItem } from '@/core/types'
+import type { BookmarkItem, CategoryCandidate, Classification, FolderItem } from '@/core/types'
 
 function homeless(id: string, topic?: string): Classification {
   return {
@@ -25,9 +27,11 @@ describe('clusterHomeless', () => {
     expect(clusters[0]!).toMatchObject({ title: '语音合成', bookmarkIds: ['1', '2', '3'] })
   })
 
-  it('攒不够下限的主题不成簇——那批书签原地不动', () => {
-    const clusters = clusterHomeless([homeless('1', '语音合成'), homeless('2', '语音合成')])
-    expect(clusters).toEqual([])
+  // 下限已经从 3 改成 1（issues/42-loose-bookmark-always-lands-somewhere.md）：
+  // 只要给出了可用的主题名，哪怕只有一条书签也值得单独开一个目录，不再原地不动。
+  it('下限是 1——哪怕只有一条书签的主题也成簇', () => {
+    const clusters = clusterHomeless([homeless('1', '语音合成')])
+    expect(clusters).toEqual([{ key: '语音合成', title: '语音合成', bookmarkIds: ['1'] }])
   })
 
   it('归一化后同义的主题并成一簇', () => {
@@ -94,8 +98,8 @@ describe('clusterHomeless', () => {
     expect(clusterHomeless([homeless('1', 'A'), homeless('2', 'A')], 2)).toHaveLength(1)
   })
 
-  it('默认下限是 3', () => {
-    expect(MIN_NEW_FOLDER_SIZE).toBe(3)
+  it('默认下限是 1', () => {
+    expect(MIN_NEW_FOLDER_SIZE).toBe(1)
   })
 })
 
@@ -351,5 +355,173 @@ describe('dropAlreadyGrouped', () => {
       new Set(['root', 'root2']),
     )
     expect(out).toEqual([clusterA])
+  })
+})
+
+describe('planFallbackFolder', () => {
+  const stranded: Classification[] = [
+    { bookmarkId: '1', targetCategoryId: null, confidence: 0, reason: '无合适目录', source: 'llm' },
+    { bookmarkId: '2', targetCategoryId: null, confidence: 0, reason: '无合适目录', source: 'llm' },
+  ]
+  /** 一条真正失败的请求——source: 'none'，不该被扫进「其他」。 */
+  const failedRequest: Classification = {
+    bookmarkId: '9', targetCategoryId: null, confidence: 0, reason: '分类失败', source: 'none',
+  }
+  const placedOne: Classification = {
+    bookmarkId: '8', targetCategoryId: 'a', confidence: 0.9, reason: 'r', source: 'llm',
+  }
+
+  it('没有卡住的书签时什么都不产出', () => {
+    const out = planFallbackFolder({
+      classifications: [placedOne], rootId: 'root',
+      folders: [folder('root', '书签栏', null)], newFolders: [], candidates: [], locale: 'zh_CN', excludeIds: new Set(),
+    })
+    expect(out).toEqual({
+      newFolder: null, candidate: null, classifications: [placedOne], strandedCount: 0,
+    })
+  })
+
+  it('request 失败（source: "none"）的不算卡住，不会被扫进「其他」', () => {
+    const out = planFallbackFolder({
+      classifications: [failedRequest], rootId: 'root',
+      folders: [folder('root', '书签栏', null)], newFolders: [], candidates: [], locale: 'zh_CN', excludeIds: new Set(),
+    })
+    expect(out.strandedCount).toBe(0)
+    expect(out.classifications).toEqual([failedRequest])
+  })
+
+  it('范围根没有既有「其他」时，新建一个，编号跟随已有目录', () => {
+    const out = planFallbackFolder({
+      classifications: stranded, rootId: 'root',
+      folders: [folder('root', '书签栏', null), folder('a', '01 GitHub', 'root'), folder('b', '02 前端', 'root')],
+      newFolders: [], candidates: [], locale: 'zh_CN', excludeIds: new Set(),
+    })
+    expect(out.newFolder).toMatchObject({ title: '03 其他', parentId: 'root', parentTemporaryId: null })
+    expect(out.candidate).toMatchObject({ path: ['书签栏', '03 其他'] })
+    expect(out.candidate!.id).toBe(out.newFolder!.temporaryId)
+    expect(out.strandedCount).toBe(2)
+    for (const id of ['1', '2']) {
+      expect(out.classifications.find((c) => c.bookmarkId === id)).toMatchObject({
+        targetCategoryId: out.newFolder!.temporaryId, confidence: 1,
+      })
+    }
+  })
+
+  it('已有目录都不带编号时，新建的「其他」也不编号', () => {
+    const out = planFallbackFolder({
+      classifications: stranded, rootId: 'root',
+      folders: [folder('root', '书签栏', null), folder('a', 'GitHub', 'root')],
+      newFolders: [], candidates: [], locale: 'zh_CN', excludeIds: new Set(),
+    })
+    expect(out.newFolder!.title).toBe('其他')
+  })
+
+  it('编号接着「存量目录 + 这一轮新建的目录」两头一起的最大号，不会跟 planNewFolders 刚建的撞号', () => {
+    const thisRoundNewFolders: NewFolderSpec[] = [
+      { temporaryId: 'new:1', parentId: 'root', parentTemporaryId: null, title: '02 语音与音频' },
+    ]
+    const out = planFallbackFolder({
+      classifications: stranded, rootId: 'root',
+      folders: [folder('root', '书签栏', null), folder('a', '01 GitHub', 'root')],
+      newFolders: thisRoundNewFolders, candidates: [], locale: 'zh_CN', excludeIds: new Set(),
+    })
+    expect(out.newFolder!.title).toBe('03 其他')
+  })
+
+  it('范围根下已经有一个「其他」——不管带不带编号——直接并进去，不新建重名兄弟', () => {
+    const existingOther: CategoryCandidate = { id: 'other-1', path: ['05 其他'] }
+    const out = planFallbackFolder({
+      classifications: stranded, rootId: 'root',
+      folders: [
+        folder('root', '书签栏', null), folder('a', '01 GitHub', 'root'),
+        folder('other-1', '05 其他', 'root'),
+      ],
+      newFolders: [], candidates: [existingOther], locale: 'zh_CN', excludeIds: new Set(),
+    })
+    expect(out.newFolder).toBeNull()
+    expect(out.candidate).toBeNull()
+    for (const id of ['1', '2']) {
+      expect(out.classifications.find((c) => c.bookmarkId === id)).toMatchObject({
+        targetCategoryId: 'other-1', confidence: 1,
+      })
+    }
+  })
+
+  it('不在这个范围根下的同名「其他」不算——只认真正挂在 rootId 下的那个', () => {
+    // 候选表里有个「其他」，但它的真实父目录是另一个范围根，不该被误认成可以并入
+    const elsewhereOther: CategoryCandidate = { id: 'other-elsewhere', path: ['其他'] }
+    const out = planFallbackFolder({
+      classifications: stranded, rootId: 'root',
+      folders: [
+        folder('root', '书签栏', null),
+        folder('other-elsewhere', '其他', 'another-root'),
+      ],
+      newFolders: [], candidates: [elsewhereOther], locale: 'zh_CN', excludeIds: new Set(),
+    })
+    expect(out.newFolder).not.toBeNull()
+    expect(out.candidate).not.toBeNull()
+  })
+
+  it('只搬卡住的书签，其余分类原样不动', () => {
+    const out = planFallbackFolder({
+      classifications: [...stranded, placedOne], rootId: 'root',
+      folders: [folder('root', '书签栏', null)], newFolders: [], candidates: [], locale: 'zh_CN', excludeIds: new Set(),
+    })
+    expect(out.classifications.find((c) => c.bookmarkId === '8')).toEqual(placedOne)
+  })
+
+  /**
+   * 防回归：`dropAlreadyGrouped` 判「已聚齐」的书签 targetCategoryId 同样是
+   * null，但那不是「没地方去」，是「已经在正确的地方」。这道 excludeIds 挡不住，
+   * 「其他」就会把 dropAlreadyGrouped 存在的理由（防 churn）原样破坏——第二轮
+   * 把已经建好、已经落位的书签又判一次「无处可去」，churn 只是换了个目的地
+   * （曾经真的这样炸过，见 handlers.test.ts「模型持续判定无处可去也不 churn」）。
+   */
+  it('excludeIds 里的书签不算卡住，一条都不搬', () => {
+    const out = planFallbackFolder({
+      classifications: stranded, rootId: 'root',
+      folders: [folder('root', '书签栏', null)], newFolders: [], candidates: [], locale: 'zh_CN',
+      excludeIds: new Set(['1', '2']),
+    })
+    expect(out).toEqual({
+      newFolder: null, candidate: null, classifications: stranded, strandedCount: 0,
+    })
+  })
+
+  it('excludeIds 只挡它点名的那些，其余照常收进「其他」', () => {
+    const three: Classification[] = [
+      ...stranded,
+      { bookmarkId: '3', targetCategoryId: null, confidence: 0, reason: '无合适目录', source: 'llm' },
+    ]
+    const out = planFallbackFolder({
+      classifications: three, rootId: 'root',
+      folders: [folder('root', '书签栏', null)], newFolders: [], candidates: [], locale: 'zh_CN',
+      excludeIds: new Set(['1', '2']),
+    })
+    expect(out.strandedCount).toBe(1)
+    expect(out.classifications.find((c) => c.bookmarkId === '3')).toMatchObject({
+      targetCategoryId: out.newFolder!.temporaryId,
+    })
+    expect(out.classifications.find((c) => c.bookmarkId === '1')).toEqual(stranded[0])
+    expect(out.classifications.find((c) => c.bookmarkId === '2')).toEqual(stranded[1])
+  })
+
+  it('落位理由讲的是「没有可用主题」，不冒充「新建目录收纳」——不能让用户以为模型认出了一个主题', () => {
+    const out = planFallbackFolder({
+      classifications: stranded, rootId: 'root',
+      folders: [folder('root', '书签栏', null)], newFolders: [], candidates: [], locale: 'zh_CN', excludeIds: new Set(),
+    })
+    const row = out.classifications.find((c) => c.bookmarkId === '1')!
+    expect(row.reason).not.toContain('新建')
+    expect(row.reason).toContain('其他')
+  })
+
+  it('英文 locale 下落位理由也是英文', () => {
+    const out = planFallbackFolder({
+      classifications: stranded, rootId: 'root',
+      folders: [folder('root', '书签栏', null)], newFolders: [], candidates: [], locale: 'en', excludeIds: new Set(),
+    })
+    expect(out.newFolder!.title).toBe('Other')
+    expect(out.classifications.find((c) => c.bookmarkId === '1')!.reason.toLowerCase()).toContain('other')
   })
 })

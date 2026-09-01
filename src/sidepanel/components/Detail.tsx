@@ -18,13 +18,15 @@ import { t } from '@/i18n'
 export function Detail({
   label,
   flush = false,
+  defaultOpen = false,
   children,
 }: {
   label: string
   flush?: boolean
+  defaultOpen?: boolean
   children: ReactNode
 }) {
-  const [expanded, setExpanded] = useState(false)
+  const [expanded, setExpanded] = useState(defaultOpen)
   const pad = flush ? 'px-3' : 'px-2'
   return (
     <dl className={`${flush ? '' : 'border-t border-index-line'} text-xs leading-body`}>

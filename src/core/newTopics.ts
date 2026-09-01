@@ -2,19 +2,25 @@ import type { Locale } from './locale'
 import { normalizeName, stripNumberPrefix } from './map'
 import { folderNumber } from './order'
 import type { NewFolderSpec } from './plan'
-import { MAX_SIBLINGS } from './tree'
+import { FALLBACK_TITLE, MAX_SIBLINGS } from './tree'
 import type { BookmarkItem, CategoryCandidate, Classification, FolderItem } from './types'
 
 /**
  * 同一主题攒够几条才值得开一个新目录。
  *
- * 内部常量而不是设置项：用户无从判断 3 还是 5 更好（见 issues/08-settings-tradeoffs.md）。
- * `minFolderSize` 那个设置项已经随清单第 12 项删掉，同一个理由也把它变成了 core 里的
- * 常量 `MIN_FOLDER_BOOKMARKS`（见 core/prune.ts）。两个常量今天取值相同但**有意不合并**：
- * 这一个管「非推翻模式下攒够几条才值得新开一个目录」，那一个管「推翻模式下设计出来的
- * 目录装不满几条就撤掉」，是两个模式下的两条规则，将来分头调也说得通。
+ * 曾经是 3：内部常量而不是设置项，理由是「用户无从判断 3 还是 5 更好」
+ * （见 issues/08-settings-tradeoffs.md）。真实使用改判了这件事——用户直接反馈：
+ * 攒不够 3 条就原地不动，等于一条散落书签永远没有归宿，用户要的是「每条都有地方去」，
+ * 不是「够不够开一个专属目录」（见 issues/42-loose-bookmark-always-lands-somewhere.md）。
+ * 改成 1 之后，任何一个能从模型那里问到独立主题名的书签都值得单独开一个目录；
+ * `MAX_SIBLINGS` 已经把一次分析新建的目录数封了顶（`planNewFolders` 的 `chosen`），
+ * 不会因为这里改成 1 就无限生长。真正连主题名都问不出来的，落到 `planFallbackFolder`
+ * 那道最后的「其他」兜底，不会再原地不动。
+ *
+ * 与 `MIN_FOLDER_BOOKMARKS`（core/prune.ts）**依然不合并**：那个管「推翻模式下设计出来
+ * 的目录装不满几条就撤掉」，是另一个模式的另一条规则，两边各自变化互不牵连。
  */
-export const MIN_NEW_FOLDER_SIZE = 3
+export const MIN_NEW_FOLDER_SIZE = 1
 
 export interface TopicCluster {
   /** 归一化后的主题，用于合并同义写法。 */
@@ -248,4 +254,123 @@ export function planNewFolders(input: PlanNewFoldersInput): PlanNewFoldersResult
   })
 
   return { newFolders, candidates, classifications, placedCount, truncatedCount }
+}
+
+export interface PlanFallbackFolderInput {
+  classifications: Classification[]
+  rootId: string
+  folders: FolderItem[]
+  /** 这一轮已经新建的目录——找空号时要把它们也算进去，不能只看存量目录。 */
+  newFolders: NewFolderSpec[]
+  /** 已有候选，用来判断「其他」是不是已经存在——存在就并进去，不重复造一个近义兄弟。 */
+  candidates: CategoryCandidate[]
+  locale: Locale
+  /**
+   * 不算「卡住」的书签 id——目前唯一的成员是被 `dropAlreadyGrouped` 判定「已聚齐」
+   * 的那些：它们的 `targetCategoryId` 同样是 `null`，但那不是「没地方去」，是
+   * 「已经在正确的地方，不用再动」。这两种 `null` 看起来一样，成因完全相反，
+   * 不拦住前者，「其他」就会把 dropAlreadyGrouped 存在的理由（防 churn）
+   * 原样破坏——第二轮把已经建好、已经落位的书签又一次判定「无处可去」，
+   * 这次改判进「其他」，churn 换了个目的地，没有真的被挡住。
+   *
+   * 必填而不给默认值 `new Set()`：漏传会让这道闸悄悄失效，那种 bug 编译器
+   * 抓不到，必须由调用方每次显式回答（这一份 codebase 里 `beginRun` 的
+   * `cancellable` 参数就是同一个理由不给默认值）。
+   */
+  excludeIds: Set<string>
+}
+
+export interface PlanFallbackFolderResult {
+  /** 新建了才有值；并进已有「其他」时是 null。 */
+  newFolder: NewFolderSpec | null
+  candidate: CategoryCandidate | null
+  classifications: Classification[]
+  strandedCount: number
+}
+
+/**
+ * 与 newFolderReason 分开：这条书签不是被判给了某个具体主题，措辞不能装作它是——
+ * 「新建「其他」目录收纳」会让用户以为模型认出了「其他」这个主题，事实是它什么
+ * 主题都没认出来。
+ */
+function fallbackFolderReason(locale: Locale): string {
+  return locale === 'zh_CN'
+    ? '没有可用的主题名，暂存进「其他」'
+    : 'No usable topic name; placed in "Other" for now'
+}
+
+/**
+ * 「实在不行，就建一个文件夹叫做其他」——`planNewFolders` 之后仍然
+ * `targetCategoryId === null` 的书签，不再原地不动，一律收进一个跟其余目录同样
+ * 编号的「其他」（见 issues/42-loose-bookmark-always-lands-somewhere.md）。
+ *
+ * 会落到这里的三种情况，这个函数不区分、一视同仁地兜底：
+ * 1. 模型没给出任何可用主题（topic 为空、纯数字，被 `clusterHomeless` 直接滤掉）；
+ * 2. 攒出了簇，但命名撞名被 `nameNewTopics` 跳过；
+ * 3. 簇数超过 `MAX_SIBLINGS`，被 `planNewFolders` 截断。
+ *
+ * 与 issues/05-homeless-bookmarks.md 决定 2（「非推翻模式不建其他，原地不动」）
+ * 正面冲突，是刻意推翻：那条决定成立的前提是「凭空造一个其他就是在动用户没同意
+ * 改的结构」，但这里的「其他」不是凭空造的收容所——它是**问过模型、模型答不上来**
+ * 之后的最后一道兜底，跟「无合适目录」在推翻模式下走的是同一件事，只是名字选了
+ * 用户已经熟悉的那个词。
+ */
+export function planFallbackFolder(input: PlanFallbackFolderInput): PlanFallbackFolderResult {
+  const stranded = input.classifications.filter(
+    (c) => c.targetCategoryId === null && c.source !== 'none' && !input.excludeIds.has(c.bookmarkId),
+  )
+  if (stranded.length === 0) {
+    return { newFolder: null, candidate: null, classifications: input.classifications, strandedCount: 0 }
+  }
+
+  const strandedIds = new Set(stranded.map((c) => c.bookmarkId))
+  const place = (c: Classification, targetCategoryId: string): Classification => {
+    // topic 已经兑现成目录了，不再往下游传——留着会让复核页显示一个已经不成立的「无归属」
+    const { topic: _topic, ...rest } = c
+    return { ...rest, targetCategoryId, confidence: 1, reason: fallbackFolderReason(input.locale) }
+  }
+
+  // 范围根下已经有一个「其他」——不管它是不是 Reshelve 自己建的——直接并进去，
+  // 不再造一个近义的兄弟目录（「其他」和「20 其他」并排摆着没有任何意义）。
+  // 只认真正挂在这个范围根下的：candidates 的路径不带 id，靠 folders 反查
+  // 这条候选是不是 rootId 的直接子目录。
+  const fallbackKey = normalizeName(FALLBACK_TITLE[input.locale])
+  const existing = input.candidates.find((c) => (
+    c.path.length === 1
+    && normalizeName(stripNumberPrefix(c.path[0]!)) === fallbackKey
+    && input.folders.some((f) => f.id === c.id && f.parentId === input.rootId)
+  ))
+
+  if (existing !== undefined) {
+    const classifications = input.classifications.map((c) => (
+      strandedIds.has(c.bookmarkId) ? place(c, existing.id) : c
+    ))
+    return { newFolder: null, candidate: null, classifications, strandedCount: stranded.length }
+  }
+
+  const root = input.folders.find((f) => f.id === input.rootId)
+  const rootPath = root === undefined ? [] : [...root.path, root.title]
+
+  // 接着「存量目录 + 这一轮新建的目录」两头一起的最大号往后编，只看存量会跟
+  // planNewFolders 刚建出来的那些撞号。
+  const existingNumbers = input.folders
+    .filter((f) => f.parentId === input.rootId)
+    .map((f) => folderNumber(f.title))
+  const newNumbers = input.newFolders
+    .filter((f) => f.parentId === input.rootId && f.parentTemporaryId === null)
+    .map((f) => folderNumber(f.title))
+  const numbers = [...existingNumbers, ...newNumbers].filter((n): n is number => n !== null)
+  const nextNumber = numbers.length === 0 ? null : Math.floor(Math.max(...numbers)) + 1
+
+  const name = FALLBACK_TITLE[input.locale]
+  const title = nextNumber === null ? name : `${String(nextNumber).padStart(2, '0')} ${name}`
+  const temporaryId = 'new:fallback'
+  const newFolder: NewFolderSpec = { temporaryId, parentId: input.rootId, parentTemporaryId: null, title }
+  const candidate: CategoryCandidate = { id: temporaryId, path: [...rootPath, title] }
+
+  const classifications = input.classifications.map((c) => (
+    strandedIds.has(c.bookmarkId) ? place(c, temporaryId) : c
+  ))
+
+  return { newFolder, candidate, classifications, strandedCount: stranded.length }
 }
