@@ -655,9 +655,16 @@ describe('handle', () => {
 
     const res = await handle(ports, { kind: 'analyze', scopeRootIds: ['1'], modeOverride: 'additive' }, deps) as { ok: boolean; plan: OrganizePlan }
     expect(res.ok).toBe(true)
-    expect(res.plan.operations.filter((o) => o.type === 'create_folder')).toHaveLength(MAX_SIBLINGS)
+    const created = res.plan.operations.filter((o) => o.type === 'create_folder')
+    // MAX_SIBLINGS 个按主题命名的目录，外加一个兜底的「其他」——被压下的 3 个主题
+    // 不再原地不动，收进它（issues/42-loose-bookmark-always-lands-somewhere.md）
+    expect(created).toHaveLength(MAX_SIBLINGS + 1)
+    expect(created.map((o) => o.title)).toContain('其他')
     const cappedLog = events.find((e) => e.message.includes('超出同层上限'))
     expect(cappedLog?.message).toMatch(/^3 /)
+    const fallbackLog = events.find((e) => e.message.includes('收进了「其他」'))
+    // 被压下的 3 个主题各 3 条，一共 9 条落进「其他」
+    expect(fallbackLog?.message).toMatch(/^9 /)
   })
 
   it('部分书签分类失败时仍返回 Plan，但带上警告', async () => {
@@ -1333,20 +1340,29 @@ describe('analyze 非推翻模式：新主题无处可去', () => {
     expect(res.plan.rows).toHaveLength(3)
   })
 
-  it('非推翻模式：攒不够下限就不建目录，书签原地不动', async () => {
-    const complete = vi.fn().mockResolvedValue({
-      results: [
-        { bookmark_id: '100', target_category_id: null, confidence: 0.2, reason: '无合适目录', topic: '语音合成' },
-        { bookmark_id: '101', target_category_id: null, confidence: 0.2, reason: '无合适目录', topic: '数据竞赛' },
-      ],
-    })
+  // 下限已经从 3 改成 1（issues/42-loose-bookmark-always-lands-somewhere.md）：
+  // 两个各只有一条书签的主题，现在也各自单独建一个目录，不再攒不够就不理。
+  it('非推翻模式：哪怕主题只有一条书签，也单独建一个目录', async () => {
+    const complete = vi.fn()
+      .mockResolvedValueOnce({
+        results: [
+          { bookmark_id: '100', target_category_id: null, confidence: 0.2, reason: '无合适目录', topic: '语音合成' },
+          { bookmark_id: '101', target_category_id: null, confidence: 0.2, reason: '无合适目录', topic: '数据竞赛' },
+        ],
+      })
+      .mockResolvedValueOnce({
+        names: [
+          { key: '语音合成', name: '语音与音频' },
+          { key: '数据竞赛', name: '竞赛数据' },
+        ],
+      })
     const { ports, deps } = setupHomeless(complete)
     await saveNonRebuild(ports)
 
     const res = await handle(ports, { kind: 'analyze', scopeRootIds: ['1'], modeOverride: 'additive' }, deps) as { plan: OrganizePlan }
-    expect(res.plan.operations.filter((o) => o.type === 'create_folder')).toHaveLength(0)
-    // 起名那一次调用根本不该发出去
-    expect(complete).toHaveBeenCalledTimes(1)
+    const created = res.plan.operations.filter((o) => o.type === 'create_folder')
+    expect(created.map((o) => o.title).sort()).toEqual(['竞赛数据', '语音与音频'])
+    expect(res.plan.rows).toHaveLength(2)
   })
 
   it('非推翻模式：新建目录不产生任何改名操作', async () => {
@@ -1569,12 +1585,18 @@ describe('analyze 非推翻模式：新主题无处可去', () => {
     }) as { ok: boolean; plan: OrganizePlan }
 
     expect(res.ok).toBe(true)
-    expect(res.plan.operations.filter((o) => o.type === 'create_folder')).toEqual([])
+    // 撞名的那个主题没能建成自己的专属目录，但三条书签不再原地不动——
+    // 兜底进了「其他」（issues/42-loose-bookmark-always-lands-somewhere.md）
+    const created = res.plan.operations.filter((o) => o.type === 'create_folder')
+    expect(created.map((o) => o.title)).toEqual(['其他'])
+    expect(res.plan.rows).toHaveLength(3)
     const collisionLog = events.find((e) => e.message.includes('和已有目录重名'))
     expect(collisionLog?.message).toMatch(/^1 /)
+    const fallbackLog = events.find((e) => e.message.includes('收进了「其他」'))
+    expect(fallbackLog?.message).toMatch(/^3 /)
   })
 
-  it('非推翻模式绝不建「其他」——放不进就原地不动，那个模式的承诺是不动已有结构', async () => {
+  it('非推翻模式放不进任何已有目录、也没有可用主题名时，兜底建一个「其他」', async () => {
     const complete = vi.fn(async (prompt: string) => {
       const bookmarkIds = [...prompt.matchAll(/"bookmark_id":\s*"([^"]+)"/g)].map((m) => m[1]!)
       if (prompt.includes('候选目录')) {
@@ -1607,8 +1629,11 @@ describe('analyze 非推翻模式：新主题无处可去', () => {
     ) as { plan: OrganizePlan }
 
     const created = res.plan.operations.flatMap((o) => (o.type === 'create_folder' ? [o.title] : []))
-    expect(created.some((title) => title.includes('其他'))).toBe(false)
-    expect(res.plan.candidates.some((c) => c.path.at(-1)!.includes('其他'))).toBe(false)
+    // 正面推翻 issues/05-homeless-bookmarks.md 决定 2：非推翻模式不再让一条真正
+    // 无处可去的书签原地不动，兜底建一个「其他」收纳它（issues/42-…md）
+    expect(created).toEqual(['其他'])
+    expect(res.plan.candidates.some((c) => c.path.at(-1) === '其他')).toBe(true)
+    expect(res.plan.rows).toMatchObject([{ bookmarkId: 'x0' }])
   })
 })
 
@@ -1834,8 +1859,9 @@ describe('analyze 非推翻模式：多个范围根（review I2）', () => {
     expect(namePrompts).toHaveLength(1)
     // 「其他书签」下的「语音合成」目录名出现在了起名提示词里
     expect(namePrompts[0]).toContain('语音合成')
-    // 撞了已有目录名，模型的提议（同样是「语音合成」）应当被跳过而不是硬建重名目录
-    expect(res.plan.operations.filter((o) => o.type === 'create_folder')).toEqual([])
+    // 撞了已有目录名，模型的提议（同样是「语音合成」）应当被跳过而不是硬建重名目录——
+    // 但三条书签不再原地不动，兜底进「其他」（issues/42-loose-bookmark-always-lands-somewhere.md）
+    expect(res.plan.operations.filter((o) => o.type === 'create_folder')).toMatchObject([{ title: '其他' }])
   })
 
   it('勾了多个范围根时记一条日志说明新目录固定挂在第一个根下', async () => {

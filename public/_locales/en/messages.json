@@ -1645,13 +1645,10 @@
     }
   },
   "logNewFoldersNone": {
-    "message": "$count$ bookmarks fit no existing folder, but no topic reached $min$; leaving them in place",
+    "message": "$count$ bookmarks fit no existing folder and gave no usable topic name either",
     "placeholders": {
       "count": {
         "content": "$1"
-      },
-      "min": {
-        "content": "$2"
       }
     }
   },
@@ -1680,7 +1677,15 @@
     }
   },
   "logNewFoldersCapped": {
-    "message": "$count$ topics exceeded the per-level cap and were not turned into folders; those bookmarks stay in place",
+    "message": "$count$ topics exceeded the per-level cap and got no folder of their own",
+    "placeholders": {
+      "count": {
+        "content": "$1"
+      }
+    }
+  },
+  "logNewFoldersFallback": {
+    "message": "$count$ bookmarks had no usable topic name; placed in \"Other\"",
     "placeholders": {
       "count": {
         "content": "$1"
