@@ -45,7 +45,7 @@ export function Shell({ children, organizeContent }: { children: ReactNode; orga
     cleanupScan,
   } = useStore()
   return (
-    <div className="flex h-screen flex-col bg-white text-neutral-800">
+    <div className="flex h-full flex-col bg-white text-neutral-800">
       <header className={settingsOpen ? 'border-b border-index-line' : ''}>
         {/* Chrome 侧栏顶部已经显示了图标和「Reshelve」，这里再写一遍是重复，还白占一行高度。
             但那个标题栏属于浏览器界面、不在本文档里，读屏用户在文档中导航时找不到它，

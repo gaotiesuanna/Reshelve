@@ -3,6 +3,20 @@
 @tailwind utilities;
 
 @layer base {
+  /* 侧栏是块固定高度的画布，不是一篇会长的文档：滚动只该发生在 <main> 里那一处。
+     html/body 不锁高时，Shell 的 h-screen(=100vh) 会比侧栏实际可视高度多出几像素
+     （侧栏自带的横向留白、滚动条槽都不计入 100vh），body 于是自己也长出一条滚动条，
+     和 main 的那条并排。把三层都钉死在父级高度、body 不滚，只留 main 一条。 */
+  html,
+  body,
+  #root {
+    height: 100%;
+  }
+
+  body {
+    overflow: hidden;
+  }
+
   :root {
     --index-canvas: #ffffff;
     --index-ink: #18181b;
