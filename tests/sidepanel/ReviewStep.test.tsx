@@ -160,6 +160,20 @@ describe('ReviewStep', () => {
       await userEvent.click(screen.getByRole('button', { name: '重新分类选中的 1 条' }))
       expect(reclassifySelected).toHaveBeenCalledTimes(1)
     })
+
+    // 标记是逐行往下滚动着做的，按钮摆在页面顶部意味着标完得先滚回最上面才点得到，
+    // 在几百条的库里这一路要滚很久（用户反馈：标完看不到按钮在哪）。挪进底部的
+    // 粘性操作条——跟「应用」同一个理由，跟着页面走，标到哪都够得着。
+    it('按钮跟「放弃/应用」同一个粘性操作条，不在页面顶部', async () => {
+      render(<ReviewStep />)
+      const [first] = screen.getAllByRole('checkbox', { name: '标记重新分类' })
+      await userEvent.click(first!)
+      const button = screen.getByRole('button', { name: '重新分类选中的 1 条' })
+      const discardButton = screen.getByRole('button', { name: '放弃' })
+      // 两者共享同一个粘性操作条容器
+      expect(button.closest('.sticky')).not.toBeNull()
+      expect(button.closest('.sticky')).toBe(discardButton.closest('.sticky'))
+    })
   })
 
   it('全部拒绝后应用按钮禁用', async () => {
