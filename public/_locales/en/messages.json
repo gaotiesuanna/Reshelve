@@ -1073,6 +1073,14 @@
   "reviewGroupAllRule": {
     "message": "All matched by domain rules"
   },
+  "reviewGroupSelectAll": {
+    "message": "Select or deselect the whole \"$label$\" group",
+    "placeholders": {
+      "label": {
+        "content": "$1"
+      }
+    }
+  },
   "reviewGroupCount": {
     "message": "$count$ items",
     "placeholders": {
