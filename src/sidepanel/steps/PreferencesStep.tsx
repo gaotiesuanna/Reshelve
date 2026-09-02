@@ -64,6 +64,11 @@ export function PreferencesStep() {
     [tree, checkedIds],
   )
   if (scan === null || decision === null) return null
+  // judgedMessy 是自动判断本身的结论，不受 modeOverride 影响——它决定要不要给出
+  // 「归入现有 / 只处理散落书签 / 重新设计」这三选一（逃生口只为「误判成已整理」
+  // 那一个方向存在，见下方判「一团乱麻」分支的注释）。rebuild 是这一轮实际会走的
+  // 那条路，包含用户的选择，决定三选一里哪一项当前是选中态。
+  const judgedMessy = decision.mode === 'rebuild'
   const rebuild = (modeOverride ?? decision.mode) === 'rebuild'
   // 模型配置在设置页，这里只判断配没配。没配时不禁用按钮：一个禁用的按钮既不解释
   // 为什么，也不给出路；换成一个能点、点了直接落到设置页的按钮永远更好。
@@ -84,46 +89,76 @@ export function PreferencesStep() {
             </ul>
           )}
           <div className={`${scopePaths.length > 0 ? 'mt-3 border-t border-index-line pt-3' : ''} text-sm leading-body`}>
-            <p className="font-medium text-index-ink">{rebuild ? t('prefsModeRebuild') : t('prefsModeAdditive')}</p>
-            {/* 摘要常驻、细节折叠：这一段讲的是「你现有的文件夹会被改名」，是对用户
-                自己数据的后果，藏起来就不是知情的选择了（issues/22 的原则）。
-                而编号规则的边角（名字本身以数字开头的怎么办）读一次就够。 */}
-            <p className="mt-1.5 text-xs leading-body text-index-muted">
-              {rebuild ? t('prefsModeRebuildSummary') : t('prefsModeAdditiveBody')}
-            </p>
-            {rebuild && (
-              <div className="mt-2">
-                <Detail label={detailLabel()}>{t('prefsModeRebuildBody')}</Detail>
-              </div>
+            {judgedMessy ? (
+              // 判「一团乱麻」时没有逃生口——这是产品决定（issues/14 §5）：反方向的
+              // 误判（该归入现有却推翻）用户在复核页拒不掉，推翻模式下给范围内既有
+              // 一级目录改名、加编号前缀，跟接受了几条书签建议无关（见 core/plan.ts
+              // 的 participates，对每个既有一级目录恒真）。判错了只能这一轮整个放弃
+              // （prefsBack）或事后撤销，所以不给一个「其实我觉得已经整理过」的选项。
+              <>
+                <p className="font-medium text-index-ink">{t('prefsModeRebuild')}</p>
+                <p className="mt-1.5 text-xs leading-body text-index-muted">
+                  {t('prefsModeRebuildSummary')}
+                </p>
+                <div className="mt-2">
+                  <Detail label={detailLabel()}>{t('prefsModeRebuildBody')}</Detail>
+                </div>
+              </>
+            ) : (
+              <>
+                {/* 判断依据——这条不随下面选了哪一项而换字，它讲的始终是「扫描结果
+                    看起来是什么样」，跟用户接下来选哪一项是两件事，不矛盾。 */}
+                <p className="text-xs leading-body text-index-muted">{decision.reason}</p>
+                {/* 三选一并列：归入现有（默认）、只处理散落书签、重新设计整棵树，
+                    是同一个维度上的三个点——「这次整理该动多大范围、多深」，
+                    不该拆成「一个顶部按钮 + 一个埋在下面选项列表里的勾选框」。 */}
+                <div className={`${choiceList} mt-2.5`} role="radiogroup" aria-label={t('prefsModeGroupLabel')}>
+                  <label className={`${choiceRow} hover:bg-index-blue-soft`}>
+                    <input
+                      type="radio"
+                      name="prefs-mode"
+                      className="h-3.5 w-3.5 shrink-0 accent-index-blue"
+                      checked={!rebuild && !settings.onlyLooseInAdditive}
+                      onChange={() => {
+                        setModeOverride(null)
+                        void setSettings({ ...settings, onlyLooseInAdditive: false })
+                      }}
+                    />
+                    <span className="min-w-0 flex-1">{t('prefsModeAdditiveOption')}</span>
+                  </label>
+                  <Detail flush defaultOpen label={detailLabel()}>{t('prefsModeAdditiveBody')}</Detail>
+
+                  <label className={`${choiceRow} hover:bg-index-blue-soft`}>
+                    <input
+                      type="radio"
+                      name="prefs-mode"
+                      className="h-3.5 w-3.5 shrink-0 accent-index-blue"
+                      checked={!rebuild && settings.onlyLooseInAdditive}
+                      onChange={() => {
+                        setModeOverride(null)
+                        void setSettings({ ...settings, onlyLooseInAdditive: true })
+                      }}
+                    />
+                    <span className="min-w-0 flex-1">{t('prefsLooseOnlyTitle')}</span>
+                  </label>
+                  <Detail flush defaultOpen label={detailLabel()}>
+                    {`${t('prefsLooseOnlySummary')} ${t('prefsLooseOnlyBody')}`}
+                  </Detail>
+
+                  <label className={`${choiceRow} hover:bg-index-blue-soft`}>
+                    <input
+                      type="radio"
+                      name="prefs-mode"
+                      className="h-3.5 w-3.5 shrink-0 accent-index-blue"
+                      checked={rebuild}
+                      onChange={() => setModeOverride('rebuild')}
+                    />
+                    <span className="min-w-0 flex-1">{t('prefsModeRebuildOption')}</span>
+                  </label>
+                  <Detail flush defaultOpen label={detailLabel()}>{t('prefsModeRebuildSummary')}</Detail>
+                </div>
+              </>
             )}
-            {/* 判断依据和推翻它的按钮收进同一条左线里。原来这两段小字（后果、依据）
-                同字号同颜色前后脚摆着，读起来是一片灰，分不出哪句在讲将要发生什么、
-                哪句在讲凭什么这么判；而能被推翻的恰恰是「依据」那一句，按钮就该贴着它。
-                依据不降成 index-faint：白底上那个灰对小字过不了对比度，改用一条竖线分组。 */}
-            <div className="mt-2.5 flex flex-col items-start gap-2 border-l border-index-line pl-2.5">
-            {/* 推翻之后，那条理由讲的是已经被用户否掉的结论，再摆着只会跟上面那句打架 */}
-              <p className="text-xs leading-body text-index-muted">
-                {modeOverride === null ? decision.reason : t('prefsModeOverridden')}
-              </p>
-              {modeOverride === null ? (
-              // 逃生口只为「误判成已整理」那一个方向存在，这是产品决定（issues/14 §5），
-              // 不是因为反方向的误判在复核页拒得掉——事实上拒不掉：推翻模式下给范围内
-              // 既有一级目录改名、加编号前缀，跟用户在复核页接受了几条书签建议无关
-              // （见 core/plan.ts 的 participates，对每个既有一级目录恒真）。
-              // 误判成 rebuild 时用户能做的是这一轮整个放弃（prefsBack）或者事后撤销。
-              // size="sm"：它是逃生口，不是这一页的主操作，撑成和「开始 AI 分析」
-              // 一样壮的一块只会把视线从底部那个真正的按钮上抢走。
-                decision.mode === 'additive' && (
-                  <SecondaryButton size="sm" onClick={() => setModeOverride('rebuild')}>
-                    {t('prefsModeOverride')}
-                  </SecondaryButton>
-                )
-              ) : (
-                <SecondaryButton size="sm" onClick={() => setModeOverride(null)}>
-                  {t('prefsModeAuto')}
-                </SecondaryButton>
-              )}
-            </div>
           </div>
         </IndexSection>
       </div>
@@ -151,25 +186,6 @@ export function PreferencesStep() {
             {`${t('prefsCleanSummary')} ${t('prefsCleanBody')}`}
           </Detail>
         </div>
-        {/* 只在归入现有模式下有意义——推翻模式本来就要从零设计整棵树，不存在
-            「只处理一部分」这回事。默认关：默认行为是全量重判，这样才抓得出
-            已经在某个文件夹里、但放错了的书签（issues/39-platform-tags-still-decide.md）。 */}
-        {!rebuild && (
-          <div className={choiceList} data-testid="prefs-loose-only-option">
-            <label className={`${choiceRow} hover:bg-index-blue-soft`}>
-              <input
-                type="checkbox"
-                className="h-3.5 w-3.5 shrink-0 accent-index-blue"
-                checked={settings.onlyLooseInAdditive}
-                onChange={(e) => void setSettings({ ...settings, onlyLooseInAdditive: e.target.checked })}
-              />
-              <span className="min-w-0 flex-1">{t('prefsLooseOnlyTitle')}</span>
-            </label>
-            <Detail flush defaultOpen label={detailLabel()}>
-              {`${t('prefsLooseOnlySummary')} ${t('prefsLooseOnlyBody')}`}
-            </Detail>
-          </div>
-        )}
       </IndexSection>
 
       <IndexSection title={t('prefsModelLabel')}>

@@ -139,80 +139,94 @@ describe('PreferencesStep 清理空文件夹的说明', () => {
   })
 })
 
-describe('PreferencesStep 只处理散落书签', () => {
-  it('归入现有模式下渲染，勾选后写回设置', async () => {
+/**
+ * 「归入现有（默认）」「只处理散落书签」「重新设计整棵树」是同一个维度上的三个点
+ * ——这次整理该动多大范围、多深——用户明确要求把它们并列成一组单选，不再是
+ * 「顶部一个逃生口按钮 + 下面选项列表里一个孤零零的勾选框」。
+ */
+describe('PreferencesStep 整理方式三选一', () => {
+  function radioGroup(): HTMLElement {
+    return screen.getByRole('radiogroup', { name: '整理方式' })
+  }
+  function radio(name: string): HTMLInputElement {
+    return within(radioGroup()).getByRole('radio', { name }) as HTMLInputElement
+  }
+
+  it('判已整理时默认选中「归入现有目录」，理由句仍然讲清楚凭什么这么判', () => {
     setup(tidyScan)
     render(<PreferencesStep />)
-    const card = screen.getByTestId('prefs-loose-only-option')
-    expect(within(card).getByText('只处理散落书签')).toBeTruthy()
-    const checkbox = within(card).getByRole('checkbox') as HTMLInputElement
-    expect(checkbox.checked).toBe(false)
-    await userEvent.click(checkbox)
-    expect(useStore.getState().settings.onlyLooseInAdditive).toBe(true)
-  })
-
-  it('说明默认展开', () => {
-    setup(tidyScan)
-    render(<PreferencesStep />)
-    const card = screen.getByTestId('prefs-loose-only-option')
-    expect(within(card).getByRole('button', { name: '说明' }).getAttribute('aria-expanded')).toBe('true')
-    expect(within(card).getByText(/只把直接散落在范围根下/)).toBeTruthy()
-  })
-
-  // 推翻模式本来就要从零设计整棵树，不存在「只处理一部分」这回事——
-  // 这个开关在那条路上没有意义，不该出现，出现了也只会让人误以为它管着什么。
-  it('推翻模式下不渲染', () => {
-    setup(messyScan)
-    render(<PreferencesStep />)
-    expect(screen.queryByTestId('prefs-loose-only-option')).toBeNull()
-  })
-})
-
-describe('PreferencesStep 的模式判断', () => {
-  it('判已整理时先讲结论，再讲凭什么这么判', () => {
-    setup(tidyScan)
-    render(<PreferencesStep />)
-    expect(screen.getByText(/已经整理过/)).toBeTruthy()
+    expect(radio('归入现有目录（默认）').checked).toBe(true)
     // 理由来自 core/mode.ts，带着实际数字
     expect(screen.getByText(/带编号前缀/)).toBeTruthy()
   })
 
-  it('判已整理时给出逃生口', () => {
+  it('三个选项都在，且互斥（同一个 name，浏览器原生保证单选）', () => {
     setup(tidyScan)
     render(<PreferencesStep />)
-    expect(screen.getByRole('button', { name: '不对，重新设计' })).toBeTruthy()
+    const group = radioGroup()
+    const inputs = within(group).getAllByRole('radio') as HTMLInputElement[]
+    expect(inputs).toHaveLength(3)
+    expect(new Set(inputs.map((i) => i.name)).size).toBe(1)
   })
 
-  it('点了逃生口就按推翻模式渲染', async () => {
+  it('选「只处理散落书签」：写回设置，不推翻模式判断', async () => {
     setup(tidyScan)
     render(<PreferencesStep />)
-    await userEvent.click(screen.getByRole('button', { name: '不对，重新设计' }))
+    await userEvent.click(radio('只处理散落书签'))
+    expect(useStore.getState().settings.onlyLooseInAdditive).toBe(true)
+    expect(useStore.getState().modeOverride).toBeNull()
+  })
 
+  it('选「重新设计整棵树」：推翻模式判断', async () => {
+    setup(tidyScan)
+    render(<PreferencesStep />)
+    await userEvent.click(radio('重新设计整棵树'))
     expect(useStore.getState().modeOverride).toBe('rebuild')
-    // 结论句与理由句里都带着「重新设计整棵目录树」这半句，用 getAllByText 而不是 getByText——
+    // 结论句与选项说明里都带着「重新设计整棵目录树」这半句，用 getAllByText——
     // 两处都命中才是对的，getByText 在这里天然会因多重匹配而炸
     expect(screen.getAllByText(/重新设计整棵目录树/).length).toBeGreaterThan(0)
   })
 
-  it('推翻之后能改回自动判断', async () => {
+  it('推翻之后改选「归入现有目录」：modeOverride 与 onlyLooseInAdditive 一起复位', async () => {
     setup(tidyScan)
     render(<PreferencesStep />)
-    await userEvent.click(screen.getByRole('button', { name: '不对，重新设计' }))
-    await userEvent.click(screen.getByRole('button', { name: '恢复自动判断' }))
+    await userEvent.click(radio('重新设计整棵树'))
+    await userEvent.click(radio('归入现有目录（默认）'))
 
     expect(useStore.getState().modeOverride).toBeNull()
-    expect(screen.getByText(/已经整理过/)).toBeTruthy()
+    expect(useStore.getState().settings.onlyLooseInAdditive).toBe(false)
   })
 
-  it('判一团乱麻时不给逃生口——逃生口只为「误判成已整理」那一个方向存在', () => {
+  it('推翻之后改选「只处理散落书签」：同样能直接切回去，不用先跳回默认', async () => {
+    setup(tidyScan)
+    render(<PreferencesStep />)
+    await userEvent.click(radio('重新设计整棵树'))
+    await userEvent.click(radio('只处理散落书签'))
+
+    expect(useStore.getState().modeOverride).toBeNull()
+    expect(useStore.getState().settings.onlyLooseInAdditive).toBe(true)
+  })
+
+  it('三个选项各自的说明默认展开', () => {
+    setup(tidyScan)
+    render(<PreferencesStep />)
+    const group = radioGroup()
+    expect(within(group).getByText(/只把直接散落在范围根下/)).toBeTruthy()
+    for (const button of within(group).getAllByRole('button', { name: '说明' })) {
+      expect(button.getAttribute('aria-expanded')).toBe('true')
+    }
+  })
+
+  // 判一团乱麻时没有逃生口——这是产品决定（issues/14 §5），不给「其实我觉得
+  // 已经整理过」的选项，所以这三选一整组都不出现，不是三选一里少一项。
+  it('判一团乱麻时不渲染这组单选', () => {
     setup(messyScan)
     render(<PreferencesStep />)
-    // 空断言防身：先证明这一页真渲染了、而且按钮名查询在这一页上确实命中得了东西，
-    // 否则「查不到逃生口」可能只是查错了地方
+    // 空断言防身：先证明这一页真渲染了、而且查询在这一页上确实命中得了东西
     expect(screen.getAllByText(/重新设计整棵目录树/).length).toBeGreaterThan(0)
     expect(screen.getByRole('button', { name: '返回' })).toBeTruthy()
 
-    expect(screen.queryByRole('button', { name: '不对，重新设计' })).toBeNull()
+    expect(screen.queryByRole('radiogroup', { name: '整理方式' })).toBeNull()
   })
 })
 
