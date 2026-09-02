@@ -62,6 +62,14 @@ export type Request =
    * 而且长时间的批量请求需要 keepalive 撑着，与 analyze 同一条路。
    */
   | { kind: 'check_links'; targets: LinkTarget[] }
+  /**
+   * 复核页对某几条建议不满意，选中它们、排除各自当前的目标目录，重新问一次模型。
+   *
+   * 带的是完整的 plan 而不是只带 bookmarkIds：patch 结果要贴回 plan.rows 与
+   * plan.operations 两处（见 core/plan.ts 的 applyReclassifyResults），后台没有
+   * 别的地方存着这份 plan——它只活在侧栏的 store 里，得由调用方带过来。
+   */
+  | { kind: 'reclassify'; plan: OrganizePlan; bookmarkIds: string[] }
 
 /**
  * 侧栏发过来的原始消息：请求本体，外加发信那个侧栏的身份。
@@ -93,6 +101,7 @@ export type Response =
   | { ok: true; kind: 'apply_cleanup'; result: CleanupResult }
   | { ok: true; kind: 'cleanup_stale_scan'; scan: StaleScanResult }
   | { ok: true; kind: 'check_links'; results: LinkResult[] }
+  | { ok: true; kind: 'reclassify'; plan: OrganizePlan }
   /**
    * cancelled 为 true 表示用户主动取消，不是出错。
    * reason 只有 test_model 会带：失败时说清是哪一类，别的请求没有这个分类。

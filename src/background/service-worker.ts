@@ -40,11 +40,15 @@ const sessions = createSessions()
  * analyze 也必须挡住 apply：分析产出的方案是对着某一刻的书签树算的，
  * 另一个窗口在这中间把树改了，那份方案落地时指向的 id 已经不是原来那个东西。
  *
+ * reclassify 同样挡住：它跟 analyze 一样要读写分类缓存（loadCache/saveCache 整块
+ * 读写，见 storage/settings.ts），两个窗口同时读改写会互相覆盖对方刚写下的条目。
+ * 它不动书签树，但缓存也是要保护的全局单例。
+ *
  * 没进来的都是只读或瞬时的（get_tree、scan、cleanup_scan、test_model、list_models…），
  * 并发跑没有互相破坏的余地，挡住它们只会让另一个窗口连书签树都读不了。
  */
 const EXCLUSIVE: ReadonlySet<Request['kind']> = new Set([
-  'analyze', 'check_links', 'apply', 'undo', 'import', 'apply_cleanup',
+  'analyze', 'check_links', 'apply', 'undo', 'import', 'apply_cleanup', 'reclassify',
 ])
 
 /**
@@ -54,7 +58,7 @@ const EXCLUSIVE: ReadonlySet<Request['kind']> = new Set([
  * isCancelled、不收 signal，界面也不给它们取消按钮。把它们一并当成可取消，
  * 换来的是「点了取消 → 日志说正在取消 → 它照样跑完」这种骗人的三连。
  */
-const CANCELLABLE: ReadonlySet<Request['kind']> = new Set(['analyze', 'check_links'])
+const CANCELLABLE: ReadonlySet<Request['kind']> = new Set(['analyze', 'check_links', 'reclassify'])
 
 chrome.runtime.onConnect.addListener((port) => {
   const clientId = clientIdFromPortName(port.name)

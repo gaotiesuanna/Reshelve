@@ -5,7 +5,9 @@ import {
   findOversizedFolders, measureFallbackShare, measureTopSiblings, promoteFallbackChildren,
 } from '@/core/audit'
 import type { Locale } from '@/core/locale'
-import { buildPlan, type FolderMoveSpec, type NewFolderSpec, type RenameFolderSpec } from '@/core/plan'
+import {
+  applyReclassifyResults, buildPlan, type FolderMoveSpec, type NewFolderSpec, type RenameFolderSpec,
+} from '@/core/plan'
 import { MIN_FOLDER_BOOKMARKS, pruneReason, pruneSmallFolders } from '@/core/prune'
 import { findScopeRoots, scanTree } from '@/core/scan'
 import { detectMode } from '@/core/mode'
@@ -840,6 +842,64 @@ export async function handle(
         for (const warning of warnings) log('classify', warning, 'warn')
         log('classify', t('logAnalyzeDone', String(plan.rows.length)))
         return { ok: true, kind: 'analyze', plan }
+      }
+
+      case 'reclassify': {
+        const llm = activeLlm(settings)
+        if (!isModelConfigured(llm)) {
+          return { ok: false, error: t('errNoApiKey') }
+        }
+        // 重新扫一遍而不是信侧栏传来的 plan 里那份旧数据：书签的 parentId/index/
+        // currentPath 得是这一刻的真实值，classifyBookmarks 要拿它们拼提示词。
+        // plan 本身仍然以侧栏传来的为准——那是这次要贴回去的底子，重新分析一份
+        // 后台自己现算的 plan 是另一件事，不该在这里顺手做。
+        const tree = await ports.bookmarks.getTree()
+        const scan = scanTree(tree, request.plan.scopeRootIds)
+        const requestedIds = new Set(request.bookmarkIds)
+        const items = scan.bookmarks.filter((b) => requestedIds.has(b.id))
+        // 选中的书签这一刻一条都找不到了（多半是在复核页开着的时候被手动删掉/挪走）：
+        // 没有东西可问，原样把 plan 退回去，不报错——用户等的这次操作对哪些书签
+        // 都没起作用，不代表整个请求失败了
+        if (items.length === 0) {
+          return { ok: true, kind: 'reclassify', plan: request.plan }
+        }
+        // 「排除它当前的目标目录」是这个功能的全部意义：不排除的话，同一批候选、
+        // 同一个模型，大概率原样把上次那个不满意的答案再报一遍。选中的书签各自
+        // 目标可能不同，这里排除的是它们目标的并集——被排除的目录对这一批里的
+        // 每一条都不再是选项，包括本来目标就是它、以及本来目标是另一条候选目录
+        // 但那条恰好也在这批排除名单里的情形。
+        const excludedTargetIds = new Set(
+          request.plan.rows.filter((r) => requestedIds.has(r.bookmarkId)).map((r) => r.toCategoryId),
+        )
+        const candidates = request.plan.candidates.filter((c) => !excludedTargetIds.has(c.id))
+        if (candidates.length === 0) {
+          return { ok: false, error: t('errNoAlternativeFolders') }
+        }
+        const client = createClient(llm, locale)
+        const cache = await loadCache(ports)
+        log('classify', t('logReclassifyStart', String(items.length), String(candidates.length)))
+        const results = await classifyBookmarks({
+          items,
+          candidates,
+          client,
+          cache,
+          batchSize: deps.batchSize,
+          onProgress: progress('classify'),
+          onLog: (message, level) => log('classify', message, level),
+          isCancelled,
+          locale,
+          model: llm.model,
+          // additive 分类一贯的做法：无合适目录时带回 topic。这次虽然不会拿它去
+          // 开新目录（重新分类只处理选中的这几条，不值得为它们跑一遍聚簇建目录
+          // 那整套机制），但没理由让这条路径的提示词无端跟主流程长得不一样。
+          includeTopicRule: true,
+        })
+        await saveCache(ports, cache)
+        if (isCancelled()) return CANCELLED
+        const nextPlan = applyReclassifyResults(request.plan, results, locale)
+        const changed = results.filter((r) => r.targetCategoryId !== null && r.source !== 'none').length
+        log('classify', t('logReclassifyDone', String(changed), String(results.length - changed)))
+        return { ok: true, kind: 'reclassify', plan: nextPlan }
       }
 
       case 'apply': {

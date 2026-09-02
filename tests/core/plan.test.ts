@@ -1,5 +1,8 @@
 import { describe, it, expect } from 'vitest'
-import { buildPlan, filterAccepted, renumberPlan, retargetRow, summarize, wouldStrandFolder, MARK_CONFIDENCE } from '@/core/plan'
+import {
+  applyReclassifyResults, buildPlan, filterAccepted, renumberPlan, retargetRow, summarize,
+  wouldStrandFolder, MARK_CONFIDENCE,
+} from '@/core/plan'
 import type { BookmarkItem, BookmarkOperation, CategoryCandidate, Classification, OrganizePlan } from '@/core/types'
 import { makePlan } from '../fakes/plan'
 
@@ -709,6 +712,141 @@ describe('retargetRow', () => {
     const plan = base()
     const next = retargetRow(plan, '不存在的书签', 'tmp:2')
     expect(next).toBe(plan)
+  })
+})
+
+describe('applyReclassifyResults', () => {
+  const base = () => buildPlan({
+    id: 'p', createdAt: 1, scopeRootIds: ['1'], rebuildStructure: true,
+    items: [
+      { id: 'a', title: 'A', url: 'https://a.dev', parentId: '99', index: 0, currentPath: ['收件箱'] },
+      { id: 'b', title: 'B', url: 'https://b.dev', parentId: '99', index: 0, currentPath: ['收件箱'] },
+    ],
+    candidates: [{ id: 'tmp:1', path: ['前端'] }, { id: 'tmp:2', path: ['后端'] }],
+    classifications: [
+      { bookmarkId: 'a', targetCategoryId: 'tmp:1', confidence: 0.9, reason: '前端框架', source: 'llm' },
+      { bookmarkId: 'b', targetCategoryId: 'tmp:1', confidence: 0.6, reason: '大概是前端', source: 'llm' },
+    ],
+    newFolders: [
+      { temporaryId: 'tmp:1', parentId: '1', parentTemporaryId: null, title: '前端' },
+      { temporaryId: 'tmp:2', parentId: '1', parentTemporaryId: null, title: '后端' },
+    ],
+    renameFolders: [], warnings: [], tags: [], titleRewrites: [],
+  })
+
+  it('给出新目标时，行与移动操作都换成这次重新分类的结果', () => {
+    const results: Classification[] = [
+      { bookmarkId: 'a', targetCategoryId: 'tmp:2', confidence: 0.95, reason: '其实是后端', source: 'llm' },
+    ]
+    const next = applyReclassifyResults(base(), results, 'zh_CN')
+
+    const row = next.rows.find((r) => r.bookmarkId === 'a')!
+    expect(row.toPath).toEqual(['后端'])
+    expect(row.toCategoryId).toBe('tmp:2')
+    expect(row.confidence).toBe(0.95)
+    expect(row.reason).toBe('其实是后端')
+    const move = next.operations.find((o) => o.type === 'move_bookmark' && o.bookmarkId === 'a')!
+    expect(move).toMatchObject({ toCategoryId: 'tmp:2', toTemporaryId: 'tmp:2' })
+  })
+
+  it('新目标落在一个已有目录（非本轮新建）时，toTemporaryId 为 null', () => {
+    const plan = { ...base(), candidates: [...base().candidates, { id: '77', path: ['已有目录'] }] }
+    const results: Classification[] = [
+      { bookmarkId: 'a', targetCategoryId: '77', confidence: 0.9, reason: 'r', source: 'llm' },
+    ]
+    const next = applyReclassifyResults(plan, results, 'zh_CN')
+    const move = next.operations.find((o) => o.type === 'move_bookmark' && o.bookmarkId === 'a')!
+    expect(move).toMatchObject({ toCategoryId: '77', toTemporaryId: null })
+  })
+
+  /**
+   * 排除原目录后依然没有更好的选择：不能把这条从 rows 挪去 unchanged——
+   * 那会让它从勾选清单里突然消失，用户看不出发生了什么。保留在原目标上，
+   * 只换一句理由，比消失诚实。
+   */
+  it('模型依然给不出更好的选择时，保留原目标，只换一句理由', () => {
+    const results: Classification[] = [
+      { bookmarkId: 'a', targetCategoryId: null, confidence: 0, reason: '无合适目录', source: 'llm' },
+    ]
+    const next = applyReclassifyResults(base(), results, 'zh_CN')
+    const row = next.rows.find((r) => r.bookmarkId === 'a')!
+    expect(row.toCategoryId).toBe('tmp:1')
+    expect(row.toPath).toEqual(['前端'])
+    expect(row.reason).not.toBe('前端框架')
+    expect(row.reason).toContain('依然没有更合适')
+    // rows 里还是两条，谁都没被挪进 unchanged
+    expect(next.rows).toHaveLength(2)
+    expect(next.unchanged).toHaveLength(0)
+  })
+
+  it('请求失败（source: "none"）时同样保留原目标，不当成「模型说没有」', () => {
+    const results: Classification[] = [
+      { bookmarkId: 'a', targetCategoryId: null, confidence: 0, reason: '分类失败', source: 'none' },
+    ]
+    const next = applyReclassifyResults(base(), results, 'zh_CN')
+    const row = next.rows.find((r) => r.bookmarkId === 'a')!
+    expect(row.toCategoryId).toBe('tmp:1')
+    // 用词不能跟「模型看过、想过、没找到」撞车——请求根本没成功，模型没来得及给答案
+    expect(row.reason).not.toContain('依然没有更合适')
+    expect(row.reason).toContain('请求失败')
+  })
+
+  it('目标 id 查不到候选时原样不动，不指向一个方案里不存在的目录', () => {
+    const results: Classification[] = [
+      { bookmarkId: 'a', targetCategoryId: '不存在', confidence: 0.9, reason: 'r', source: 'llm' },
+    ]
+    const next = applyReclassifyResults(base(), results, 'zh_CN')
+    const row = next.rows.find((r) => r.bookmarkId === 'a')!
+    expect(row.toCategoryId).toBe('tmp:1')
+    expect(row.reason).toBe('前端框架')
+  })
+
+  it('只改 results 里点到名的那些书签，其余原样不动', () => {
+    const results: Classification[] = [
+      { bookmarkId: 'a', targetCategoryId: 'tmp:2', confidence: 0.9, reason: 'r', source: 'llm' },
+    ]
+    const next = applyReclassifyResults(base(), results, 'zh_CN')
+    const rowB = next.rows.find((r) => r.bookmarkId === 'b')!
+    expect(rowB).toEqual(base().rows.find((r) => r.bookmarkId === 'b'))
+  })
+
+  it('results 为空时原样返回同一个对象', () => {
+    const plan = base()
+    expect(applyReclassifyResults(plan, [], 'zh_CN')).toBe(plan)
+  })
+
+  it('合并模式下换目标，toPath 仍带着合并根前缀', () => {
+    const plan = {
+      ...base(),
+      mergeRoot: {
+        temporaryId: 'tmp:0', title: '合并根',
+        sourceRootIds: ['8', '9'], sourceTitles: ['旧a', '旧b'],
+      },
+    }
+    const results: Classification[] = [
+      { bookmarkId: 'a', targetCategoryId: 'tmp:2', confidence: 0.9, reason: 'r', source: 'llm' },
+    ]
+    const next = applyReclassifyResults(plan, results, 'zh_CN')
+    expect(next.rows.find((r) => r.bookmarkId === 'a')!.toPath).toEqual(['合并根', '后端'])
+  })
+
+  it('不改 accepted 状态——是否采纳这次答案是调用方的事', () => {
+    const plan = base()
+    const results: Classification[] = [
+      { bookmarkId: 'a', targetCategoryId: 'tmp:2', confidence: 0.9, reason: 'r', source: 'llm' },
+    ]
+    const next = applyReclassifyResults(plan, results, 'zh_CN')
+    // 纯函数返回值里压根没有 accepted 这个字段——它不属于 OrganizePlan
+    expect((next as unknown as { accepted?: unknown }).accepted).toBeUndefined()
+  })
+
+  it('英文 locale 下「没有更好选择」的理由也是英文', () => {
+    const results: Classification[] = [
+      { bookmarkId: 'a', targetCategoryId: null, confidence: 0, reason: '无合适目录', source: 'llm' },
+    ]
+    const next = applyReclassifyResults(base(), results, 'en')
+    const row = next.rows.find((r) => r.bookmarkId === 'a')!
+    expect(row.reason.toLowerCase()).toContain('nothing better')
   })
 })
 
