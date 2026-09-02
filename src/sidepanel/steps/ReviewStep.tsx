@@ -229,20 +229,14 @@ export function ReviewStep() {
 
       {/* 两个改勾选的动作 vs 一个只改可见性的筛选：排成一样的按钮就是在说「这三个平级」。
           动作是描边按钮，筛选是坐在槽里的开关。导出既不改方案也不改视图，
-          它跟放弃/应用同属「对这份方案做什么」，已经挪到底部操作条去了。 */}
+          它跟放弃/应用同属「对这份方案做什么」，已经挪到底部操作条去了。
+          「重新分类选中项」不摆在这里——道理跟「应用」一样：标记是逐行、
+          一路往下滚动着做的，摆在页面顶部意味着标记完得先滚回最上面才点得到，
+          在几百条的库里这一路要滚很久（见用户反馈：标完看不到按钮在哪）。
+          挪进下面的粘性操作条，跟着页面走，标到哪都够得着。 */}
       <div className="mt-3 flex flex-wrap items-center gap-1.5">
         <SecondaryButton onClick={acceptAll}>{t('reviewAcceptAll')}</SecondaryButton>
         <SecondaryButton onClick={rejectAll}>{t('reviewRejectAll')}</SecondaryButton>
-        {/* 只在真有标记时才出现——大多数时候一条都没标，常驻一个「重新分类 0 条」
-            的按钮只是噪音，不像「只看被标记的」那个筛选开关，0 本身就是有用的信息。 */}
-        {reclassifyMarked.size > 0 && (
-          <SecondaryButton onClick={() => void reclassifySelected()} disabled={busy !== null}>
-            {plural(
-              reclassifyMarked.size, 'reviewReclassifySelectedOne', 'reviewReclassifySelectedOther',
-              String(reclassifyMarked.size),
-            )}
-          </SecondaryButton>
-        )}
       </div>
 
       {/* 筛选开关：只管看得见看不见，不碰 accepted。
@@ -449,22 +443,40 @@ export function ReviewStep() {
       </div>
 
       <StickyActionBar>
-        <div className="flex gap-2">
-          <SecondaryButton className="shrink-0" onClick={reset}>{t('reviewDiscard')}</SecondaryButton>
-          <PrimaryButton
-            className="flex-1"
-            disabled={accepted.size === 0 || busy !== null}
-            onClick={() => void apply()}
-          >
-            {plural(accepted.size, 'reviewApplyOne', 'reviewApplyOther', String(accepted.size))}
-          </PrimaryButton>
-          {/* 只是把这一轮倒出去存档，跟放弃/应用同属「对这份方案做什么」，不是勾选或筛选。
-              甩到最右头：这一行从左到右是「不要了 → 就这样办」，导出不在这条线上，
-              夹在中间会把那两步切断。 */}
-          <GhostButton className="shrink-0" onClick={exportPlan}>
-            <DownloadIcon />
-            {t('reviewExportPlan')}
-          </GhostButton>
+        <div className="flex flex-col gap-2">
+          {/* 只在真有标记时才出现——大多数时候一条都没标，常驻一个「重新分类 0 条」
+              的按钮只是噪音，不像「只看被标记的」那个筛选开关，0 本身就是有用的信息。
+              独占一行、不跟下面三个挤同一排：label 带着数字，跟「应用 N 项修改」
+              挤在一起容易让人以为两个数在说同一件事。 */}
+          {reclassifyMarked.size > 0 && (
+            <SecondaryButton
+              className="w-full"
+              onClick={() => void reclassifySelected()}
+              disabled={busy !== null}
+            >
+              {plural(
+                reclassifyMarked.size, 'reviewReclassifySelectedOne', 'reviewReclassifySelectedOther',
+                String(reclassifyMarked.size),
+              )}
+            </SecondaryButton>
+          )}
+          <div className="flex gap-2">
+            <SecondaryButton className="shrink-0" onClick={reset}>{t('reviewDiscard')}</SecondaryButton>
+            <PrimaryButton
+              className="flex-1"
+              disabled={accepted.size === 0 || busy !== null}
+              onClick={() => void apply()}
+            >
+              {plural(accepted.size, 'reviewApplyOne', 'reviewApplyOther', String(accepted.size))}
+            </PrimaryButton>
+            {/* 只是把这一轮倒出去存档，跟放弃/应用同属「对这份方案做什么」，不是勾选或筛选。
+                甩到最右头：这一行从左到右是「不要了 → 就这样办」，导出不在这条线上，
+                夹在中间会把那两步切断。 */}
+            <GhostButton className="shrink-0" onClick={exportPlan}>
+              <DownloadIcon />
+              {t('reviewExportPlan')}
+            </GhostButton>
+          </div>
         </div>
       </StickyActionBar>
     </div>
