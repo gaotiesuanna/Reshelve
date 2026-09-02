@@ -865,7 +865,25 @@ export const useStore = create<State>((set, get) => ({
     // 这一刻撤销会让书签物理上搬回去、但方案里已经找不到它们对应的行——
     // 两边会对不上。撤销留给结果页，撤的是最近一次应用（含这一次），
     // 跟「多轮整理各自独立、只能撤最近一次」是同一条既有规则，不是新限制。
-    if (get().reclassifyMarked.size > 0) {
+    //
+    // 两道闸把它挡在外面，任何一道成立都退回一次性那条路：
+    //
+    // 1. **这次应用中途失败了**（`status === 'failed'`，注意 res.ok 仍是 true——
+    //    applyPlan 把失败装在 result 里返回，见 background/handlers.ts 的 apply）。
+    //    失败时 failedAt 之后的移动**根本没执行**，而这条分支会按「accepted 减去
+    //    skipped」把它们的行从方案里摘掉——书签还在原地，复核页上却再也找不到它，
+    //    这一轮永远轮不到它。而且 applyResult 不落、error 不设，用户看到进度条转完、
+    //    停在复核页，以为一切正常。失败必须走结果页：那里才显示 error 与 failedAt。
+    //
+    // 2. **合并模式**（`plan.mergeRoot !== null`）。applyPlan 学到合并容器真实 id
+    //    的唯一途径是看着它的 create_folder 触发；容器在第一次应用里已经建好，
+    //    applyPartialResult 把那条 create_folder 删掉之后，第二次应用的 mergeRootId
+    //    恒为 null，三个闸门一起失效：容器内的空目录清不掉、补不了号排不了序，
+    //    被清空的源目录也不会被删除，留下一堆空壳。更糟的是 scopeRootIds 在合并模式
+    //    下指的是源根，第一次应用可能已经把它们删了，第二次的 captureSnapshot 扫一批
+    //    不存在的 id，快照是空的——那次应用撤销不回来。合并本就是一次性的整体重构，
+    //    劈成两次会破坏它自己的收尾契约，不该硬凑，退回一次性路径才诚实。
+    if (res.result.status === 'completed' && plan.mergeRoot === null && get().reclassifyMarked.size > 0) {
       // 失败重试过的（skipped）没真的被移动，得留在 accepted 与 plan 里，
       // 下一次应用还会再试一次——ApplyResult.skipped 就是留给它们的机会
       const skippedIds = new Set(res.result.skipped.map((s) => s.bookmarkId))
