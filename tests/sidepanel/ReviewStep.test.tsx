@@ -139,6 +139,20 @@ describe('ReviewStep', () => {
       expect(useStore.getState().reclassifyMarked.has('100')).toBe(false)
     })
 
+    /**
+     * '100' 在顶层 beforeEach 里是勾选接受的。标记重新分类不能只是个笔记——
+     * 不顺手取消接受的话，点「应用」会把这条明确标了不满意的书签按旧目标
+     * 原样搬过去，标记形同虚设。
+     */
+    it('标记重新分类会顺手取消这一行的接受勾选', async () => {
+      render(<ReviewStep />)
+      expect((screen.getByRole('checkbox', { name: 'React 官网' }) as HTMLInputElement).checked).toBe(true)
+      const [first] = screen.getAllByRole('checkbox', { name: '标记重新分类' })
+      await userEvent.click(first!)
+      expect(useStore.getState().accepted.has('100')).toBe(false)
+      expect((screen.getByRole('checkbox', { name: 'React 官网' }) as HTMLInputElement).checked).toBe(false)
+    })
+
     it('一条都没标记时，「重新分类选中项」按钮不出现——不常驻一个多数时候没用的按钮', () => {
       render(<ReviewStep />)
       expect(screen.queryByRole('button', { name: /重新分类选中的/ })).toBeNull()
