@@ -294,12 +294,19 @@ interface State {
   settings: Settings
   plan: OrganizePlan | null
   accepted: Set<string>
+  /**
+   * 标记「对这条建议不满意，要重新分类」的书签 id——与 accepted 是两条独立的轴。
+   * accepted 决定要不要采纳这次给出的建议，这个决定要不要为它再问模型一次；
+   * 一条完全可以是「先留着不接受，但也不想现在重新问」，混进 accepted 会让
+   * 「取消勾选」这一个动作背上两层含义。
+   */
+  reclassifyMarked: Set<string>
   applyResult: ApplyResult | null
   undoResult: UndoResult | null
   undoAvailable: boolean
   busy: string | null
   /** 当前在跑哪一步，决定能不能取消。 */
-  busyKind: 'init' | 'scan' | 'analyze' | 'apply' | 'undo' | 'cleanup' | 'checkLinks' | null
+  busyKind: 'init' | 'scan' | 'analyze' | 'apply' | 'undo' | 'cleanup' | 'checkLinks' | 'reclassify' | null
   /**
    * 上一次失败的是哪一步，`null` 表示没有可重试的东西。
    *
@@ -432,6 +439,15 @@ interface State {
    * 让它算完直接传结果过来，不必在 store 里重新推一遍。
    */
   setGroupAccepted(bookmarkIds: string[], accepted: boolean): void
+  toggleReclassifyMark(bookmarkId: string): void
+  /**
+   * 把 reclassifyMarked 里的书签排除各自当前的目标目录，重新问一次模型。
+   *
+   * 换到新目标的那些顺手标记 accepted——与 setRowTarget 同一条判例：改了目标
+   * 就当用户认这条了（这次是模型给的新目标，但发起重新分类的是用户，同样算数）。
+   * 依然没有更好选择的那些不动 accepted，模型没给出新东西，没有「认下新目标」这回事。
+   */
+  reclassifySelected(): Promise<void>
   apply(): Promise<void>
   undo(): Promise<void>
   readImportFile(name: string, text: string): void
@@ -497,6 +513,7 @@ export const useStore = create<State>((set, get) => ({
   settings: DEFAULT_SETTINGS,
   plan: null,
   accepted: new Set(),
+  reclassifyMarked: new Set(),
   applyResult: null,
   undoResult: null,
   undoAvailable: false,
@@ -657,6 +674,7 @@ export const useStore = create<State>((set, get) => ({
       // 至少还在逐层摸的范围内。放错比不放更可接受，所以默认接受、让标记去引导修正
       // （见 issues/06-review-at-scale.md「决定 3」）。
       accepted: new Set(res.plan.rows.map((r) => r.bookmarkId)),
+      reclassifyMarked: new Set(),
       structureEdits: EMPTY_EDITS,
       // 走哪条路由后台判定并记在 plan 上，界面不再自己猜——
       // 设置里已经没有那个开关了，猜出来的必然是错的
@@ -708,6 +726,7 @@ export const useStore = create<State>((set, get) => ({
       plan: next,
       // 同 analyze()：默认全选，放错比不放更可接受
       accepted: new Set(next.rows.map((r) => r.bookmarkId)),
+      reclassifyMarked: new Set(),
       step: 'review',
     })
   },
@@ -748,6 +767,64 @@ export const useStore = create<State>((set, get) => ({
       else next.delete(id)
     }
     set({ accepted: next })
+  },
+
+  toggleReclassifyMark(bookmarkId) {
+    const next = new Set(get().reclassifyMarked)
+    if (next.has(bookmarkId)) next.delete(bookmarkId)
+    else next.add(bookmarkId)
+    set({ reclassifyMarked: next })
+  },
+
+  async reclassifySelected() {
+    const run = get().runSeq
+    const plan = get().plan
+    const marked = [...get().reclassifyMarked]
+    if (plan === null || marked.length === 0) return
+    const granted = await ensureHostPermission(activeLlm(get().settings).baseUrl)
+    if (isStale(get, set, run)) return
+    if (!granted) {
+      // 重试有意义：ensureHostPermission 会重新弹一次权限请求，不是配置类错误。
+      // 但不给 retryable：那个字段只认 'scan' | 'analyze'（见它自己的注释），
+      // 这里的重试路径不一样——勾选框还留着，用户自己再点一次「重新分类选中项」就够了
+      return fail(set, t('errHostPermission'), null)
+    }
+    set({
+      busy: t('busyReclassifying'), busyKind: 'reclassify', retryable: null, error: null,
+      progress: null, logs: [],
+    })
+    // 跟 analyze 一样：这一步要花时间调模型，持续 ping 别让后台因空闲被回收
+    const stopKeepalive = startKeepalive(ensureConnection())
+    const res = await send({ kind: 'reclassify', plan, bookmarkIds: marked }).finally(stopKeepalive)
+    if (isStale(get, set, run)) return
+    // 主动取消不是错误，日志里已经有记录，不弹红条，也不算失败
+    if (!res.ok && res.cancelled === true) {
+      return set({ busy: null, busyKind: null, error: null })
+    }
+    // 失败时不清 reclassifyMarked——勾选框留着，用户不用重新选一遍，
+    // 点一下「重新分类选中项」就是完整的重试
+    if (!res.ok) return fail(set, res.error, null)
+    if (res.kind !== 'reclassify') return set({ busy: null, busyKind: null })
+    // 换到新目标的顺手标记 accepted——跟 setRowTarget 同一条判例：改了目标就当用户
+    // 认下了，这次目标是模型给的，但发起重新分类的是用户，同样算数。依然没有更好
+    // 选择的那些，模型没给出新东西，accepted 不动。
+    const oldTargetById = new Map(plan.rows.map((r) => [r.bookmarkId, r.toCategoryId]))
+    const markedSet = new Set(marked)
+    const nextAccepted = new Set(get().accepted)
+    for (const row of res.plan.rows) {
+      if (!markedSet.has(row.bookmarkId)) continue
+      if (row.toCategoryId !== oldTargetById.get(row.bookmarkId)) nextAccepted.add(row.bookmarkId)
+    }
+    set({
+      plan: res.plan,
+      accepted: nextAccepted,
+      // 只摘掉这次真正处理过的那些——不是无条件清空：处理期间界面按 busy 禁用了
+      // 输入，理论上不会有新的勾选混进来，但摘「这次带走的那批」比摘「当下那一整份」
+      // 更贴着这个函数实际做了什么。
+      reclassifyMarked: new Set([...get().reclassifyMarked].filter((id) => !markedSet.has(id))),
+      busy: null,
+      busyKind: null,
+    })
   },
 
   async apply() {
@@ -1125,7 +1202,7 @@ export const useStore = create<State>((set, get) => ({
     set({
       // 让在途的扫描/分析知道自己已经过期，回来时别再写 store
       runSeq: get().runSeq + 1,
-      step: 'scope', scan: null, plan: null, accepted: new Set(),
+      step: 'scope', scan: null, plan: null, accepted: new Set(), reclassifyMarked: new Set(),
       structureEdits: EMPTY_EDITS, modeOverride: null,
       applyResult: null, undoResult: null, error: null, retryable: null,
     })

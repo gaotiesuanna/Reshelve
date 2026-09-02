@@ -25,7 +25,7 @@ const plan: OrganizePlan = {
 }
 
 beforeEach(() => {
-  useStore.setState({ plan, accepted: new Set(['100']), busy: null, error: null })
+  useStore.setState({ plan, accepted: new Set(['100']), reclassifyMarked: new Set(), busy: null, error: null })
 })
 
 describe('ReviewStep', () => {
@@ -118,6 +118,47 @@ describe('ReviewStep', () => {
       expect(screen.getByRole('checkbox', { name: 'React 官网' })).toBeTruthy()
       await userEvent.click(groupCheckbox())
       expect(screen.getByRole('checkbox', { name: 'React 官网' })).toBeTruthy()
+    })
+  })
+
+  describe('标记重新分类', () => {
+    it('每一条建议旁边都有一个默认不勾的「标记重新分类」', () => {
+      render(<ReviewStep />)
+      const checkboxes = screen.getAllByRole('checkbox', { name: '标记重新分类' }) as HTMLInputElement[]
+      // fixture 两条建议共享同一个目标目录，是同一个组——两条都渲染了自己的勾选框
+      expect(checkboxes).toHaveLength(2)
+      expect(checkboxes.every((c) => !c.checked)).toBe(true)
+    })
+
+    it('勾上就写进 reclassifyMarked，再点一下取消', async () => {
+      render(<ReviewStep />)
+      const [first] = screen.getAllByRole('checkbox', { name: '标记重新分类' })
+      await userEvent.click(first!)
+      expect(useStore.getState().reclassifyMarked.has('100')).toBe(true)
+      await userEvent.click(first!)
+      expect(useStore.getState().reclassifyMarked.has('100')).toBe(false)
+    })
+
+    it('一条都没标记时，「重新分类选中项」按钮不出现——不常驻一个多数时候没用的按钮', () => {
+      render(<ReviewStep />)
+      expect(screen.queryByRole('button', { name: /重新分类选中的/ })).toBeNull()
+    })
+
+    it('标记之后按钮出现，带着数量', async () => {
+      render(<ReviewStep />)
+      const [first] = screen.getAllByRole('checkbox', { name: '标记重新分类' })
+      await userEvent.click(first!)
+      expect(screen.getByRole('button', { name: '重新分类选中的 1 条' })).toBeTruthy()
+    })
+
+    it('点按钮调用 reclassifySelected', async () => {
+      const reclassifySelected = vi.fn(async () => {})
+      useStore.setState({ reclassifySelected })
+      render(<ReviewStep />)
+      const [first] = screen.getAllByRole('checkbox', { name: '标记重新分类' })
+      await userEvent.click(first!)
+      await userEvent.click(screen.getByRole('button', { name: '重新分类选中的 1 条' }))
+      expect(reclassifySelected).toHaveBeenCalledTimes(1)
     })
   })
 

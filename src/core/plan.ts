@@ -1,3 +1,4 @@
+import type { Locale } from './locale'
 import { stripNumberPrefix } from './map'
 import type { TitleRewrite } from './titles'
 import type {
@@ -444,6 +445,97 @@ export function retargetRow(plan: OrganizePlan, bookmarkId: string, targetId: st
         ? { ...o, toCategoryId: targetId, toTemporaryId: isTemporary ? targetId : null }
         : o,
     ),
+  }
+}
+
+/** 重新分类之后依然没有更合适的目录时用这句——不能沿用模型原来那句「无合适目录」，那是问过一次之后才有的结论，这次问的是「排除原目录之后还有没有别的」。 */
+function reclassifyNoBetterReason(locale: Locale): string {
+  return locale === 'zh_CN'
+    ? '排除原目录后重新问了一次，依然没有更合适的选择，保留原建议'
+    : 'Asked again with the original folder excluded, but nothing better turned up — kept the original suggestion'
+}
+
+/**
+ * 与上面那句分开：`source === 'none'` 是这次请求本身失败了（网络/接口错误），
+ * 模型压根没来得及给出任何答案。用「依然没有更合适的选择」形容它是在说谎——
+ * 那句话暗示模型认真看过、想过、没找到，事实是它根本没被问成。
+ */
+function reclassifyRequestFailedReason(locale: Locale): string {
+  return locale === 'zh_CN'
+    ? '这次重新分类的请求失败了，保留原建议'
+    : 'This reclassify request failed — kept the original suggestion'
+}
+
+/**
+ * 把「重新分类」的结果拼回方案里。只处理 `results` 里点到名的那些书签，
+ * 其余的行原样不动。
+ *
+ * 纯函数，与 retargetRow 同一个理由：行与移动操作一起改，两处不能只改一处。
+ *
+ * 三种结果分别处理：
+ * 1. `targetCategoryId` 非空——换了个新目标，`toPath`/`toCategoryId`/`confidence`/
+ *    `reason`/`source` 一起更新，与 `retargetRow` 认同一份「是不是临时 id」的逻辑
+ *    （这次问到的目标完全可能落在本轮之前就建出来的新目录上，同样要判临时 id）。
+ * 2. `targetCategoryId` 为空、或 `source === 'none'`（请求失败）——**保留原目标**，
+ *    只换一句理由。不能把这条从 `plan.rows` 挪去 `plan.unchanged`：那会让它从
+ *    「勾选框决定要不要移」的清单里突然消失，用户看不出发生了什么；保留在原地、
+ *    换一句「问过了、没有更好的」，比消失诚实。
+ * 3. `results` 里没提到的书签——原样不动，这个函数不该影响没被选中重新分类的行。
+ *
+ * 不改 accepted：这次给出的答案是不是要采纳，由调用方（store）决定——
+ * 新目标要不要顺手勾上是一条产品决定，不该埋进这个纯函数里。
+ */
+export function applyReclassifyResults(
+  plan: OrganizePlan,
+  results: Classification[],
+  locale: Locale,
+): OrganizePlan {
+  const byId = new Map(results.map((r) => [r.bookmarkId, r]))
+  if (byId.size === 0) return plan
+
+  const candidateById = new Map(plan.candidates.map((c) => [c.id, c]))
+  const temporaryIds = new Set(
+    plan.operations.flatMap((o) => (o.type === 'create_folder' ? [o.temporaryId] : [])),
+  )
+  const prefix = plan.mergeRoot === null ? [] : [plan.mergeRoot.title]
+
+  return {
+    ...plan,
+    rows: plan.rows.map((row) => {
+      const result = byId.get(row.bookmarkId)
+      if (result === undefined) return row
+      if (result.source === 'none') {
+        return { ...row, reason: reclassifyRequestFailedReason(locale) }
+      }
+      if (result.targetCategoryId === null) {
+        return { ...row, reason: reclassifyNoBetterReason(locale) }
+      }
+      const target = candidateById.get(result.targetCategoryId)
+      // 查不到就宁可不改：目标 id 理应来自这次分类用的候选表，查不到多半是数据
+      // 对不上，改了反而会指向一个方案里根本没有的目录
+      if (target === undefined) return row
+      return {
+        ...row,
+        toPath: [...prefix, ...target.path],
+        toCategoryId: result.targetCategoryId,
+        confidence: result.confidence,
+        reason: result.reason,
+        source: result.source,
+      }
+    }),
+    operations: plan.operations.map((op) => {
+      if (op.type !== 'move_bookmark') return op
+      const result = byId.get(op.bookmarkId)
+      if (result === undefined || result.targetCategoryId === null || result.source === 'none') return op
+      if (!candidateById.has(result.targetCategoryId)) return op
+      return {
+        ...op,
+        toCategoryId: result.targetCategoryId,
+        toTemporaryId: temporaryIds.has(result.targetCategoryId) ? result.targetCategoryId : null,
+        confidence: result.confidence,
+        reason: result.reason,
+      }
+    }),
   }
 }
 

@@ -128,7 +128,9 @@ export function Shell({ children, organizeContent }: { children: ReactNode; orga
                 busy={busy}
                 progress={progress}
                 logs={logs}
-                {...(busyKind === 'analyze' || busyKind === 'checkLinks' ? { onCancel: () => void cancel() } : {})}
+                {...(busyKind === 'analyze' || busyKind === 'checkLinks' || busyKind === 'reclassify'
+                  ? { onCancel: () => void cancel() }
+                  : {})}
               />
             )}
           </>

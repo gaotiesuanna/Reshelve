@@ -6,7 +6,7 @@ import { DEFAULT_SETTINGS, SETTINGS_KEY, activeLlm, loadCache, saveSettings, typ
 import { currentLocale, setLocale, t } from '@/i18n'
 import { withLlm } from '../fakes/settings'
 import { LlmError, type LlmClient } from '@/llm/client'
-import type { OrganizePlan } from '@/core/types'
+import type { OrganizePlan, PlanRow } from '@/core/types'
 import type { ProgressEvent } from '@/background/events'
 import { MAX_SIBLINGS, stripNumberPrefix } from '@/core/tree'
 import type { OrganizeMode } from '@/core/mode'
@@ -2047,6 +2047,233 @@ describe('onlyLooseInAdditive：只处理散落书签', () => {
 
     expect(res.ok).toBe(true)
     expect(res.plan.rows.map((r) => r.bookmarkId).sort()).toEqual([...REBUILD_IDS].sort())
+  })
+})
+
+/**
+ * 复核页对某几条建议不满意，选中它们、排除各自当前的目标目录，重新问一次模型。
+ */
+describe('reclassify：排除原目录重新分类', () => {
+  const reclassifyTree = [
+    { id: '0', title: '', children: [
+      { id: '1', title: '书签栏', children: [
+        { id: '10', title: '前端', children: [] },
+        { id: '11', title: '后端', children: [] },
+        { id: '12', title: '设计', children: [] },
+        { id: '99', title: '收件箱', children: [
+          { id: 'a', title: 'A', url: 'https://a.dev' },
+          { id: 'b', title: 'B', url: 'https://b.dev' },
+        ]},
+      ]},
+    ]},
+  ]
+
+  function baseReclassifyPlan(): OrganizePlan {
+    const candidates = [
+      { id: '10', path: ['前端'] }, { id: '11', path: ['后端'] }, { id: '12', path: ['设计'] },
+    ]
+    const rows: PlanRow[] = [
+      {
+        bookmarkId: 'a', title: 'A', url: 'https://a.dev', fromPath: ['收件箱'], toPath: ['前端'],
+        toCategoryId: '10', confidence: 0.4, reason: '原来的理由', source: 'llm',
+      },
+      {
+        bookmarkId: 'b', title: 'B', url: 'https://b.dev', fromPath: ['收件箱'], toPath: ['后端'],
+        toCategoryId: '11', confidence: 0.9, reason: '另一条', source: 'llm',
+      },
+    ]
+    const operations: OrganizePlan['operations'] = rows.map((r) => ({
+      type: 'move_bookmark', bookmarkId: r.bookmarkId, fromParentId: '99', originalIndex: 0,
+      toCategoryId: r.toCategoryId, toTemporaryId: null, confidence: r.confidence, reason: r.reason,
+    }))
+    return {
+      id: 'p', createdAt: 1, scopeRootIds: ['1'], rebuildStructure: false,
+      candidates, operations, rows, unchanged: [], warnings: [], tags: [], mergeRoot: null,
+      summary: {
+        totalBookmarks: 2, movedBookmarks: 2, unchangedBookmarks: 0,
+        createdFolders: 0, renamedFolders: 0, renamedBookmarks: 0, lowConfidenceItems: 1,
+      },
+    }
+  }
+
+  function setupReclassify(complete: LlmClient['complete']) {
+    const fake = createFakeBookmarks(reclassifyTree)
+    const ports = { bookmarks: fake.api, storage: createFakeStorage() }
+    return { fake, ports, deps: { createClient: () => ({ complete }), now: () => 1 } }
+  }
+
+  it('换到新目标：行与移动操作都更新，原目标不在候选提示词里', async () => {
+    const complete = vi.fn(async (prompt: string) => {
+      // 「前端」是书签 a 的原目标，理应被排除，不该出现在候选清单里
+      expect(prompt).not.toContain('目录=前端')
+      return { results: [{ bookmark_id: 'a', target_category_id: '12', confidence: 0.95, reason: '其实是设计' }] }
+    })
+    const { ports, deps } = setupReclassify(complete)
+    await saveSettings(ports, {
+      ...DEFAULT_SETTINGS,
+      ...withLlm({ baseUrl: 'https://x/v1', apiKey: 'sk-x', model: 'm' }),
+    })
+    const plan = baseReclassifyPlan()
+
+    const res = await handle(
+      ports, { kind: 'reclassify', plan, bookmarkIds: ['a'] }, deps,
+    ) as { ok: boolean; plan: OrganizePlan }
+
+    expect(res.ok).toBe(true)
+    const row = res.plan.rows.find((r) => r.bookmarkId === 'a')!
+    expect(row.toCategoryId).toBe('12')
+    expect(row.toPath).toEqual(['设计'])
+    expect(row.confidence).toBe(0.95)
+    expect(row.reason).toBe('其实是设计')
+    const move = res.plan.operations.find((o) => o.type === 'move_bookmark' && o.bookmarkId === 'a')!
+    expect(move).toMatchObject({ toCategoryId: '12' })
+  })
+
+  it('依然没有更合适的选择时，保留原目标，只换一句理由', async () => {
+    const complete = vi.fn().mockResolvedValue({
+      results: [{ bookmark_id: 'a', target_category_id: null, confidence: 0, reason: '无合适目录' }],
+    })
+    const { ports, deps } = setupReclassify(complete)
+    await saveSettings(ports, {
+      ...DEFAULT_SETTINGS,
+      ...withLlm({ baseUrl: 'https://x/v1', apiKey: 'sk-x', model: 'm' }),
+    })
+    const plan = baseReclassifyPlan()
+
+    const res = await handle(
+      ports, { kind: 'reclassify', plan, bookmarkIds: ['a'] }, deps,
+    ) as { ok: boolean; plan: OrganizePlan }
+
+    expect(res.ok).toBe(true)
+    const row = res.plan.rows.find((r) => r.bookmarkId === 'a')!
+    expect(row.toCategoryId).toBe('10')
+    expect(row.reason).toContain('依然没有更合适')
+  })
+
+  it('只重新分类选中的那条，另一条原样不动', async () => {
+    const complete = vi.fn().mockResolvedValue({
+      results: [{ bookmark_id: 'a', target_category_id: '12', confidence: 0.9, reason: 'r' }],
+    })
+    const { ports, deps } = setupReclassify(complete)
+    await saveSettings(ports, {
+      ...DEFAULT_SETTINGS,
+      ...withLlm({ baseUrl: 'https://x/v1', apiKey: 'sk-x', model: 'm' }),
+    })
+    const plan = baseReclassifyPlan()
+
+    const res = await handle(
+      ports, { kind: 'reclassify', plan, bookmarkIds: ['a'] }, deps,
+    ) as { ok: boolean; plan: OrganizePlan }
+
+    const rowB = res.plan.rows.find((r) => r.bookmarkId === 'b')!
+    expect(rowB).toEqual(plan.rows.find((r) => r.bookmarkId === 'b'))
+    // 只问了选中的那一条，没把 b 也带进这次请求
+    const askedIds = [...(complete.mock.calls[0]![0] as string).matchAll(/"bookmark_id":\s*"([^"]+)"/g)]
+      .map((m) => m[1])
+    expect(askedIds).toEqual(['a'])
+  })
+
+  it('选中多条时，排除的是它们各自目标目录的并集', async () => {
+    const complete = vi.fn(async (prompt: string) => {
+      expect(prompt).not.toContain('目录=前端')
+      expect(prompt).not.toContain('目录=后端')
+      expect(prompt).toContain('目录=设计')
+      return {
+        results: [
+          { bookmark_id: 'a', target_category_id: '12', confidence: 0.9, reason: 'r' },
+          { bookmark_id: 'b', target_category_id: '12', confidence: 0.9, reason: 'r' },
+        ],
+      }
+    })
+    const { ports, deps } = setupReclassify(complete)
+    await saveSettings(ports, {
+      ...DEFAULT_SETTINGS,
+      ...withLlm({ baseUrl: 'https://x/v1', apiKey: 'sk-x', model: 'm' }),
+    })
+    const plan = baseReclassifyPlan()
+
+    const res = await handle(
+      ports, { kind: 'reclassify', plan, bookmarkIds: ['a', 'b'] }, deps,
+    ) as { ok: boolean; plan: OrganizePlan }
+
+    expect(res.ok).toBe(true)
+    expect(res.plan.rows.every((r) => r.toCategoryId === '12')).toBe(true)
+  })
+
+  it('排除后候选一个都不剩时报错，不发起任何模型请求', async () => {
+    const complete = vi.fn()
+    const { ports, deps } = setupReclassify(complete)
+    await saveSettings(ports, {
+      ...DEFAULT_SETTINGS,
+      ...withLlm({ baseUrl: 'https://x/v1', apiKey: 'sk-x', model: 'm' }),
+    })
+    // 只留一个候选，而且正是 a 的当前目标——排除之后候选清单是空的
+    const plan = { ...baseReclassifyPlan(), candidates: [{ id: '10', path: ['前端'] }] }
+
+    const res = await handle(
+      ports, { kind: 'reclassify', plan, bookmarkIds: ['a'] }, deps,
+    ) as { ok: boolean; error?: string }
+
+    expect(res.ok).toBe(false)
+    expect(res.error).toBe(t('errNoAlternativeFolders'))
+    expect(complete).not.toHaveBeenCalled()
+  })
+
+  it('没有配置模型时报错，不发起请求', async () => {
+    const complete = vi.fn()
+    const { ports, deps } = setupReclassify(complete)
+    // 不存设置——DEFAULT_SETTINGS 的默认端点是空 Key
+    const plan = baseReclassifyPlan()
+
+    const res = await handle(
+      ports, { kind: 'reclassify', plan, bookmarkIds: ['a'] }, deps,
+    ) as { ok: boolean; error?: string }
+
+    expect(res.ok).toBe(false)
+    expect(complete).not.toHaveBeenCalled()
+  })
+
+  it('选中的书签这一刻已经不在书签树里了——原样退回 plan，不报错', async () => {
+    const complete = vi.fn()
+    const { ports, deps } = setupReclassify(complete)
+    await saveSettings(ports, {
+      ...DEFAULT_SETTINGS,
+      ...withLlm({ baseUrl: 'https://x/v1', apiKey: 'sk-x', model: 'm' }),
+    })
+    const plan = baseReclassifyPlan()
+
+    const res = await handle(
+      ports, { kind: 'reclassify', plan, bookmarkIds: ['已经删掉的书签'] }, deps,
+    ) as { ok: boolean; plan: OrganizePlan }
+
+    expect(res.ok).toBe(true)
+    expect(res.plan).toEqual(plan)
+    expect(complete).not.toHaveBeenCalled()
+  })
+
+  it('记一条日志说明几条换了目标、几条依然没有更好的', async () => {
+    const complete = vi.fn().mockResolvedValue({
+      results: [
+        { bookmark_id: 'a', target_category_id: '12', confidence: 0.9, reason: 'r' },
+        { bookmark_id: 'b', target_category_id: null, confidence: 0, reason: '无合适目录' },
+      ],
+    })
+    const { ports, deps } = setupReclassify(complete)
+    await saveSettings(ports, {
+      ...DEFAULT_SETTINGS,
+      ...withLlm({ baseUrl: 'https://x/v1', apiKey: 'sk-x', model: 'm' }),
+    })
+    const plan = baseReclassifyPlan()
+    const events: ProgressEvent[] = []
+
+    const res = await handle(ports, { kind: 'reclassify', plan, bookmarkIds: ['a', 'b'] }, {
+      ...deps, onEvent: (event: ProgressEvent) => events.push(event),
+    }) as { ok: boolean }
+
+    expect(res.ok).toBe(true)
+    const doneLog = events.find((e) => e.message.includes('重新分类完成'))
+    expect(doneLog?.message).toContain('1 个换到了新目录')
+    expect(doneLog?.message).toContain('1 个依然没有更合适的选择')
   })
 })
 

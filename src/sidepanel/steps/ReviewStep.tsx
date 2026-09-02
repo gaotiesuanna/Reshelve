@@ -40,6 +40,7 @@ function unchangedKindLabel(kind: UnchangedRow['kind']): string {
 export function ReviewStep() {
   const {
     plan: rawPlan, accepted, toggleAccepted, setRowTarget, acceptAll, rejectAll, setGroupAccepted,
+    reclassifyMarked, toggleReclassifyMark, reclassifySelected,
     apply, busy, reset, settings, scan,
   } = useStore()
   // 显示的编号必须和真正会写进书签栏的一致，所以这里用同一个重排函数
@@ -232,6 +233,16 @@ export function ReviewStep() {
       <div className="mt-3 flex flex-wrap items-center gap-1.5">
         <SecondaryButton onClick={acceptAll}>{t('reviewAcceptAll')}</SecondaryButton>
         <SecondaryButton onClick={rejectAll}>{t('reviewRejectAll')}</SecondaryButton>
+        {/* 只在真有标记时才出现——大多数时候一条都没标，常驻一个「重新分类 0 条」
+            的按钮只是噪音，不像「只看被标记的」那个筛选开关，0 本身就是有用的信息。 */}
+        {reclassifyMarked.size > 0 && (
+          <SecondaryButton onClick={() => void reclassifySelected()} disabled={busy !== null}>
+            {plural(
+              reclassifyMarked.size, 'reviewReclassifySelectedOne', 'reviewReclassifySelectedOther',
+              String(reclassifyMarked.size),
+            )}
+          </SecondaryButton>
+        )}
       </div>
 
       {/* 筛选开关：只管看得见看不见，不碰 accepted。
@@ -366,6 +377,19 @@ export function ReviewStep() {
                             <option key={candidate.id} value={candidate.id}>{candidate.path.join(' / ')}</option>
                           ))}
                         </select>
+                        {/* 拒绝、改投之外的第三条路：这条不是「模型判得不确定」，是用户
+                            自己不满意——标记它，一会儿排除当前目标再问模型一次
+                            （见 store 的 reclassifySelected）。跟改投同一个理由不嵌进
+                            上面那个 label：这是它自己的控件，不该被勾选框的点击代发。 */}
+                        <label className="col-start-2 mt-1.5 flex min-w-0 cursor-pointer items-center gap-1.5 text-xs leading-caption text-index-muted">
+                          <input
+                            type="checkbox"
+                            className="h-3.5 w-3.5 shrink-0 accent-index-ink"
+                            checked={reclassifyMarked.has(row.bookmarkId)}
+                            onChange={() => toggleReclassifyMark(row.bookmarkId)}
+                          />
+                          {t('reviewMarkReclassify')}
+                        </label>
                       </li>
                     ))}
                   </ul>

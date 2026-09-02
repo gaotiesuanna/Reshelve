@@ -1045,6 +1045,25 @@
   "reviewRejectAll": {
     "message": "全部拒绝"
   },
+  "reviewMarkReclassify": {
+    "message": "标记重新分类"
+  },
+  "reviewReclassifySelectedOne": {
+    "message": "重新分类选中的 $count$ 条",
+    "placeholders": {
+      "count": {
+        "content": "$1"
+      }
+    }
+  },
+  "reviewReclassifySelectedOther": {
+    "message": "重新分类选中的 $count$ 条",
+    "placeholders": {
+      "count": {
+        "content": "$1"
+      }
+    }
+  },
   "reviewFilterMarkedOnly": {
     "message": "只看被标记的"
   },
@@ -1274,6 +1293,9 @@
   "busyCheckingLinks": {
     "message": "正在检查链接…"
   },
+  "busyReclassifying": {
+    "message": "正在重新分类…"
+  },
   "errRetry": {
     "message": "重试"
   },
@@ -1303,6 +1325,9 @@
   },
   "errNoLooseBookmarks": {
     "message": "已开启「只处理散落书签」，但所选范围内没有直接散落、未归入任何文件夹的书签。关闭这个选项可以重新判断范围内全部书签。"
+  },
+  "errNoAlternativeFolders": {
+    "message": "排除选中书签各自当前的目标目录后，候选目录里已经没有别的选项了。"
   },
   "errNoBookmarksBar": {
     "message": "找不到书签栏，无法导入。"
@@ -1618,6 +1643,28 @@
         "content": "$1"
       },
       "infolder": {
+        "content": "$2"
+      }
+    }
+  },
+  "logReclassifyStart": {
+    "message": "开始重新分类：$count$ 个书签，已排除它们各自当前的目标目录，剩 $candidates$ 个候选",
+    "placeholders": {
+      "count": {
+        "content": "$1"
+      },
+      "candidates": {
+        "content": "$2"
+      }
+    }
+  },
+  "logReclassifyDone": {
+    "message": "重新分类完成：$changed$ 个换到了新目录，$unchanged$ 个依然没有更合适的选择",
+    "placeholders": {
+      "changed": {
+        "content": "$1"
+      },
+      "unchanged": {
         "content": "$2"
       }
     }

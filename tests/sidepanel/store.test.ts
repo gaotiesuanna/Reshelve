@@ -513,6 +513,101 @@ describe('放弃这一轮之后，在途结果不再落地', () => {
   })
 })
 
+describe('重新分类选中的建议', () => {
+  const chromeGlobal = globalThis as unknown as { chrome: Record<string, unknown> }
+  const originalPermissions = chromeGlobal.chrome.permissions
+  beforeEach(() => {
+    chromeGlobal.chrome.permissions = { contains: () => Promise.resolve(true) }
+    vi.mocked(send).mockReset()
+    const plan = makePlan()
+    useStore.setState({
+      step: 'review', plan, accepted: new Set(plan.rows.map((r) => r.bookmarkId)),
+      reclassifyMarked: new Set(['g0']),
+      settings: { ...DEFAULT_SETTINGS, ...withLlm({ ...activeLlm(DEFAULT_SETTINGS), apiKey: 'sk-x' }) },
+      busy: null, busyKind: null, error: null, logs: [],
+    })
+  })
+  afterEach(() => {
+    chromeGlobal.chrome.permissions = originalPermissions
+  })
+
+  it('勾选/取消标记', () => {
+    useStore.setState({ reclassifyMarked: new Set() })
+    useStore.getState().toggleReclassifyMark('g0')
+    expect(useStore.getState().reclassifyMarked.has('g0')).toBe(true)
+    useStore.getState().toggleReclassifyMark('g0')
+    expect(useStore.getState().reclassifyMarked.has('g0')).toBe(false)
+  })
+
+  it('没有 plan 或没有标记任何书签时什么都不做', async () => {
+    useStore.setState({ reclassifyMarked: new Set() })
+    await useStore.getState().reclassifySelected()
+    expect(send).not.toHaveBeenCalled()
+  })
+
+  it('把标记的书签 id 与当前 plan 一起发给后台', async () => {
+    vi.mocked(send).mockImplementation((req: { kind: string }) =>
+      req.kind === 'reclassify'
+        ? (Promise.resolve({ ok: true, kind: 'reclassify', plan: makePlan() }) as never)
+        : (Promise.resolve({ ok: true }) as never))
+
+    await useStore.getState().reclassifySelected()
+    const call = vi.mocked(send).mock.calls
+      .map(([req]) => req as { kind: string; bookmarkIds?: string[] })
+      .find((req) => req.kind === 'reclassify')
+    expect(call?.bookmarkIds).toEqual(['g0'])
+  })
+
+  it('成功后换了目标的书签自动标记 accepted，标记清空，busy 复位', async () => {
+    const original = makePlan()
+    const changed = {
+      ...original,
+      rows: original.rows.map((r) => (r.bookmarkId === 'g0' ? { ...r, toCategoryId: 'tmp:3' } : r)),
+    }
+    useStore.setState({ accepted: new Set(), reclassifyMarked: new Set(['g0']) })
+    vi.mocked(send).mockImplementation((req: { kind: string }) =>
+      req.kind === 'reclassify'
+        ? (Promise.resolve({ ok: true, kind: 'reclassify', plan: changed }) as never)
+        : (Promise.resolve({ ok: true }) as never))
+
+    await useStore.getState().reclassifySelected()
+
+    expect(useStore.getState().plan).toBe(changed)
+    expect(useStore.getState().accepted.has('g0')).toBe(true)
+    expect(useStore.getState().reclassifyMarked.has('g0')).toBe(false)
+    expect(useStore.getState().busy).toBeNull()
+  })
+
+  it('依然没有更好选择（目标没变）时不动 accepted', async () => {
+    const original = makePlan()
+    useStore.setState({ accepted: new Set(), reclassifyMarked: new Set(['g0']) })
+    vi.mocked(send).mockImplementation((req: { kind: string }) =>
+      req.kind === 'reclassify'
+        // 后台返回的 plan 里 g0 的 toCategoryId 跟原来一样——重新分类没换到新目标
+        ? (Promise.resolve({ ok: true, kind: 'reclassify', plan: original }) as never)
+        : (Promise.resolve({ ok: true }) as never))
+
+    await useStore.getState().reclassifySelected()
+
+    expect(useStore.getState().accepted.has('g0')).toBe(false)
+    // 标记照样清掉——这一条已经问过了，不该继续挂在「待重新分类」的清单里
+    expect(useStore.getState().reclassifyMarked.has('g0')).toBe(false)
+  })
+
+  it('失败时不清空标记——用户不用重新勾一遍，再点一次就是完整的重试', async () => {
+    vi.mocked(send).mockImplementation((req: { kind: string }) =>
+      req.kind === 'reclassify'
+        ? (Promise.resolve({ ok: false, error: '网络错误' }) as never)
+        : (Promise.resolve({ ok: true }) as never))
+
+    await useStore.getState().reclassifySelected()
+
+    expect(useStore.getState().reclassifyMarked.has('g0')).toBe(true)
+    expect(useStore.getState().error).toBe('网络错误')
+    expect(useStore.getState().busy).toBeNull()
+  })
+})
+
 describe('失败之后的重试', () => {
   // analyze 开头要问一次 host 权限，jsdom 里没有 chrome.permissions（同上面「放弃这一轮」的桩）
   const chromeGlobal = globalThis as unknown as { chrome: Record<string, unknown> }

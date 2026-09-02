@@ -1045,6 +1045,25 @@
   "reviewRejectAll": {
     "message": "Reject all"
   },
+  "reviewMarkReclassify": {
+    "message": "Mark for reclassify"
+  },
+  "reviewReclassifySelectedOne": {
+    "message": "Reclassify $count$ selected",
+    "placeholders": {
+      "count": {
+        "content": "$1"
+      }
+    }
+  },
+  "reviewReclassifySelectedOther": {
+    "message": "Reclassify $count$ selected",
+    "placeholders": {
+      "count": {
+        "content": "$1"
+      }
+    }
+  },
   "reviewFilterMarkedOnly": {
     "message": "Flagged only"
   },
@@ -1274,6 +1293,9 @@
   "busyCheckingLinks": {
     "message": "Checking links…"
   },
+  "busyReclassifying": {
+    "message": "Reclassifying…"
+  },
   "errRetry": {
     "message": "Retry"
   },
@@ -1303,6 +1325,9 @@
   },
   "errNoLooseBookmarks": {
     "message": "\"Only classify loose bookmarks\" is on, but nothing in the selected scope sits directly loose, outside every folder. Turn the option off to reclassify everything in scope."
+  },
+  "errNoAlternativeFolders": {
+    "message": "After excluding each selected bookmark's current folder, there are no other candidate folders left."
   },
   "errNoBookmarksBar": {
     "message": "Cannot find the bookmarks bar, so importing is not possible."
@@ -1618,6 +1643,28 @@
         "content": "$1"
       },
       "infolder": {
+        "content": "$2"
+      }
+    }
+  },
+  "logReclassifyStart": {
+    "message": "Reclassifying $count$ bookmarks, each with its current target folder excluded, against $candidates$ remaining candidates",
+    "placeholders": {
+      "count": {
+        "content": "$1"
+      },
+      "candidates": {
+        "content": "$2"
+      }
+    }
+  },
+  "logReclassifyDone": {
+    "message": "Reclassify done: $changed$ moved to a new folder, $unchanged$ still had nothing better",
+    "placeholders": {
+      "changed": {
+        "content": "$1"
+      },
+      "unchanged": {
         "content": "$2"
       }
     }
