@@ -19,18 +19,24 @@ export function Detail({
   label,
   flush = false,
   defaultOpen = false,
+  wide = false,
   children,
 }: {
   label: string
   flush?: boolean
   defaultOpen?: boolean
+  /**
+   * 标题长过「说明」时取消 5rem 左列：按钮通栏，展开内容跟在下面。
+   * 「N 个散落书签」中英都塞不进那一列。
+   */
+  wide?: boolean
   children: ReactNode
 }) {
   const [expanded, setExpanded] = useState(defaultOpen)
   const pad = flush ? 'px-3' : 'px-2'
   return (
     <dl className={`${flush ? '' : 'border-t border-index-line'} text-xs leading-body`}>
-      <div className={`grid grid-cols-[5rem_minmax(0,1fr)] ${flush ? '' : 'border-b border-index-line'}`}>
+      <div className={`${wide ? '' : 'grid grid-cols-[5rem_minmax(0,1fr)]'} ${flush ? '' : 'border-b border-index-line'}`}>
         <dt>
           <button
             type="button"

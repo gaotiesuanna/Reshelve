@@ -858,6 +858,25 @@
   "prefsLooseOnlyBody": {
     "message": "选「归入现有目录」时，每一轮都会把范围内全部书签重新判断一遍——这样才抓得出已经在某个文件夹里、但放错了的书签，代价是每轮都要为全部书签跑一次分类（已缓存的除外）。选这一项能省下这笔钱，但放错的书签不会再被自动纠正，只能手动移动，或改选「归入现有目录」跑一次全量整理。"
   },
+  "prefsLooseListToggleOne": {
+    "message": "$count$ 个散落书签",
+    "placeholders": {
+      "count": {
+        "content": "$1"
+      }
+    }
+  },
+  "prefsLooseListToggleOther": {
+    "message": "$count$ 个散落书签",
+    "placeholders": {
+      "count": {
+        "content": "$1"
+      }
+    }
+  },
+  "prefsLooseListEmpty": {
+    "message": "范围内没有直接散落、未归入任何文件夹的书签。"
+  },
   "settingsGithubTitle": {
     "message": "统一 GitHub 书签标题"
   },

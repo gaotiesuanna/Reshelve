@@ -40,6 +40,21 @@ const tidyScan = scanOf(
   ],
 )
 
+/**
+ * 已整理过、但范围根下还挂着两条没进文件夹的书签。编号前缀仍过线，detectMode
+ * 继续判 additive；散落比例也够不上 rebuild 护栏（总量 < MIN_JUDGED_BOOKMARKS）。
+ */
+const tidyScanWithLoose = scanOf(
+  [ROOT, folder('10', '01 前端', '1', 1), folder('11', '02 后端', '1', 1)],
+  [
+    ...Array.from({ length: 3 }, (_, i) => bookmark(`a${i}`, '10')),
+    ...Array.from({ length: 3 }, (_, i) => bookmark(`b${i}`, '11')),
+    { id: 'loose1', title: 'MDN', url: 'https://developer.mozilla.org/', parentId: '1', index: 0, currentPath: [] },
+    { id: 'loose2', title: '', url: 'https://github.com/foo/bar', parentId: '1', index: 1, currentPath: [] },
+  ],
+)
+
+
 /** 一个目录都没有，detectMode 判 rebuild。 */
 const messyScan = scanOf([ROOT], Array.from({ length: 5 }, (_, i) => bookmark(`l${i}`, '1')))
 
@@ -229,6 +244,77 @@ describe('PreferencesStep 整理方式三选一', () => {
     expect(screen.queryByRole('radiogroup', { name: '整理方式' })).toBeNull()
   })
 })
+
+/**
+ * 选「只处理散落书签」时，用户得能点开看这一轮实际会送去分类的是哪些地址。
+ * 说明文字只讲规则，不报名单；名单默认收起，避免一选中就用一长串 URL 把下面
+ * 「开始 AI 分析」顶出视口。
+ */
+describe('PreferencesStep 散落书签名单', () => {
+  function radioGroup(): HTMLElement {
+    return screen.getByRole('radiogroup', { name: '整理方式' })
+  }
+  function radio(name: string): HTMLInputElement {
+    return within(radioGroup()).getByRole('radio', { name }) as HTMLInputElement
+  }
+  function listToggle(name: string): HTMLButtonElement {
+    return within(radioGroup()).getByRole('button', { name }) as HTMLButtonElement
+  }
+
+  it('没选这项时不出现名单按钮——三个选项保持同样的一行标题 + 说明', () => {
+    setup(tidyScanWithLoose)
+    render(<PreferencesStep />)
+    expect(within(radioGroup()).queryByRole('button', { name: /散落书签/ })).toBeNull()
+  })
+
+  it('选中后出现「N 个散落书签」按钮，默认收起，点开才看到地址', async () => {
+    setup(tidyScanWithLoose)
+    render(<PreferencesStep />)
+    await userEvent.click(radio('只处理散落书签'))
+
+    const toggle = listToggle('2 个散落书签')
+    expect(toggle.getAttribute('aria-expanded')).toBe('false')
+    expect(screen.queryByText('https://developer.mozilla.org/')).toBeNull()
+    expect(screen.queryByText('https://github.com/foo/bar')).toBeNull()
+
+    await userEvent.click(toggle)
+    expect(toggle.getAttribute('aria-expanded')).toBe('true')
+    expect(screen.getByText('MDN')).toBeTruthy()
+    expect(screen.getByText('https://developer.mozilla.org/')).toBeTruthy()
+    expect(screen.getByText('https://github.com/foo/bar')).toBeTruthy()
+  })
+
+  it('名单只含范围根下的散落书签，已经在文件夹里的不出现', async () => {
+    setup(tidyScanWithLoose)
+    render(<PreferencesStep />)
+    await userEvent.click(radio('只处理散落书签'))
+    await userEvent.click(listToggle('2 个散落书签'))
+
+    expect(screen.queryByText('https://example.com/a0')).toBeNull()
+    expect(screen.queryByText('https://example.com/b0')).toBeNull()
+  })
+
+  it('范围内一条散落都没有：按钮仍在，展开后说明是空的', async () => {
+    setup(tidyScan)
+    render(<PreferencesStep />)
+    await userEvent.click(radio('只处理散落书签'))
+
+    const toggle = listToggle('0 个散落书签')
+    await userEvent.click(toggle)
+    expect(screen.getByText('范围内没有直接散落、未归入任何文件夹的书签。')).toBeTruthy()
+  })
+
+  it('改选别的项之后名单按钮跟着消失', async () => {
+    setup(tidyScanWithLoose)
+    render(<PreferencesStep />)
+    await userEvent.click(radio('只处理散落书签'))
+    expect(listToggle('2 个散落书签')).toBeTruthy()
+
+    await userEvent.click(radio('归入现有目录（默认）'))
+    expect(within(radioGroup()).queryByRole('button', { name: /散落书签/ })).toBeNull()
+  })
+})
+
 
 /**
  * 模型配置与「统一 GitHub 标题」搬进设置页之后的反向守卫：偏好页只留每轮会变的东西。

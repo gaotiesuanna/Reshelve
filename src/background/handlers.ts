@@ -9,7 +9,7 @@ import {
   applyReclassifyResults, buildPlan, type FolderMoveSpec, type NewFolderSpec, type RenameFolderSpec,
 } from '@/core/plan'
 import { MIN_FOLDER_BOOKMARKS, pruneReason, pruneSmallFolders } from '@/core/prune'
-import { findScopeRoots, scanTree } from '@/core/scan'
+import { findScopeRoots, looseBookmarks, scanTree } from '@/core/scan'
 import { detectMode } from '@/core/mode'
 import { planTitleRewrites } from '@/core/titles'
 import { buildCategoryTree, MAX_SIBLINGS as PRODUCT_MAX_SIBLINGS } from '@/core/tree'
@@ -363,9 +363,7 @@ export async function handle(
         // 从零设计整棵树，不存在「只处理一部分」这回事。
         const rootIds = new Set(roots.map((r) => r.id))
         const onlyLoose = !rebuild && settings.onlyLooseInAdditive
-        const toClassify = onlyLoose
-          ? scan.bookmarks.filter((b) => rootIds.has(b.parentId))
-          : scan.bookmarks
+        const toClassify = onlyLoose ? looseBookmarks(scan) : scan.bookmarks
         // 提前拦住、不建缓存连接也不建 client 请求：省的不只是一次没意义的
         // 「0 条书签的分类」空转，还替用户省下了本可以避免的一次模型调用判断。
         if (onlyLoose && toClassify.length === 0) {

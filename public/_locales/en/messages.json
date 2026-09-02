@@ -858,6 +858,25 @@
   "prefsLooseOnlyBody": {
     "message": "Choosing \"File into existing folders\" reclassifies every bookmark in scope on every run — that's what catches a bookmark that's already in a folder but filed wrong, at the cost of running classification over everything each time (cached ones aside). This option saves that cost, but a misfiled bookmark won't be corrected automatically anymore — move it by hand, or switch back to \"File into existing folders\" for one full pass."
   },
+  "prefsLooseListToggleOne": {
+    "message": "$count$ loose bookmark",
+    "placeholders": {
+      "count": {
+        "content": "$1"
+      }
+    }
+  },
+  "prefsLooseListToggleOther": {
+    "message": "$count$ loose bookmarks",
+    "placeholders": {
+      "count": {
+        "content": "$1"
+      }
+    }
+  },
+  "prefsLooseListEmpty": {
+    "message": "Nothing in this scope sits directly loose, outside every folder."
+  },
   "settingsGithubTitle": {
     "message": "Normalize GitHub bookmark titles"
   },

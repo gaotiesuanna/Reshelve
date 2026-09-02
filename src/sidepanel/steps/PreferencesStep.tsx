@@ -1,7 +1,7 @@
 import { useMemo } from 'react'
-import { scopeFolderPaths } from '@/core/scan'
+import { looseBookmarks, scopeFolderPaths } from '@/core/scan'
 import { detectMode } from '@/core/mode'
-import { currentLocale, t } from '@/i18n'
+import { currentLocale, plural, t } from '@/i18n'
 import { isLocalBaseUrl, isModelConfigured } from '@/llm/config'
 import { activeLlm, type Endpoint } from '@/storage/settings'
 import { useStore } from '../store'
@@ -62,6 +62,10 @@ export function PreferencesStep() {
   const scopePaths = useMemo(
     () => scopeFolderPaths(tree, [...checkedIds]),
     [tree, checkedIds],
+  )
+  const loose = useMemo(
+    () => (scan === null ? [] : looseBookmarks(scan)),
+    [scan],
   )
   if (scan === null || decision === null) return null
   // judgedMessy 是自动判断本身的结论，不受 modeOverride 影响——它决定要不要给出
@@ -144,6 +148,36 @@ export function PreferencesStep() {
                   <Detail flush defaultOpen label={detailLabel()}>
                     {`${t('prefsLooseOnlySummary')} ${t('prefsLooseOnlyBody')}`}
                   </Detail>
+                  {!rebuild && settings.onlyLooseInAdditive && (
+                    <Detail
+                      flush
+                      wide
+                      label={plural(
+                        loose.length,
+                        'prefsLooseListToggleOne',
+                        'prefsLooseListToggleOther',
+                        String(loose.length),
+                      )}
+                    >
+                      {loose.length === 0 ? (
+                        t('prefsLooseListEmpty')
+                      ) : (
+                        <ul className="max-h-48 space-y-1.5 overflow-y-auto">
+                          {loose.map((item) => {
+                            const title = item.title.trim()
+                            return (
+                              <li key={item.id} className="min-w-0">
+                                {title !== '' && (
+                                  <div className="break-words [overflow-wrap:anywhere]">{title}</div>
+                                )}
+                                <div className="break-all text-index-faint">{item.url}</div>
+                              </li>
+                            )
+                          })}
+                        </ul>
+                      )}
+                    </Detail>
+                  )}
 
                   <label className={`${choiceRow} hover:bg-index-blue-soft`}>
                     <input

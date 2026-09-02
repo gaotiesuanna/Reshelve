@@ -115,3 +115,15 @@ export function scanTree(tree: BookmarkNode[], scopeRootIds: string[]): ScanResu
 
   return { bookmarks, folders, stats }
 }
+
+/**
+ * 直接挂在范围根底下、一层都没进的书签。
+ *
+ * 与 detectMode 的 reasonLoose、onlyLooseInAdditive 分类同一把尺子：
+ * scanTree 只给范围根 depth === 0。
+ */
+export function looseBookmarks(scan: ScanResult): BookmarkItem[] {
+  const rootIds = new Set(scan.folders.filter((f) => f.depth === 0).map((f) => f.id))
+  return scan.bookmarks.filter((b) => rootIds.has(b.parentId))
+}
+

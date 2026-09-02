@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { scanTree, scopeFolderPaths } from '@/core/scan'
+import { looseBookmarks, scanTree, scopeFolderPaths } from '@/core/scan'
 import type { BookmarkNode } from '@/core/ports'
 
 const tree: BookmarkNode[] = [
@@ -70,6 +70,27 @@ describe('scanTree', () => {
     expect(result.stats.totalBookmarks).toBe(0)
   })
 })
+
+/**
+ * 「散落」= 直接挂在范围根底下，一层都没进。偏好页名单和 onlyLooseInAdditive
+ * 分类用同一把尺子，所以抽成纯函数，两边各自再写一遍 filter 迟早会漂。
+ */
+describe('looseBookmarks', () => {
+  it('只返回范围根下、没进任何文件夹的书签', () => {
+    const scan = scanTree(tree, ['1'])
+    expect(looseBookmarks(scan).map((b) => b.id)).toEqual(['12'])
+  })
+
+  it('已经进了子文件夹的书签不算散落', () => {
+    const scan = scanTree(tree, ['1'])
+    const nestedOnly = {
+      ...scan,
+      bookmarks: scan.bookmarks.filter((b) => b.parentId !== '1'),
+    }
+    expect(looseBookmarks(nestedOnly)).toEqual([])
+  })
+})
+
 
 /**
  * 选范围页要把这次勾的范围画成 /书签栏/react/ 这种路径，

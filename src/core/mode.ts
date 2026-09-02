@@ -1,5 +1,6 @@
 import type { Locale } from './locale'
 import { stripNumberPrefix } from './map'
+import { looseBookmarks } from './scan'
 import type { ScanResult } from './types'
 
 /**
@@ -67,7 +68,6 @@ function hasNumberPrefix(title: string): boolean {
  */
 export function detectMode(scan: ScanResult, locale: Locale): ModeDecision {
   // scanTree 只给范围根 depth === 0，其余目录都 >= 1
-  const roots = scan.folders.filter((f) => f.depth === 0)
   const judged = scan.folders.filter((f) => f.depth > 0)
 
   if (judged.length === 0) {
@@ -89,8 +89,7 @@ export function detectMode(scan: ScanResult, locale: Locale): ModeDecision {
 
   // 「散在根下」= 直接挂在勾中的那个目录底下，一层都没进。样本太少时一两条散落
   // 书签就能把比例推过线，够不上「明确的乱信号」，让它放行给下一条规则
-  const rootIds = new Set(roots.map((r) => r.id))
-  const loose = scan.bookmarks.filter((b) => rootIds.has(b.parentId)).length
+  const loose = looseBookmarks(scan).length
   if (
     scan.bookmarks.length >= MIN_JUDGED_BOOKMARKS &&
     loose / scan.bookmarks.length > LOOSE_BOOKMARK_RATIO
