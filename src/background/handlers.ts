@@ -16,7 +16,7 @@ import { buildCategoryTree, MAX_SIBLINGS as PRODUCT_MAX_SIBLINGS } from '@/core/
 import { deriveShape, FALLBACK_SHARE_LIMIT, MAX_LEAF, SHAPE_MAX_SIBLINGS } from '@/core/shape'
 import { clusterHomeless, dropAlreadyGrouped, planFallbackFolder, planNewFolders } from '@/core/newTopics'
 import type { Ports } from '@/core/ports'
-import type { OrganizePlan, TagResult } from '@/core/types'
+import type { CachedClassification, OrganizePlan, TagResult } from '@/core/types'
 import { applyPlan } from '@/engine/apply'
 import { applyCleanup, scanForCleanup } from '@/engine/cleanup'
 import { scanStaleBookmarks } from '@/engine/stale'
@@ -871,12 +871,31 @@ export async function handle(
         const excludedTargetIds = new Set(
           request.plan.rows.filter((r) => requestedIds.has(r.bookmarkId)).map((r) => r.toCategoryId),
         )
-        const candidates = request.plan.candidates.filter((c) => !excludedTargetIds.has(c.id))
+        const excludedCandidates = request.plan.candidates.filter((c) => !excludedTargetIds.has(c.id))
+        // 「其他」在非推翻模式下不能是重新分类的合法答案，跟 analyze 主流程同一条
+        // 规则（见上面 383 行）：它一旦是候选，模型会直接把书签扔进去，而「其他」
+        // 是本轮才因为 issue 42 变成必然存在的兜底桶——把它算作候选，重新分类
+        // 唯一可能出现的方向就是把一条原本待在真实主题目录里的书签，改判成待在
+        // 一个更差的地方。这不是「排除原目录后没有更好的答案」，是把答案变差了。
+        // 推翻模式下不挡：那条路径的候选是刚设计出来的，「其他」是这棵树自己的
+        // 一个真实叶子，不是需要提防的逃生口（与主流程第 383 行同一个判断）。
+        const candidates = request.plan.rebuildStructure
+          ? excludedCandidates
+          : dropFallbackFromCandidates(excludedCandidates, scan.folders, request.plan.scopeRootIds, locale)
         if (candidates.length === 0) {
           return { ok: false, error: t('errNoAlternativeFolders') }
         }
         const client = createClient(llm, locale)
-        const cache = await loadCache(ports)
+        // 不读、也不写共享缓存：候选表已经排除了本轮选中的目标，cacheKey 里的
+        // 候选路径集合因此天然是这一批独有的，不会撞上分析主流程留下的缓存条目，
+        // 读不到也无所谓——但如果写回去，会拿这批「排除态」特有的 key 去挤占
+        // MAX_CACHE_ENTRIES 那 10000 条的额度，换不来任何一轮会命中它们。
+        // 更要紧的是：如果读缓存，「排除原目录后依然没有更好的选择」这个结论
+        // 本身也会被写进去（fromCache 认 targetPath: null 为合法结果）——同一批
+        // 候选、同一个排除集，用户点第二次「重新分类」会静默命中缓存，什么都
+        // 没问就把上次那句「依然没有更好的」原样吐回来，跟用户「再试一次」的
+        // 意图正相反。
+        const cache = new Map<string, CachedClassification>()
         log('classify', t('logReclassifyStart', String(items.length), String(candidates.length)))
         const results = await classifyBookmarks({
           items,
@@ -889,12 +908,12 @@ export async function handle(
           isCancelled,
           locale,
           model: llm.model,
-          // additive 分类一贯的做法：无合适目录时带回 topic。这次虽然不会拿它去
-          // 开新目录（重新分类只处理选中的这几条，不值得为它们跑一遍聚簇建目录
-          // 那整套机制），但没理由让这条路径的提示词无端跟主流程长得不一样。
-          includeTopicRule: true,
+          // 跟着 plan 自己的模式走，不写死——推翻模式下这条规则本就用不上
+          // （模型在设计出来的树里永远找得到归属），写死 true 会让这条路径的
+          // 提示词在推翻模式下无端跟主流程（400 行的 includeTopicRule: !rebuild）
+          // 长得不一样。
+          includeTopicRule: !request.plan.rebuildStructure,
         })
-        await saveCache(ports, cache)
         if (isCancelled()) return CANCELLED
         const nextPlan = applyReclassifyResults(request.plan, results, locale)
         const changed = results.filter((r) => r.targetCategoryId !== null && r.source !== 'none').length
