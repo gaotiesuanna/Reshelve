@@ -30,7 +30,7 @@ const plan: OrganizePlan = {
 const applyResult: ApplyResult = {
   status: 'completed', executed: 4, skipped: [], createdFolderIds: ['20', '21'],
   removedFolders: [{ id: '30', title: '杂项', path: ['书签栏'] }],
-  sortedFolders: 0, renamedBookmarkIds: [], mergeRootId: null,
+  sortedFolders: 0, renamedBookmarkIds: [], mergeRootId: null, tempToReal: {},
   failedAt: null, error: null,
 }
 
@@ -227,7 +227,7 @@ describe('ResultStep 合并结果——清理统计不能把被合并的源目�
       tree: mergedTree,
       applyResult: {
         ...applyResult,
-        mergeRootId: '20',
+        mergeRootId: '20', tempToReal: {},
         createdFolderIds: ['20', '21'],
         removedFolders: [
           { id: '10', title: 'NiceG', path: ['书签栏'] },
@@ -259,7 +259,7 @@ describe('ResultStep 合并结果——清理统计不能把被合并的源目�
       tree: mergedTree,
       applyResult: {
         ...applyResult,
-        mergeRootId: '20',
+        mergeRootId: '20', tempToReal: {},
         createdFolderIds: ['20', '21'],
         removedFolders: [
           { id: '10', title: 'NiceG', path: ['书签栏'] },
@@ -308,7 +308,7 @@ describe('ResultStep 合并结果——"已删除"名单只能报真被删掉的
       tree: mergedTree,
       applyResult: {
         ...applyResult,
-        mergeRootId: '20',
+        mergeRootId: '20', tempToReal: {},
         createdFolderIds: ['20', '21'],
         // 只有 b_llm（'11'）真的被清空删除了，NiceG（'10'）没进这个列表
         removedFolders: [{ id: '11', title: 'b_llm', path: ['书签栏'] }],
@@ -330,7 +330,7 @@ describe('ResultStep 合并结果——"已删除"名单只能报真被删掉的
       tree: mergedTree,
       applyResult: {
         ...applyResult,
-        mergeRootId: '20',
+        mergeRootId: '20', tempToReal: {},
         createdFolderIds: ['20', '21'],
         // 两个源目录都还留着书签，removedFolders 里一个源根都没有
         removedFolders: [],
@@ -350,7 +350,7 @@ describe('ResultStep 合并结果——"已删除"名单只能报真被删掉的
       tree: mergedTree,
       applyResult: {
         ...applyResult,
-        mergeRootId: '20',
+        mergeRootId: '20', tempToReal: {},
         createdFolderIds: ['20', '21'],
         removedFolders: [
           { id: '10', title: 'NiceG', path: ['书签栏'] },
@@ -403,7 +403,7 @@ describe('ResultStep 合并结果——"已删除"名单只能报真被删掉的
       tree: mergedTree,
       applyResult: {
         ...applyResult,
-        mergeRootId: '20',
+        mergeRootId: '20', tempToReal: {},
         createdFolderIds: ['20', '21'],
         removedFolders: [
           { id: '10', title: 'NiceG', path: ['书签栏'] },

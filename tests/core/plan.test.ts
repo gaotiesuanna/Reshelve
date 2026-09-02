@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest'
 import {
-  applyReclassifyResults, buildPlan, filterAccepted, renumberPlan, retargetRow, summarize,
-  wouldStrandFolder, MARK_CONFIDENCE,
+  applyPartialResult, applyReclassifyResults, buildPlan, filterAccepted, renumberPlan, retargetRow,
+  summarize, wouldStrandFolder, MARK_CONFIDENCE,
 } from '@/core/plan'
 import type { BookmarkItem, BookmarkOperation, CategoryCandidate, Classification, OrganizePlan } from '@/core/types'
 import { makePlan } from '../fakes/plan'
@@ -847,6 +847,135 @@ describe('applyReclassifyResults', () => {
     const next = applyReclassifyResults(base(), results, 'en')
     const row = next.rows.find((r) => r.bookmarkId === 'a')!
     expect(row.reason.toLowerCase()).toContain('nothing better')
+  })
+})
+
+describe('applyPartialResult', () => {
+  /**
+   * 一批混合场景一次摆齐：
+   * - a 这次真的被应用了，目标是 tmp:1（这一轮刚建出来，realOf 之后变成 real-1）
+   * - e 没被应用，但也指向 tmp:1——同一个刚建出来的目录还有别的书签没落地，
+   *   得看到它跟着一起改口，不能只顾 a 自己
+   * - b 没被应用，指向 tmp:2（tmp:1 的子目录，这一轮没被建出来）——
+   *   父目录变真了，但 tmp:2 自己还是临时 id，子目录的 create_folder 要接上新父
+   * - c 没被应用，指向真实目录 '10'——不该被这个函数动一根手指
+   */
+  function plan(): OrganizePlan {
+    return {
+      id: 'p', createdAt: 1, scopeRootIds: ['1'], rebuildStructure: true,
+      candidates: [
+        { id: '10', path: ['前端'] },
+        { id: 'tmp:1', path: ['新主题'] },
+        { id: 'tmp:2', path: ['新主题', '子分类'] },
+      ],
+      operations: [
+        { type: 'create_folder', temporaryId: 'tmp:1', parentId: '1', parentTemporaryId: null, title: '新主题' },
+        { type: 'create_folder', temporaryId: 'tmp:2', parentId: null, parentTemporaryId: 'tmp:1', title: '子分类' },
+        { type: 'move_bookmark', bookmarkId: 'a', fromParentId: '9', originalIndex: 0, toCategoryId: 'tmp:1', toTemporaryId: 'tmp:1', confidence: 1, reason: 'r' },
+        { type: 'move_bookmark', bookmarkId: 'e', fromParentId: '9', originalIndex: 0, toCategoryId: 'tmp:1', toTemporaryId: 'tmp:1', confidence: 1, reason: 'r' },
+        { type: 'move_bookmark', bookmarkId: 'b', fromParentId: '9', originalIndex: 0, toCategoryId: 'tmp:2', toTemporaryId: 'tmp:2', confidence: 1, reason: 'r' },
+        { type: 'move_bookmark', bookmarkId: 'c', fromParentId: '9', originalIndex: 0, toCategoryId: '10', toTemporaryId: null, confidence: 1, reason: 'r' },
+        // 这三类从不看 accepted，点过一次「应用」就已经无条件跑过了
+        { type: 'move_folder', folderId: '30', fromParentId: '1', originalIndex: 0, toParentId: '1' },
+        { type: 'rename_folder', folderId: '10', oldTitle: '前端', newTitle: '01 前端' },
+        { type: 'rename_bookmark', bookmarkId: 'd', oldTitle: '旧标题', newTitle: '新标题' },
+      ],
+      rows: [
+        { bookmarkId: 'a', title: 'A', url: 'https://a', fromPath: ['收件箱'], toPath: ['新主题'], toCategoryId: 'tmp:1', confidence: 1, reason: 'r', source: 'llm' },
+        { bookmarkId: 'e', title: 'E', url: 'https://e', fromPath: ['收件箱'], toPath: ['新主题'], toCategoryId: 'tmp:1', confidence: 1, reason: 'r', source: 'llm' },
+        { bookmarkId: 'b', title: 'B', url: 'https://b', fromPath: ['收件箱'], toPath: ['新主题', '子分类'], toCategoryId: 'tmp:2', confidence: 1, reason: 'r', source: 'llm' },
+        { bookmarkId: 'c', title: 'C', url: 'https://c', fromPath: ['收件箱'], toPath: ['前端'], toCategoryId: '10', confidence: 1, reason: 'r', source: 'llm' },
+      ],
+      unchanged: [], warnings: [], tags: [], mergeRoot: null,
+      summary: {
+        totalBookmarks: 4, movedBookmarks: 4, unchangedBookmarks: 0,
+        createdFolders: 2, renamedFolders: 1, renamedBookmarks: 1, lowConfidenceItems: 0,
+      },
+    }
+  }
+
+  const appliedIds = new Set(['a'])
+  const tempToReal = { 'tmp:1': 'real-1' }
+
+  it('删掉已应用书签的行与 move_bookmark 操作', () => {
+    const next = applyPartialResult(plan(), appliedIds, tempToReal)
+    expect(next.rows.some((r) => r.bookmarkId === 'a')).toBe(false)
+    expect(next.operations.some((o) => o.type === 'move_bookmark' && o.bookmarkId === 'a')).toBe(false)
+  })
+
+  it('同一个刚建出来的目录，还没应用的书签也跟着改口指向真实 id', () => {
+    const next = applyPartialResult(plan(), appliedIds, tempToReal)
+    const rowE = next.rows.find((r) => r.bookmarkId === 'e')!
+    expect(rowE.toCategoryId).toBe('real-1')
+    const opE = next.operations.find((o) => o.type === 'move_bookmark' && o.bookmarkId === 'e')!
+    expect(opE).toMatchObject({ toCategoryId: 'real-1', toTemporaryId: null })
+  })
+
+  it('候选表里对应的临时 id 换成真实 id', () => {
+    const next = applyPartialResult(plan(), appliedIds, tempToReal)
+    expect(next.candidates.find((c) => c.id === 'real-1')).toMatchObject({ path: ['新主题'] })
+    expect(next.candidates.some((c) => c.id === 'tmp:1')).toBe(false)
+  })
+
+  it('已经建出来的目录，create_folder 操作删掉，不会被再建一次', () => {
+    const next = applyPartialResult(plan(), appliedIds, tempToReal)
+    expect(next.operations.some((o) => o.type === 'create_folder' && o.temporaryId === 'tmp:1')).toBe(false)
+  })
+
+  it('子目录还没建出来时，它的 create_folder 接上刚变真的父目录', () => {
+    const next = applyPartialResult(plan(), appliedIds, tempToReal)
+    const child = next.operations.find((o) => o.type === 'create_folder' && o.temporaryId === 'tmp:2')!
+    expect(child).toMatchObject({ parentId: 'real-1', parentTemporaryId: null })
+  })
+
+  it('子目录自己没被建出来时，指向它的 move_bookmark 原样不动', () => {
+    const next = applyPartialResult(plan(), appliedIds, tempToReal)
+    const rowB = next.rows.find((r) => r.bookmarkId === 'b')!
+    expect(rowB.toCategoryId).toBe('tmp:2')
+    const opB = next.operations.find((o) => o.type === 'move_bookmark' && o.bookmarkId === 'b')!
+    expect(opB).toMatchObject({ toCategoryId: 'tmp:2', toTemporaryId: 'tmp:2' })
+  })
+
+  it('指向真实目录、且没被应用的行原样不动', () => {
+    const next = applyPartialResult(plan(), appliedIds, tempToReal)
+    const rowC = next.rows.find((r) => r.bookmarkId === 'c')!
+    expect(rowC).toEqual(plan().rows.find((r) => r.bookmarkId === 'c'))
+  })
+
+  it('move_folder / rename_folder / rename_bookmark 一律删掉——它们从不看 accepted，点过一次「应用」就已经跑过了', () => {
+    const next = applyPartialResult(plan(), appliedIds, tempToReal)
+    expect(next.operations.some((o) => o.type === 'move_folder')).toBe(false)
+    expect(next.operations.some((o) => o.type === 'rename_folder')).toBe(false)
+    expect(next.operations.some((o) => o.type === 'rename_bookmark')).toBe(false)
+  })
+
+  it('mergeRoot 的临时 id 也跟着改口', () => {
+    const withMerge = {
+      ...plan(),
+      mergeRoot: { temporaryId: 'tmp:1', title: '合并根', sourceRootIds: ['8', '9'], sourceTitles: ['旧a', '旧b'] },
+    }
+    const next = applyPartialResult(withMerge, appliedIds, tempToReal)
+    expect(next.mergeRoot).toMatchObject({ temporaryId: 'real-1' })
+  })
+
+  it('mergeRoot 的临时 id 这一轮没被建出来时原样不动', () => {
+    const withMerge = {
+      ...plan(),
+      mergeRoot: { temporaryId: 'tmp:2', title: '合并根', sourceRootIds: ['8', '9'], sourceTitles: ['旧a', '旧b'] },
+    }
+    const next = applyPartialResult(withMerge, appliedIds, tempToReal)
+    expect(next.mergeRoot).toMatchObject({ temporaryId: 'tmp:2' })
+  })
+
+  it('没有真的建出任何目录时（tempToReal 为空），只删已应用的行，其余原样不动', () => {
+    const next = applyPartialResult(plan(), appliedIds, {})
+    expect(next.rows.map((r) => r.bookmarkId)).toEqual(['e', 'b', 'c'])
+    expect(next.candidates).toEqual(plan().candidates)
+  })
+
+  it('不改动 summary——它不是复核页的展示依据，留给 exportPlan 当这一刻的快照', () => {
+    const next = applyPartialResult(plan(), appliedIds, tempToReal)
+    expect(next.summary).toEqual(plan().summary)
   })
 })
 
