@@ -2275,6 +2275,165 @@ describe('reclassify：排除原目录重新分类', () => {
     expect(doneLog?.message).toContain('1 个换到了新目录')
     expect(doneLog?.message).toContain('1 个依然没有更合适的选择')
   })
+
+  // 「其他」在非推翻模式下不能是重新分类的合法答案：它是 issue 42 之后必然
+  // 存在的兜底桶，一旦被当成候选，模型会直接把书签塞进去——那不是「排除原
+  // 目录后确实没有更好的答案」，是把一个可能本来待在真实主题目录里的书签，
+  // 改判成待在一个更差的地方。
+  //
+  // 候选表除了「其他」还留着「设计」：dropFallbackFromCandidates 有个安全网
+  // ——排除后如果候选会变成空的，它就不动手（宁可留着「其他」也不能让候选表
+  // 归零）。留着「设计」就是为了让这条用例测的是「其他被真的挡住了」，而不是
+  // 巧合踩中了那道安全网、什么都没挡住。
+  const otherFolderTree = [
+    { id: '0', title: '', children: [
+      { id: '1', title: '书签栏', children: [
+        { id: '10', title: '前端', children: [] },
+        { id: '20', title: '其他', children: [] },
+        { id: '30', title: '设计', children: [] },
+        { id: '99', title: '收件箱', children: [
+          { id: 'a', title: 'A', url: 'https://a.dev' },
+        ]},
+      ]},
+    ]},
+  ]
+
+  function otherFolderPlan(rebuildStructure: boolean): OrganizePlan {
+    const candidates = [
+      { id: '10', path: ['前端'] }, { id: '20', path: ['其他'] }, { id: '30', path: ['设计'] },
+    ]
+    const rows: PlanRow[] = [{
+      bookmarkId: 'a', title: 'A', url: 'https://a.dev', fromPath: ['收件箱'], toPath: ['前端'],
+      toCategoryId: '10', confidence: 0.4, reason: '原来的理由', source: 'llm',
+    }]
+    return {
+      id: 'p', createdAt: 1, scopeRootIds: ['1'], rebuildStructure,
+      candidates,
+      operations: rows.map((r) => ({
+        type: 'move_bookmark', bookmarkId: r.bookmarkId, fromParentId: '99', originalIndex: 0,
+        toCategoryId: r.toCategoryId, toTemporaryId: null, confidence: r.confidence, reason: r.reason,
+      })),
+      rows, unchanged: [], warnings: [], tags: [], mergeRoot: null,
+      summary: {
+        totalBookmarks: 1, movedBookmarks: 1, unchangedBookmarks: 0,
+        createdFolders: 0, renamedFolders: 0, renamedBookmarks: 0, lowConfidenceItems: 1,
+      },
+    }
+  }
+
+  it('非推翻模式：「其他」被挡在候选之外，即使它就在 plan.candidates 里', async () => {
+    const fake = createFakeBookmarks(otherFolderTree)
+    const ports = { bookmarks: fake.api, storage: createFakeStorage() }
+    const complete = vi.fn(async (prompt: string) => {
+      expect(prompt).not.toContain('目录=其他')
+      expect(prompt).toContain('目录=设计')
+      return { results: [{ bookmark_id: 'a', target_category_id: null, confidence: 0, reason: '无合适目录' }] }
+    })
+    const deps = { createClient: () => ({ complete }), now: () => 1 }
+    await saveSettings(ports, {
+      ...DEFAULT_SETTINGS,
+      ...withLlm({ baseUrl: 'https://x/v1', apiKey: 'sk-x', model: 'm' }),
+    })
+
+    const res = await handle(
+      ports, { kind: 'reclassify', plan: otherFolderPlan(false), bookmarkIds: ['a'] }, deps,
+    ) as { ok: boolean }
+    expect(res.ok).toBe(true)
+    expect(complete).toHaveBeenCalledTimes(1)
+  })
+
+  // 推翻模式下不挡：那条路径的候选是刚设计出来的，「其他」是这棵树自己设计出的
+  // 一个真实叶子，不是需要提防的逃生口——跟 analyze 主流程对 rebuild 的处理一致。
+  it('推翻模式：「其他」不被排除，跟主流程处理 rebuild 时一致', async () => {
+    const fake = createFakeBookmarks(otherFolderTree)
+    const ports = { bookmarks: fake.api, storage: createFakeStorage() }
+    const complete = vi.fn(async (prompt: string) => {
+      expect(prompt).toContain('目录=其他')
+      return { results: [{ bookmark_id: 'a', target_category_id: '20', confidence: 0.8, reason: 'r' }] }
+    })
+    const deps = { createClient: () => ({ complete }), now: () => 1 }
+    await saveSettings(ports, {
+      ...DEFAULT_SETTINGS,
+      ...withLlm({ baseUrl: 'https://x/v1', apiKey: 'sk-x', model: 'm' }),
+    })
+
+    const res = await handle(
+      ports, { kind: 'reclassify', plan: otherFolderPlan(true), bookmarkIds: ['a'] }, deps,
+    ) as { ok: boolean }
+    expect(res.ok).toBe(true)
+    expect(complete).toHaveBeenCalledTimes(1)
+  })
+
+  // includeTopicRule 跟着 plan 自己的模式走，不写死——推翻模式下这条规则用不上
+  // （模型在刚设计出来的树里永远找得到归属），写死会让这条路径在推翻模式下的
+  // 提示词无端跟 analyze 主流程（`includeTopicRule: !rebuild`）长得不一样。
+  it('提示词的第 5 条规则（topic）只在非推翻模式下出现', async () => {
+    const complete = vi.fn(async (prompt: string) => {
+      expect(prompt).toContain('额外给出 topic')
+      return { results: [{ bookmark_id: 'a', target_category_id: null, confidence: 0, reason: '无合适目录' }] }
+    })
+    const { ports, deps } = setupReclassify(complete)
+    await saveSettings(ports, {
+      ...DEFAULT_SETTINGS,
+      ...withLlm({ baseUrl: 'https://x/v1', apiKey: 'sk-x', model: 'm' }),
+    })
+    await handle(ports, { kind: 'reclassify', plan: baseReclassifyPlan(), bookmarkIds: ['a'] }, deps)
+    expect(complete).toHaveBeenCalledTimes(1)
+  })
+
+  it('推翻模式下提示词不带第 5 条规则', async () => {
+    const complete = vi.fn(async (prompt: string) => {
+      expect(prompt).not.toContain('额外给出 topic')
+      return { results: [{ bookmark_id: 'a', target_category_id: null, confidence: 0, reason: '无合适目录' }] }
+    })
+    const { ports, deps } = setupReclassify(complete)
+    await saveSettings(ports, {
+      ...DEFAULT_SETTINGS,
+      ...withLlm({ baseUrl: 'https://x/v1', apiKey: 'sk-x', model: 'm' }),
+    })
+    const plan = { ...baseReclassifyPlan(), rebuildStructure: true }
+    await handle(ports, { kind: 'reclassify', plan, bookmarkIds: ['a'] }, deps)
+    expect(complete).toHaveBeenCalledTimes(1)
+  })
+
+  /**
+   * 重新分类是用户手动发起的重试，不该被「排除原目录后没有更好的选择」这个
+   * 结论本身的缓存挡住——那正是用户最想再试一次的那个结局。同一批候选、
+   * 同一个排除集会撞出同一个 cacheKey，如果读缓存，第二次点击会静默命中、
+   * 什么都不问就把上次那句话原样吐回来。
+   */
+  it('不读共享缓存——同样的选择再点一次会真的再问一遍模型', async () => {
+    const complete = vi.fn().mockResolvedValue({
+      results: [{ bookmark_id: 'a', target_category_id: null, confidence: 0, reason: '无合适目录' }],
+    })
+    const { ports, deps } = setupReclassify(complete)
+    await saveSettings(ports, {
+      ...DEFAULT_SETTINGS,
+      ...withLlm({ baseUrl: 'https://x/v1', apiKey: 'sk-x', model: 'm' }),
+    })
+    const plan = baseReclassifyPlan()
+
+    await handle(ports, { kind: 'reclassify', plan, bookmarkIds: ['a'] }, deps)
+    await handle(ports, { kind: 'reclassify', plan, bookmarkIds: ['a'] }, deps)
+
+    expect(complete).toHaveBeenCalledTimes(2)
+  })
+
+  it('不把这次的结果写回共享缓存——不该拿这批排除态特有的 key 挤占分析主流程的缓存额度', async () => {
+    const complete = vi.fn().mockResolvedValue({
+      results: [{ bookmark_id: 'a', target_category_id: '12', confidence: 0.9, reason: 'r' }],
+    })
+    const { ports, deps } = setupReclassify(complete)
+    await saveSettings(ports, {
+      ...DEFAULT_SETTINGS,
+      ...withLlm({ baseUrl: 'https://x/v1', apiKey: 'sk-x', model: 'm' }),
+    })
+    const plan = baseReclassifyPlan()
+
+    await handle(ports, { kind: 'reclassify', plan, bookmarkIds: ['a'] }, deps)
+
+    expect((await loadCache(ports)).size).toBe(0)
+  })
 })
 
 /** 按提示词分流的 client：推翻模式要经过抽标签、设计目录、分类三轮。 */
