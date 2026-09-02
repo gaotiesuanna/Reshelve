@@ -3,7 +3,7 @@ import { currentLocale, resolveLocale, setLocale, t } from '@/i18n'
 import type { Locale } from '@/core/locale'
 import type { ProgressEvent, ProgressPhase } from '@/background/events'
 import type { BookmarkNode } from '@/core/ports'
-import { renumberPlan, retargetRow } from '@/core/plan'
+import { applyPartialResult, renumberPlan, retargetRow } from '@/core/plan'
 import { applyStructureEdits, EMPTY_EDITS, type StructureEdits } from '@/core/structure'
 import type { OrganizeMode } from '@/core/mode'
 import type { OrganizePlan, ScanResult } from '@/core/types'
@@ -842,17 +842,49 @@ export const useStore = create<State>((set, get) => ({
     if (plan === null) return
     set({ busy: t('busyApplying'), busyKind: 'apply', error: null, progress: null, logs: [] })
     const stopKeepalive = startKeepalive(ensureConnection())
+    const accepted = get().accepted
     // 按实际会落地的目录重排编号，避免出现 01、02、04 这样的空号
     const res = await send({
       kind: 'apply',
-      plan: renumberPlan(plan, get().accepted, get().scan?.folders ?? []),
-      accepted: [...get().accepted],
+      plan: renumberPlan(plan, accepted, get().scan?.folders ?? []),
+      accepted: [...accepted],
     })
       .finally(stopKeepalive)
     // 不给重试入口：apply 失败时可能已经改了一部分书签，重跑有把同一批移动做两次的风险
     // （收场靠断点续做，不是这个按钮，见 State.retryable 的注释）
     if (!res.ok) return fail(set, res.error, null)
     if (res.kind !== 'apply') return set({ busy: null, busyKind: null })
+
+    // 还标着重新分类、没处理完的书签——这一次只是把已经确认的那部分落地，不算
+    // 整轮结束：留在复核页，把方案里刚应用过的这些摘掉，接着处理剩下的（见
+    // issues/45-partial-apply-continue.md）。判据是 reclassifyMarked，不是
+    // 「plan.rows 还剩几条」——拒绝、留着不管的行本来就该在原地，那是用户的
+    // 决定，不是「还没处理完」。
+    //
+    // 这条路径不给撤销入口：applyPartialResult 已经把这批书签从 plan 里摘掉了，
+    // 这一刻撤销会让书签物理上搬回去、但方案里已经找不到它们对应的行——
+    // 两边会对不上。撤销留给结果页，撤的是最近一次应用（含这一次），
+    // 跟「多轮整理各自独立、只能撤最近一次」是同一条既有规则，不是新限制。
+    if (get().reclassifyMarked.size > 0) {
+      // 失败重试过的（skipped）没真的被移动，得留在 accepted 与 plan 里，
+      // 下一次应用还会再试一次——ApplyResult.skipped 就是留给它们的机会
+      const skippedIds = new Set(res.result.skipped.map((s) => s.bookmarkId))
+      const appliedIds = new Set([...accepted].filter((id) => !skippedIds.has(id)))
+      set({
+        plan: applyPartialResult(plan, appliedIds, res.result.tempToReal),
+        accepted: new Set([...get().accepted].filter((id) => !appliedIds.has(id))),
+        undoAvailable: true,
+        busy: null, busyKind: null,
+      })
+      await get().refreshTree()
+      // renumberPlan 与候选表都要看当下真实的目录状态——这次应用可能新建、
+      // 清空删除、或改了名的目录，scan 不跟着刷新，下一次应用会拿着过期的
+      // 目录状态重编号，编出跟真实书签栏对不上的号
+      const scanRes = await send({ kind: 'scan', scopeRootIds: plan.scopeRootIds })
+      if (scanRes.ok && scanRes.kind === 'scan') set({ scan: scanRes.scan })
+      return
+    }
+
     set({ applyResult: res.result, undoAvailable: true, step: 'result', busy: null, busyKind: null })
     await get().refreshTree()
   },

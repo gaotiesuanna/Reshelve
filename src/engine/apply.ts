@@ -46,6 +46,18 @@ export interface ApplyResult {
   renamedBookmarkIds: string[]
   /** 合并模式下新建的容器目录的真实 id；非合并模式为 null。 */
   mergeRootId: string | null
+  /**
+   * 这次落地把哪些临时 id（`create_folder` 操作的 `temporaryId`）变成了哪个真实
+   * 文件夹 id。只收「这次真的建出来了」的那些——按 accepted 过滤后没被建的临时 id
+   * 不出现在这里。
+   *
+   * 存在的理由是「应用一半、留着剩下的继续复核」这条路（见 core/plan.ts 的
+   * applyPartialResult）：还没应用的那些书签如果恰好也指向这次刚建出来的目录，
+   * 得知道它的真实 id 才能把方案接上，不然下一次应用会拿着一个已经不存在的
+   * 临时 id 去找目标，查不到就报错——这个映射在函数内部本来就算过，只是以前
+   * 用完就扔，一次性 apply 不需要它。
+   */
+  tempToReal: Record<string, string>
   failedAt: number | null
   error: string | null
 }
@@ -218,6 +230,7 @@ export async function applyPlan(
         sortedFolders: 0,
         renamedBookmarkIds,
         mergeRootId,
+        tempToReal: Object.fromEntries(tempToReal),
         failedAt: i,
         error: String(error),
       }
@@ -253,6 +266,6 @@ export async function applyPlan(
   await saveSnapshot(ports, { ...snapshot, createdFolderIds, renamedBookmarkIds })
   return {
     status: 'completed', executed, skipped, createdFolderIds, removedFolders, sortedFolders,
-    renamedBookmarkIds, mergeRootId, failedAt: null, error: null,
+    renamedBookmarkIds, mergeRootId, tempToReal: Object.fromEntries(tempToReal), failedAt: null, error: null,
   }
 }

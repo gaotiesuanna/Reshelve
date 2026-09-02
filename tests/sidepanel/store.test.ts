@@ -629,6 +629,120 @@ describe('重新分类选中的建议', () => {
   })
 })
 
+/**
+ * A（g0/g1/f0）已经接受、B（r0/o0）还标着重新分类没处理完——「应用」这时候
+ * 应该只落地 A，留在复核页让用户接着处理 B，不是把整轮结束跳去结果页
+ * （见 issues/45-partial-apply-continue.md）。
+ */
+describe('应用时还有标记重新分类的书签——只落地已接受的，留在复核页继续', () => {
+  const chromeGlobal = globalThis as unknown as { chrome: Record<string, unknown> }
+  const originalPermissions = chromeGlobal.chrome.permissions
+  beforeEach(() => {
+    chromeGlobal.chrome.permissions = { contains: () => Promise.resolve(true) }
+  })
+  afterEach(() => {
+    chromeGlobal.chrome.permissions = originalPermissions
+  })
+
+  /**
+   * tmp:1（01 GitHub 容器）与 tmp:2（01 AI 工具，g0/g1 的目标）、tmp:3（02 前端，
+   * f0 的目标）这次真的建出来了——它们都是 A 的目标、或 A 目标的祖先。
+   * tmp:4（r0 的目标）、tmp:5（o0 的目标）没建：r0/o0 都不在 accepted 里，
+   * 服务端的 filterAccepted 根本不会把它们的 create_folder 算进「需要建」的名单。
+   */
+  function applyResultStub(): unknown {
+    return {
+      status: 'completed', executed: 3, skipped: [],
+      createdFolderIds: ['real-1', 'real-2', 'real-3'],
+      removedFolders: [], sortedFolders: 0, renamedBookmarkIds: [], mergeRootId: null,
+      tempToReal: { 'tmp:1': 'real-1', 'tmp:2': 'real-2', 'tmp:3': 'real-3' },
+      failedAt: null, error: null,
+    }
+  }
+
+  function setup(): void {
+    useStore.setState({
+      step: 'review', plan: makePlan(),
+      accepted: new Set(['g0', 'g1', 'f0']),
+      reclassifyMarked: new Set(['r0', 'o0']),
+      settings: { ...DEFAULT_SETTINGS, ...withLlm({ ...activeLlm(DEFAULT_SETTINGS), apiKey: 'sk-x' }) },
+      busy: null, busyKind: null, error: null, applyResult: null, undoAvailable: false,
+    })
+    vi.mocked(send).mockImplementation((req: { kind: string }) => {
+      if (req.kind === 'apply') return Promise.resolve({ ok: true, kind: 'apply', result: applyResultStub() }) as never
+      if (req.kind === 'get_tree') return Promise.resolve({ ok: true, kind: 'get_tree', tree: [] }) as never
+      if (req.kind === 'scan') {
+        return Promise.resolve({
+          ok: true, kind: 'scan',
+          scan: { bookmarks: [], folders: [], stats: {
+            totalBookmarks: 0, totalFolders: 0, emptyFolders: 0,
+            untitledBookmarks: 0, duplicateUrlGroups: 0, duplicateFolderGroups: 0, maxDepth: 0,
+          } },
+        }) as never
+      }
+      return Promise.resolve({ ok: true }) as never
+    })
+  }
+
+  it('不跳到结果页，留在复核页', async () => {
+    setup()
+    await useStore.getState().apply()
+    expect(useStore.getState().step).toBe('review')
+    expect(useStore.getState().applyResult).toBeNull()
+  })
+
+  it('已应用的行从方案里摘掉，reclassifyMarked 原样留着', async () => {
+    setup()
+    await useStore.getState().apply()
+    const plan = useStore.getState().plan!
+    expect(plan.rows.map((r) => r.bookmarkId).sort()).toEqual(['o0', 'r0'])
+    expect(useStore.getState().reclassifyMarked).toEqual(new Set(['r0', 'o0']))
+  })
+
+  it('已应用的书签从 accepted 里摘掉', async () => {
+    setup()
+    await useStore.getState().apply()
+    const accepted = useStore.getState().accepted
+    expect(accepted.has('g0')).toBe(false)
+    expect(accepted.has('g1')).toBe(false)
+    expect(accepted.has('f0')).toBe(false)
+  })
+
+  it('还没建出来的目录，剩下的行原样指向旧的临时 id——tempToReal 没提到它们', async () => {
+    setup()
+    await useStore.getState().apply()
+    const plan = useStore.getState().plan!
+    expect(plan.rows.find((r) => r.bookmarkId === 'r0')!.toCategoryId).toBe('tmp:4')
+    expect(plan.rows.find((r) => r.bookmarkId === 'o0')!.toCategoryId).toBe('tmp:5')
+  })
+
+  it('设为 undoAvailable，但不落 applyResult——撤销留给结果页，这里不是终点', async () => {
+    setup()
+    await useStore.getState().apply()
+    expect(useStore.getState().undoAvailable).toBe(true)
+    expect(useStore.getState().applyResult).toBeNull()
+  })
+
+  it('顺手重新扫一遍范围，让 scan.folders 跟得上刚发生的这次应用', async () => {
+    setup()
+    await useStore.getState().apply()
+    const scanCall = vi.mocked(send).mock.calls
+      .map(([req]) => req as { kind: string; scopeRootIds?: string[] })
+      .find((req) => req.kind === 'scan')
+    expect(scanCall?.scopeRootIds).toEqual(makePlan().scopeRootIds)
+  })
+
+  // 对照组：一条都没标记重新分类时，行为跟改动前完全一样——这不是新分支，
+  // 是「没有还没处理完的」这一支，必须原样走终点
+  it('对照：reclassifyMarked 为空时，照旧跳到结果页、落 applyResult', async () => {
+    setup()
+    useStore.setState({ reclassifyMarked: new Set() })
+    await useStore.getState().apply()
+    expect(useStore.getState().step).toBe('result')
+    expect(useStore.getState().applyResult).not.toBeNull()
+  })
+})
+
 describe('失败之后的重试', () => {
   // analyze 开头要问一次 host 权限，jsdom 里没有 chrome.permissions（同上面「放弃这一轮」的桩）
   const chromeGlobal = globalThis as unknown as { chrome: Record<string, unknown> }

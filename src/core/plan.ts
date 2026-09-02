@@ -624,3 +624,73 @@ export function filterAccepted(plan: OrganizePlan, accepted: Set<string>): Bookm
   )
   return [...keptCreates, ...folderMoves, ...renames, ...moves]
 }
+
+/**
+ * 应用之后，把这一轮已经真实发生的改动从方案里摘掉——「先落地已经确认的，
+ * 剩下标了重新分类的接着处理」这条路要靠它接上（见 issues/45-partial-apply-continue.md）。
+ *
+ * 三类改动，删或改的理由各不相同：
+ *
+ * 1. `appliedBookmarkIds`（这次真正被移动的书签）——row 与 move_bookmark 操作
+ *    直接删掉。留着的话，它们已经在目标目录里了，复核页会显示一条「还要移动」
+ *    的假建议，「应用」再点一次还会尝试重新移动（对已在目标位置的书签这本身
+ *    无害，但会让「应用 N 项」的数字继续把它们算进去）。
+ *
+ * 2. `move_folder` / `rename_folder` / `rename_bookmark`——这三类操作从不看
+ *    accepted（见上面的 filterAccepted），只要点过一次「应用」就已经无条件跑过，
+ *    不分是不是这次刚落地的书签牵出来的。留着的话，下一次「应用」会把同一批
+ *    目录改名、同一批标题统一再执行一遍——对已经改成目标状态的目录/书签这些
+ *    操作是幂等的，但会让「附带说明」虚报本该已经做完的事。
+ *
+ * 3. `tempToReal`（这次真正建出来的目录，来自 ApplyResult）——它们的
+ *    create_folder 操作要删掉（再建一次会建出重名的兄弟目录），而 candidates、
+ *    还没应用的 move_bookmark、还没创建的 create_folder（父目录正是它们）、
+ *    mergeRoot，凡是还在引用这个临时 id 的地方都要改成指向真实 id——不然下一次
+ *    应用会拿着一个已经不存在的临时 id 去找目标，查不到就报错。
+ *
+ * `summary` 有意不重算：它不是复核页的展示依据（ReviewStep 自己按当下的
+ * plan + accepted 现调 summarize()），留着旧值只影响 exportPlan() 导出的
+ * 存档 JSON，那份本就是"这一刻的快照"，不必对着一个已经过去的应用动作改写。
+ */
+export function applyPartialResult(
+  plan: OrganizePlan,
+  appliedBookmarkIds: Set<string>,
+  tempToReal: Record<string, string>,
+): OrganizePlan {
+  const realOf = (temporaryId: string): string => tempToReal[temporaryId] ?? temporaryId
+
+  const candidates = plan.candidates.map((c) => (
+    tempToReal[c.id] === undefined ? c : { ...c, id: tempToReal[c.id]! }
+  ))
+
+  const operations: BookmarkOperation[] = []
+  for (const op of plan.operations) {
+    if (op.type === 'move_folder' || op.type === 'rename_folder' || op.type === 'rename_bookmark') continue
+    if (op.type === 'create_folder') {
+      if (tempToReal[op.temporaryId] !== undefined) continue // 已经建出来了
+      operations.push(
+        op.parentTemporaryId !== null && tempToReal[op.parentTemporaryId] !== undefined
+          ? { ...op, parentId: realOf(op.parentTemporaryId), parentTemporaryId: null }
+          : op,
+      )
+      continue
+    }
+    // 剩下的只有 move_bookmark
+    if (appliedBookmarkIds.has(op.bookmarkId)) continue // 已经搬过去了
+    operations.push(
+      op.toTemporaryId !== null && tempToReal[op.toTemporaryId] !== undefined
+        ? { ...op, toCategoryId: realOf(op.toTemporaryId), toTemporaryId: null }
+        : op,
+    )
+  }
+
+  const rows = plan.rows
+    .filter((r) => !appliedBookmarkIds.has(r.bookmarkId))
+    .map((r) => (tempToReal[r.toCategoryId] === undefined ? r : { ...r, toCategoryId: realOf(r.toCategoryId) }))
+
+  const mergeRoot = plan.mergeRoot === null || tempToReal[plan.mergeRoot.temporaryId] === undefined
+    ? plan.mergeRoot
+    : { ...plan.mergeRoot, temporaryId: realOf(plan.mergeRoot.temporaryId) }
+
+  return { ...plan, candidates, operations, rows, mergeRoot }
+}

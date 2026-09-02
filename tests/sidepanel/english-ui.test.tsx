@@ -274,7 +274,7 @@ describe('英文界面渲染守卫：步骤组件', () => {
       skipped: [{ bookmarkId: '999', reason: 'bookmark is gone' }],
       createdFolderIds: ['20'],
       removedFolders: [{ id: '30', title: 'Misc', path: ['Bookmarks bar'] }],
-      sortedFolders: 0, renamedBookmarkIds: [], mergeRootId: null,
+      sortedFolders: 0, renamedBookmarkIds: [], mergeRootId: null, tempToReal: {},
       failedAt: null, error: null,
     }
     const resultTree: BookmarkNode[] = [
@@ -328,7 +328,7 @@ describe('英文界面渲染守卫：步骤组件', () => {
       { id: '10', title: 'NiceG', path: ['Bookmarks bar'] },
       { id: '11', title: 'b_llm', path: ['Bookmarks bar'] },
     ],
-    sortedFolders: 0, renamedBookmarkIds: [], mergeRootId: '20',
+    sortedFolders: 0, renamedBookmarkIds: [], mergeRootId: '20', tempToReal: {},
     failedAt: null, error: null,
   }
 
