@@ -1080,8 +1080,14 @@
       }
     }
   },
-  "reviewFilterMarkedOnly": {
-    "message": "只看被标记的"
+  "reviewFilterAll": {
+    "message": "全部"
+  },
+  "reviewFilterHighConfidence": {
+    "message": "高置信度"
+  },
+  "reviewFilterLowConfidence": {
+    "message": "低置信度"
   },
   "reviewExportPlan": {
     "message": "导出方案"

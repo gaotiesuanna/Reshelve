@@ -386,10 +386,7 @@ describe('ReviewStep 的分组', () => {
 })
 
 describe('ReviewStep 的筛选开关', () => {
-  // 规则命中的 confidence 恒为 1（core/map.ts），必然在标记阈值之上——所以这一个开关
-  // 顺带就把「域名规则判的」全挡在外面了。曾经并排还有一个「只看模型判的」，
-  // 它和这个不是两条轴，两个一起开与只开这个是同一个结果，已删。
-  it('只看被标记的：只留下低于阈值的行，规则命中的也一并筛掉，不碰勾选', async () => {
+  it('默认显示全部，三个选项分别写明条数', () => {
     setupPlan([
       row('a', ['01 前端'], 'llm', 0.5),
       row('b', ['01 前端'], 'llm', 0.95),
@@ -397,46 +394,41 @@ describe('ReviewStep 的筛选开关', () => {
     ])
     render(<ReviewStep />)
 
-    await userEvent.click(screen.getByText('只看被标记的'))
+    expect(screen.getByRole('button', { name: '全部 3' }).getAttribute('aria-pressed')).toBe('true')
+    expect(screen.getByRole('button', { name: '高置信度 2' }).getAttribute('aria-pressed')).toBe('false')
+    expect(screen.getByRole('button', { name: '低置信度 1' }).getAttribute('aria-pressed')).toBe('false')
+    expect(screen.getByText('书签 a')).toBeTruthy()
+    expect(screen.getByText('书签 b')).toBeTruthy()
+    expect(screen.getByText('02 GitHub')).toBeTruthy()
+  })
+
+  // 生产代码若把高低阈值分支写反，或者筛选时误改 accepted，本测试会失败。
+  it('高低置信度选项互斥筛选，不碰勾选', async () => {
+    setupPlan([
+      row('a', ['01 前端'], 'llm', 0.5),
+      row('b', ['01 前端'], 'llm', 0.95),
+      row('c', ['02 GitHub'], 'rule', 1),
+    ])
+    render(<ReviewStep />)
+
+    await userEvent.click(screen.getByRole('button', { name: '低置信度 1' }))
 
     expect(screen.getByText('书签 a')).toBeTruthy()
     expect(screen.queryByText('书签 b')).toBeNull()
-    expect(screen.queryByText('书签 c')).toBeNull()
-    // 筛选只管看得见看不见，不碰 accepted
+    expect(screen.queryByText('02 GitHub')).toBeNull()
     expect(useStore.getState().accepted.size).toBe(3)
-  })
 
-  it('再点一次就全放回来——出口就是这个开关本身', async () => {
-    setupPlan([row('a', ['01 前端'], 'llm', 0.5), row('b', ['01 前端'], 'llm', 0.95)])
-    render(<ReviewStep />)
-
-    await userEvent.click(screen.getByText('只看被标记的'))
-    expect(screen.queryByText('书签 b')).toBeNull()
-
-    await userEvent.click(screen.getByText('只看被标记的'))
+    await userEvent.click(screen.getByRole('button', { name: '高置信度 2' }))
+    expect(screen.queryByText('书签 a')).toBeNull()
     expect(screen.getByText('书签 b')).toBeTruthy()
-  })
+    expect(screen.getByText('02 GitHub')).toBeTruthy()
+    expect(screen.getByRole('button', { name: '低置信度 1' }).getAttribute('aria-pressed')).toBe('false')
+    expect(screen.getByRole('button', { name: '高置信度 2' }).getAttribute('aria-pressed')).toBe('true')
 
-  // 开关不说有几条待审的话，用户点之前根本不知道值不值得点——它就是那个「没啥用」的观感来源
-  it('开关上写着有几条待审', () => {
-    setupPlan([
-      row('a', ['01 前端'], 'llm', 0.5),
-      row('b', ['01 前端'], 'llm', 0.4),
-      row('c', ['01 前端'], 'llm', 0.95),
-    ])
-    render(<ReviewStep />)
-    expect(screen.getByRole('button', { name: /只看被标记的\s*2/ })).toBeTruthy()
-  })
-
-  // 一条都没标记时按下去只会得到一片空白，那片空白还得再配一句「是筛没的不是没有建议」
-  // 外加一个恢复出口才不算骗人（票 24）。禁用掉，那个 0 已经把话说完了，
-  // 「筛选把列表清空」这个状态从此不可达，对应的空态文案与出口也一并删了。
-  it('一条都没标记时开关点不动', () => {
-    setupPlan([row('a', ['01 前端'], 'llm', 0.95), row('b', ['02 GitHub'], 'rule', 1)])
-    render(<ReviewStep />)
-    const toggle = screen.getByRole('button', { name: /只看被标记的/ })
-    expect(toggle.hasAttribute('disabled')).toBe(true)
-    expect(screen.getByRole('button', { name: /只看被标记的\s*0/ })).toBeTruthy()
+    await userEvent.click(screen.getByRole('button', { name: '全部 3' }))
+    expect(screen.getByText('书签 a')).toBeTruthy()
+    expect(screen.getByText('书签 b')).toBeTruthy()
+    expect(screen.getByText('02 GitHub')).toBeTruthy()
   })
 
   it('本来就一条建议都没有时，走的是空方案文案', () => {

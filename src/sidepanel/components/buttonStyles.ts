@@ -47,8 +47,7 @@ export const ghostButton = [
  *
  * 长得跟按钮不一样是刻意的——筛选和「全部接受」并排成一样的描边按钮时，
  * 用户读到的是五个平级的动作，而它们根本不是一个维度的东西。
- * 与 segmentTrack 同源（同样 32px、同样坐在一条槽里），区别是这里的开关各开各的、
- * 可以同时按下，所以不用 SegmentedChoice 那套单选语义。
+ * 三个选项互斥，共用一条槽来表达它们是同一个筛选维度。
  */
 export const filterTrack = 'inline-flex items-center gap-0.5 rounded-index border border-index-line bg-index-canvas p-0.5'
 

@@ -1080,8 +1080,14 @@
       }
     }
   },
-  "reviewFilterMarkedOnly": {
-    "message": "Flagged only"
+  "reviewFilterAll": {
+    "message": "All"
+  },
+  "reviewFilterHighConfidence": {
+    "message": "High confidence"
+  },
+  "reviewFilterLowConfidence": {
+    "message": "Low confidence"
   },
   "reviewExportPlan": {
     "message": "Export plan"

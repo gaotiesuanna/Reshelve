@@ -120,36 +120,26 @@ export function ReviewStep() {
    * 不像上面按组分的折叠态那样需要按规则命中与否分别决定初值。
    */
   const [unchangedCollapsed, setUnchangedCollapsed] = useState(true)
-  /**
-   * 纯展示态的筛选开关：只留下被标记的行（置信度低于阈值的那些）。
-   * 不进 store——跟折叠态一样，没有别的地方需要知道它。筛掉的行只是不渲染，
-   * 不碰 accepted，也不影响上面「换组自动展开」的判断（那个判断看的是未筛选的 groups）。
-   *
-   * 这里曾经还有第二个开关「只看模型判的」（排除规则命中）。它和这个不是两条轴：
-   * 规则命中的 confidence 恒为 1（core/map.ts），必然在标记阈值之上，所以这个开关
-   * 本来就把规则命中全挡在外面了，两个一起开跟只开这一个是同一个结果。而它单独的
-   * 那点作用（混合组里藏掉规则行）又已经由「全规则组默认折叠」覆盖掉了大半。
-   */
-  const [markedOnly, setMarkedOnly] = useState(false)
-  /**
-   * 待审条数。写在开关上，这个开关才算说清了自己是干什么的——
-   * 0 就是「这轮不用逐条审，直接应用」，非 0 就是「点一下，只看这几条」。
-   * 不用 summary.lowConfidenceItems：那个只数勾着的，而取消勾选并不会让一条
-   * 不再值得看一眼，数字跟着勾选跳反而像在闪。
-   */
-  const markedCount = useMemo(
+  /** 纯展示态：高低置信度互斥筛选，不碰 accepted。 */
+  const [confidenceFilter, setConfidenceFilter] = useState<'all' | 'high' | 'low'>('all')
+  const lowConfidenceCount = useMemo(
     () => (plan === null ? 0 : plan.rows.filter((row) => row.confidence < MARK_CONFIDENCE).length),
     [plan],
   )
+  const highConfidenceCount = (plan?.rows.length ?? 0) - lowConfidenceCount
   const visibleGroups = useMemo<ReviewGroup[]>(
     () =>
       groups
         .map((group) => ({
           ...group,
-          rows: group.rows.filter((row) => !markedOnly || row.confidence < MARK_CONFIDENCE),
+          rows: group.rows.filter((row) => {
+            if (confidenceFilter === 'all') return true
+            const isLowConfidence = row.confidence < MARK_CONFIDENCE
+            return confidenceFilter === 'low' ? isLowConfidence : !isLowConfidence
+          }),
         }))
         .filter((group) => group.rows.length > 0),
-    [groups, markedOnly],
+    [groups, confidenceFilter],
   )
   if (plan === null || summary === null) return null
 
@@ -239,21 +229,38 @@ export function ReviewStep() {
         <SecondaryButton onClick={rejectAll}>{t('reviewRejectAll')}</SecondaryButton>
       </div>
 
-      {/* 筛选开关：只管看得见看不见，不碰 accepted。
-          一条都没标记时它自己点不动——按下去只会得到一片空白，
-          而那片空白还得再配一句「是筛没的不是没有」外加一个恢复出口才不算骗人；
-          禁用掉，右边那个 0 已经把话说完了。 */}
+      {/* 三选一的置信度筛选：「全部」是恢复完整列表的明确出口。 */}
       <div className="mt-2 flex">
         <div className={filterTrack}>
           <button
             type="button"
-            aria-pressed={markedOnly}
-            disabled={markedCount === 0}
+            aria-label={`${t('reviewFilterAll')} ${plan.rows.length}`}
+            aria-pressed={confidenceFilter === 'all'}
             className={filterToggle}
-            onClick={() => setMarkedOnly((prev) => !prev)}
+            onClick={() => setConfidenceFilter('all')}
           >
-            <span>{t('reviewFilterMarkedOnly')}</span>
-            <span className="tabular-nums opacity-60">{markedCount}</span>
+            <span>{t('reviewFilterAll')}</span>
+            <span className="tabular-nums opacity-60">{plan.rows.length}</span>
+          </button>
+          <button
+            type="button"
+            aria-label={`${t('reviewFilterHighConfidence')} ${highConfidenceCount}`}
+            aria-pressed={confidenceFilter === 'high'}
+            className={filterToggle}
+            onClick={() => setConfidenceFilter('high')}
+          >
+            <span>{t('reviewFilterHighConfidence')}</span>
+            <span className="tabular-nums opacity-60">{highConfidenceCount}</span>
+          </button>
+          <button
+            type="button"
+            aria-label={`${t('reviewFilterLowConfidence')} ${lowConfidenceCount}`}
+            aria-pressed={confidenceFilter === 'low'}
+            className={filterToggle}
+            onClick={() => setConfidenceFilter('low')}
+          >
+            <span>{t('reviewFilterLowConfidence')}</span>
+            <span className="tabular-nums opacity-60">{lowConfidenceCount}</span>
           </button>
         </div>
       </div>
