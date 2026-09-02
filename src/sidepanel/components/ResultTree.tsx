@@ -10,10 +10,10 @@ function Row({ node, index }: { node: ResultTreeNode; index: string }) {
   return (
     <li data-index={index} className="relative">
       <div
-        className="grid min-h-index-row grid-cols-[2.75rem_1rem_minmax(0,1fr)_auto_auto] items-center gap-2 border-b border-index-line px-2 py-2 text-sm leading-caption"
+        className="grid min-h-index-row grid-cols-[minmax(2.75rem,max-content)_1rem_minmax(0,1fr)_auto_auto] items-center gap-2 border-b border-index-line px-2 py-2 text-sm leading-caption"
       >
-        <span aria-hidden className="font-mono text-xs text-neutral-400">{index}.</span>
-        <FolderIcon className="h-3.5 w-3.5 text-index-faint" />
+        <span aria-hidden className="whitespace-nowrap font-mono text-xs text-neutral-400">{index}.</span>
+        <FolderIcon className="h-3.5 w-3.5 shrink-0 text-index-faint" />
         <span className="min-w-0 break-words text-index-ink">{node.title}</span>
         {node.isNew && (
           <span className="shrink-0 text-2xs font-medium text-emerald-700">{t('resultTreeNew')}</span>

@@ -37,6 +37,35 @@ describe('ResultTree', () => {
     expect(within(child).getByText('2')).toBeTruthy()
   })
 
+  it('lets three-level outline numbers grow instead of overflowing onto the folder icon', () => {
+    const deep: ResultTreeNode[] = [{
+      id: 'a',
+      title: 'NiceG',
+      isNew: false,
+      count: 0,
+      total: 1,
+      children: [{
+        id: 'b',
+        title: '01 大模型实现',
+        isNew: false,
+        count: 0,
+        total: 1,
+        children: [{
+          id: 'c',
+          title: '01 大模型基础',
+          isNew: false,
+          count: 1,
+          total: 1,
+          children: [],
+        }],
+      }],
+    }]
+    render(<ResultTree nodes={deep} />)
+    const index = screen.getByText('01.01.01.')
+    expect(index.className).toMatch(/whitespace-nowrap/)
+    expect(index.parentElement?.className).toMatch(/max-content/)
+  })
+
   it('renders nothing for an empty tree', () => {
     const { container } = render(<ResultTree nodes={[]} />)
     expect(container.firstChild).toBeNull()
