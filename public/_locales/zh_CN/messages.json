@@ -1073,6 +1073,14 @@
   "reviewGroupAllRule": {
     "message": "全部来自域名规则"
   },
+  "reviewGroupSelectAll": {
+    "message": "全选或取消全选「$label$」这一组",
+    "placeholders": {
+      "label": {
+        "content": "$1"
+      }
+    }
+  },
   "reviewGroupCount": {
     "message": "$count$ 条",
     "placeholders": {

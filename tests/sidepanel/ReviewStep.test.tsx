@@ -67,6 +67,60 @@ describe('ReviewStep', () => {
     expect(useStore.getState().accepted.size).toBe(2)
   })
 
+  /**
+   * 每个分组标题旁边有自己的全选/取消全选勾选框——两条书签共享同一个目标目录，
+   * 是同一个组；fixture 里 accepted 只含 '100'，组内一勾一没勾，勾选框该是
+   * 半选状态（indeterminate），不是简单的 true/false 二选一。
+   */
+  describe('分组的全选勾选框', () => {
+    const groupCheckbox = () => screen.getByRole('checkbox', { name: /全选或取消全选/ }) as HTMLInputElement
+
+    it('组内部分接受时是半选状态', () => {
+      render(<ReviewStep />)
+      const checkbox = groupCheckbox()
+      expect(checkbox.checked).toBe(false)
+      expect(checkbox.indeterminate).toBe(true)
+    })
+
+    it('半选时点一下——组内全部变为接受', async () => {
+      render(<ReviewStep />)
+      await userEvent.click(groupCheckbox())
+      expect(useStore.getState().accepted).toEqual(new Set(['100', '101']))
+    })
+
+    it('组内已全部接受时勾选框是纯勾选状态，不是半选', () => {
+      useStore.setState({ accepted: new Set(['100', '101']) })
+      render(<ReviewStep />)
+      const checkbox = groupCheckbox()
+      expect(checkbox.checked).toBe(true)
+      expect(checkbox.indeterminate).toBe(false)
+    })
+
+    it('全选时点一下——组内全部变为拒绝', async () => {
+      useStore.setState({ accepted: new Set(['100', '101']) })
+      render(<ReviewStep />)
+      await userEvent.click(groupCheckbox())
+      expect(useStore.getState().accepted).toEqual(new Set())
+    })
+
+    it('组内一个都没接受时勾选框是空的，不是半选', () => {
+      useStore.setState({ accepted: new Set() })
+      render(<ReviewStep />)
+      const checkbox = groupCheckbox()
+      expect(checkbox.checked).toBe(false)
+      expect(checkbox.indeterminate).toBe(false)
+    })
+
+    // 点它是「选中/取消这一组」，不是「展开/折叠这一组」——两个是分开的控件，
+    // 点其中一个不该影响另一个的状态
+    it('点它不会连带折叠或展开这一组', async () => {
+      render(<ReviewStep />)
+      expect(screen.getByRole('checkbox', { name: 'React 官网' })).toBeTruthy()
+      await userEvent.click(groupCheckbox())
+      expect(screen.getByRole('checkbox', { name: 'React 官网' })).toBeTruthy()
+    })
+  })
+
   it('全部拒绝后应用按钮禁用', async () => {
     render(<ReviewStep />)
     await userEvent.click(screen.getByText('全部拒绝'))

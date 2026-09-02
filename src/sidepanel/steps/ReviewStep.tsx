@@ -38,7 +38,10 @@ function unchangedKindLabel(kind: UnchangedRow['kind']): string {
 }
 
 export function ReviewStep() {
-  const { plan: rawPlan, accepted, toggleAccepted, setRowTarget, acceptAll, rejectAll, apply, busy, reset, settings, scan } = useStore()
+  const {
+    plan: rawPlan, accepted, toggleAccepted, setRowTarget, acceptAll, rejectAll, setGroupAccepted,
+    apply, busy, reset, settings, scan,
+  } = useStore()
   // 显示的编号必须和真正会写进书签栏的一致，所以这里用同一个重排函数
   const plan = useMemo(
     () => (rawPlan === null ? null : renumberPlan(rawPlan, accepted, scan?.folders ?? [])),
@@ -257,28 +260,48 @@ export function ReviewStep() {
         <div className="mt-3 overflow-hidden rounded-index border border-index-line">
           {visibleGroups.map((group, groupIndex) => {
             const collapsed = collapsedOverride[group.key] ?? group.allRule
+            // 组内接受了几条，决定组级勾选框显示成勾/空/半选三态之一。
+            const acceptedInGroup = group.rows.filter((row) => accepted.has(row.bookmarkId)).length
+            const groupAllAccepted = acceptedInGroup === group.rows.length
+            const groupIndeterminate = acceptedInGroup > 0 && !groupAllAccepted
             return (
               <div key={group.key} className="border-b border-index-line last:border-b-0">
-                <button
-                  type="button"
-                  aria-expanded={!collapsed}
-                  className="flex min-h-index-row w-full items-center gap-2 px-2.5 py-2 text-left text-sm leading-caption font-medium text-index-ink transition-colors duration-150 hover:bg-index-blue-soft motion-reduce:transition-none"
-                  onClick={() => toggleGroup(group)}
-                >
-                  {/* 折叠态原来只有 aria-expanded，屏幕上没有任何东西说这一行能点开。
-                      箭头转 90° 就够了，不必再加第二种提示。 */}
-                  <ChevronDownIcon
-                    className={`h-3.5 w-3.5 shrink-0 text-index-faint transition-transform duration-150 motion-reduce:transition-none ${collapsed ? '-rotate-90' : ''}`}
+                {/* 全选/取消全选这一组，跟下面折叠/展开这一组是两个分开的控件：
+                    勾选框不嵌在 <button> 里面，点它不该顺带把组收起来或展开。 */}
+                <div className="flex min-h-index-row items-center gap-2 pl-2.5">
+                  <input
+                    type="checkbox"
+                    aria-label={t('reviewGroupSelectAll', group.label)}
+                    className="h-3.5 w-3.5 shrink-0 accent-index-ink"
+                    checked={groupAllAccepted}
+                    // indeterminate 不是一个 React prop，只能通过 DOM 节点直接设置——
+                    // 每次渲染都要设一遍，因为浏览器不会记住上一次算出来的这个状态。
+                    ref={(el) => {
+                      if (el) el.indeterminate = groupIndeterminate
+                    }}
+                    onChange={() => setGroupAccepted(group.rows.map((row) => row.bookmarkId), !groupAllAccepted)}
                   />
-                  <span className="w-5 shrink-0 font-mono text-xs tabular-nums text-index-faint">{String(groupIndex + 1).padStart(2, '0')}</span>
-                  <span className="min-w-0 flex-1 break-words [overflow-wrap:anywhere]">{group.label}</span>
-                  <span className="shrink-0 text-right text-xs font-regular text-index-muted">
-                    <span className="tabular-nums">{t('reviewGroupCount', String(group.rows.length))}</span>
-                    {group.allRule && (
-                      <span className="mt-1 block rounded bg-emerald-50 px-1 py-px text-2xs font-medium text-emerald-700">{t('reviewGroupAllRule')}</span>
-                    )}
-                  </span>
-                </button>
+                  <button
+                    type="button"
+                    aria-expanded={!collapsed}
+                    className="flex min-h-index-row flex-1 items-center gap-2 py-2 pr-2.5 text-left text-sm leading-caption font-medium text-index-ink transition-colors duration-150 hover:bg-index-blue-soft motion-reduce:transition-none"
+                    onClick={() => toggleGroup(group)}
+                  >
+                    {/* 折叠态原来只有 aria-expanded，屏幕上没有任何东西说这一行能点开。
+                        箭头转 90° 就够了，不必再加第二种提示。 */}
+                    <ChevronDownIcon
+                      className={`h-3.5 w-3.5 shrink-0 text-index-faint transition-transform duration-150 motion-reduce:transition-none ${collapsed ? '-rotate-90' : ''}`}
+                    />
+                    <span className="w-5 shrink-0 font-mono text-xs tabular-nums text-index-faint">{String(groupIndex + 1).padStart(2, '0')}</span>
+                    <span className="min-w-0 flex-1 break-words [overflow-wrap:anywhere]">{group.label}</span>
+                    <span className="shrink-0 text-right text-xs font-regular text-index-muted">
+                      <span className="tabular-nums">{t('reviewGroupCount', String(group.rows.length))}</span>
+                      {group.allRule && (
+                        <span className="mt-1 block rounded bg-emerald-50 px-1 py-px text-2xs font-medium text-emerald-700">{t('reviewGroupAllRule')}</span>
+                      )}
+                    </span>
+                  </button>
+                </div>
 
                 {/* 展开的成员压一层浅底：不靠缩进也能看出这几行属于上面那个组，
                     在只有 360px 宽的侧栏里，省下来的缩进正好给标题多断一行的余地。 */}

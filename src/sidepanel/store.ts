@@ -421,6 +421,17 @@ interface State {
   setRowTarget(bookmarkId: string, targetId: string): void
   acceptAll(): void
   rejectAll(): void
+  /**
+   * 整组一起勾上或取消——复核页每个分组标题旁的那个勾选框用它。
+   *
+   * 不复用 toggleAccepted 逐条调用：那样组里一部分已勾一部分没勾时，
+   * 点一下会变成有的加有的减，结果是「更乱」而不是「全选或全不选」。
+   * 这里由调用方把「要勾成什么状态」显式传进来（accepted 参数），
+   * 不在这里自己猜「现在是全勾还是半勾，所以这次该翻成哪边」——
+   * 那份判断本来就是界面在算三态勾选框显示成什么样时已经算过一次的东西，
+   * 让它算完直接传结果过来，不必在 store 里重新推一遍。
+   */
+  setGroupAccepted(bookmarkIds: string[], accepted: boolean): void
   apply(): Promise<void>
   undo(): Promise<void>
   readImportFile(name: string, text: string): void
@@ -728,6 +739,15 @@ export const useStore = create<State>((set, get) => ({
 
   rejectAll() {
     set({ accepted: new Set() })
+  },
+
+  setGroupAccepted(bookmarkIds, accepted) {
+    const next = new Set(get().accepted)
+    for (const id of bookmarkIds) {
+      if (accepted) next.add(id)
+      else next.delete(id)
+    }
+    set({ accepted: next })
   },
 
   async apply() {
