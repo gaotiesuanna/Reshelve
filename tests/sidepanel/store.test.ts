@@ -539,6 +539,27 @@ describe('重新分类选中的建议', () => {
     expect(useStore.getState().reclassifyMarked.has('g0')).toBe(false)
   })
 
+  /**
+   * 标记重新分类顺手取消接受——不然「应用」看到的还是那份没变过的 accepted，
+   * 会把用户明确标了「不满意」的书签，原样按旧目标搬过去。标记这个动作本身
+   * 必须能拦住「应用」，不只是一个笔记（见用户原话：「点了重新分类，分类
+   * 正确的还没应用，还是先应用」）。
+   */
+  it('标记重新分类时顺手取消接受——不然会被应用成旧答案', () => {
+    useStore.setState({ reclassifyMarked: new Set(), accepted: new Set(['g0', 'g1']) })
+    useStore.getState().toggleReclassifyMark('g0')
+    expect(useStore.getState().accepted.has('g0')).toBe(false)
+    // 只摘标记的那一条，别的书签的接受状态不受影响
+    expect(useStore.getState().accepted.has('g1')).toBe(true)
+  })
+
+  it('取消标记不自动恢复接受——那是用户自己的决定', () => {
+    useStore.setState({ reclassifyMarked: new Set(['g0']), accepted: new Set() })
+    useStore.getState().toggleReclassifyMark('g0')
+    expect(useStore.getState().reclassifyMarked.has('g0')).toBe(false)
+    expect(useStore.getState().accepted.has('g0')).toBe(false)
+  })
+
   it('没有 plan 或没有标记任何书签时什么都不做', async () => {
     useStore.setState({ reclassifyMarked: new Set() })
     await useStore.getState().reclassifySelected()

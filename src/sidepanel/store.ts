@@ -771,9 +771,19 @@ export const useStore = create<State>((set, get) => ({
 
   toggleReclassifyMark(bookmarkId) {
     const next = new Set(get().reclassifyMarked)
-    if (next.has(bookmarkId)) next.delete(bookmarkId)
-    else next.add(bookmarkId)
-    set({ reclassifyMarked: next })
+    const willMark = !next.has(bookmarkId)
+    if (willMark) next.add(bookmarkId)
+    else next.delete(bookmarkId)
+    set({
+      reclassifyMarked: next,
+      // 标记重新分类 = 不满意当前的结果，在重新问出更好的答案之前不该被当成
+      // 「已确认」应用——不摘掉 accepted 的话，标记只是个笔记，「应用」看到的
+      // 还是没变过的接受状态，会把用户明确标了不满意的书签按旧目标原样搬过去。
+      // 取消标记时不自动恢复 accepted：那是用户自己的决定，不该被代劳。
+      accepted: willMark
+        ? new Set([...get().accepted].filter((id) => id !== bookmarkId))
+        : get().accepted,
+    })
   },
 
   async reclassifySelected() {
