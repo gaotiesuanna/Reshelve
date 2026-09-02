@@ -741,6 +741,68 @@ describe('应用时还有标记重新分类的书签——只落地已接受的�
     expect(useStore.getState().step).toBe('result')
     expect(useStore.getState().applyResult).not.toBeNull()
   })
+
+  /**
+   * applyPlan 中途失败时 res.ok 仍是 true——失败装在 result.status 里返回。
+   * 这时 failedAt 之后的移动根本没执行，要是照样走部分应用那条路，会把它们的行
+   * 从方案里摘掉（书签还在原地，复核页却再也找不到它），而且 applyResult 不落、
+   * error 不设，用户看到进度条转完停在复核页，以为一切正常。必须退回结果页。
+   */
+  describe('这次应用中途失败了', () => {
+    function setupFailed(): void {
+      setup()
+      vi.mocked(send).mockImplementation((req: { kind: string }) => {
+        if (req.kind === 'apply') {
+          return Promise.resolve({
+            ok: true, kind: 'apply',
+            result: {
+              status: 'failed', executed: 1, skipped: [], createdFolderIds: ['real-1'],
+              removedFolders: [], sortedFolders: 0, renamedBookmarkIds: [], mergeRootId: null,
+              tempToReal: { 'tmp:1': 'real-1' }, failedAt: 1, error: '写入失败',
+            },
+          }) as never
+        }
+        if (req.kind === 'get_tree') return Promise.resolve({ ok: true, kind: 'get_tree', tree: [] }) as never
+        return Promise.resolve({ ok: true }) as never
+      })
+    }
+
+    it('退回结果页，把失败摆出来，不留在复核页假装成功', async () => {
+      setupFailed()
+      await useStore.getState().apply()
+      expect(useStore.getState().step).toBe('result')
+      expect(useStore.getState().applyResult).toMatchObject({ status: 'failed', error: '写入失败' })
+    })
+
+    it('一行都不从方案里摘掉——没执行的移动不能被当成已完成', async () => {
+      setupFailed()
+      const before = useStore.getState().plan!.rows.map((r) => r.bookmarkId)
+      await useStore.getState().apply()
+      expect(useStore.getState().plan!.rows.map((r) => r.bookmarkId)).toEqual(before)
+    })
+  })
+
+  /**
+   * 合并模式：applyPlan 学到合并容器真实 id 的唯一途径是看着它的 create_folder
+   * 触发。容器在第一次应用里已经建好、create_folder 被 applyPartialResult 删掉
+   * 之后，第二次应用的 mergeRootId 恒为 null——容器内清不掉空目录、补不了号、
+   * 源目录不会被删，scopeRootIds 指向的源根还可能已经不存在（快照是空的，撤销
+   * 回不来）。合并是一次性的整体重构，劈成两次会破坏它自己的收尾契约。
+   */
+  it('合并模式不走部分应用，照旧一次性跳结果页', async () => {
+    setup()
+    useStore.setState({
+      plan: {
+        ...makePlan(),
+        mergeRoot: { temporaryId: 'tmp:0', title: '合并根', sourceRootIds: ['8', '9'], sourceTitles: ['旧a', '旧b'] },
+      },
+    })
+    await useStore.getState().apply()
+    expect(useStore.getState().step).toBe('result')
+    expect(useStore.getState().applyResult).not.toBeNull()
+    // 方案原样留着，没被 applyPartialResult 动过
+    expect(useStore.getState().plan!.rows).toHaveLength(makePlan().rows.length)
+  })
 })
 
 describe('失败之后的重试', () => {
