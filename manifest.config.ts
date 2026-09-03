@@ -7,7 +7,7 @@ export default defineManifest({
   // 商店基本只按名字排，所以 extName 是「品牌词 + 品类词」的长名。但 Chrome 侧栏顶栏和
   // 扩展列表放不下它，会截断成一截没头没尾的字符串——那些窄处读 short_name。
   short_name: '__MSG_extShortName__',
-  version: '1.1.0',
+  version: '1.1.1',
   description: '__MSG_extDescription__',
   // favicon：HTML 导出要把图标写进 ICON 属性，靠它读 chrome-extension://<id>/_favicon/
   // （只读 Chrome 本地已缓存的图标，不发外部请求）
