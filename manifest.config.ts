@@ -9,6 +9,9 @@ export default defineManifest({
   short_name: '__MSG_extShortName__',
   version: '1.1.1',
   description: '__MSG_extDescription__',
+  // 仓库地址。chrome://extensions 的详情页据此显示「访问网站」；商店详情页的
+  // Website 链接则以开发者后台「商品详情」里单填的那个为准，两处填成同一个。
+  homepage_url: 'https://github.com/gaotiesuanna/Reshelve',
   // favicon：HTML 导出要把图标写进 ICON 属性，靠它读 chrome-extension://<id>/_favicon/
   // （只读 Chrome 本地已缓存的图标，不发外部请求）
   permissions: ['bookmarks', 'storage', 'unlimitedStorage', 'sidePanel', 'favicon'],
