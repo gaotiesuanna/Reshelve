@@ -7,6 +7,7 @@ import { EndpointCard, domainOf } from './EndpointCard'
 import { CloseIcon, PlusIcon } from './icons'
 import { PRESETS, endpointKey } from '@/storage/settings'
 import type { Endpoint, Settings } from '@/storage/settings'
+import { REPO_HANDLE, REPO_URL, extensionVersion } from '../lib/about'
 
 function replaceEndpoint(settings: Settings, index: number, next: Endpoint): Settings {
   const endpoints = settings.endpoints.map((e, i) => (i === index ? next : e))
@@ -86,6 +87,7 @@ const presetCard = [
 export function SettingsPanel() {
   const { settings, setSettings, resetModelTest } = useStore()
   const locale = currentLocale()
+  const version = extensionVersion()
   const [picking, setPicking] = useState(false)
   // 刚加进来的那条端点：seq 只是个换 key 的由头，让那张卡重新挂载、于是一进来就是草稿态。
   // 光记 key 不够——同一个预设连点两次时 key 没变，卡片不会重挂，第二次就没反应了。
@@ -253,6 +255,25 @@ export function SettingsPanel() {
             </span>
           </span>
         </label>
+      </section>
+
+      {/* 关于：版本号 + 仓库地址。地址同时是商店审核动线的一部分——
+          「隐私权」页的主机权限文案里就附了指向 permissions.ts 的链接。 */}
+      <section className="space-y-1 border-t border-neutral-200 pt-5">
+        <h3 className="text-base leading-body font-medium">{t('settingsAboutTitle')}</h3>
+        <p className="text-sm leading-relaxed text-neutral-500">
+          {version === '' ? null : <><span>{t('settingsAboutVersion', version)}</span>{' · '}</>}
+          {t('settingsAboutSource')}
+          {' '}
+          <a
+            href={REPO_URL}
+            target="_blank"
+            rel="noreferrer"
+            className="rounded-sm text-neutral-600 underline underline-offset-2 transition-colors duration-150 hover:text-neutral-900 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-neutral-400 motion-reduce:transition-none"
+          >
+            {REPO_HANDLE}
+          </a>
+        </p>
       </section>
     </div>
   )

@@ -883,6 +883,16 @@
   "settingsGithubBody": {
     "message": "把标题按 URL 改写成「仓库名 (作者)」，收藏具体文件时保留文件名。这会改动书签本身的名字，不只是位置；可一键撤销。这一轮怎么整理不影响它：只要开着，范围内所有 GitHub 书签都会改。"
   },
+  "settingsAboutTitle": {
+    "message": "关于"
+  },
+  "settingsAboutVersion": {
+    "message": "版本 $version$",
+    "placeholders": { "version": { "content": "$1" } }
+  },
+  "settingsAboutSource": {
+    "message": "源代码"
+  },
   "prefsBack": {
     "message": "返回"
   },

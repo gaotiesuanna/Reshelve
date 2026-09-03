@@ -883,6 +883,16 @@
   "settingsGithubBody": {
     "message": "Rewrites titles from the URL into \"repo (owner)\", keeping the file name when a specific file is bookmarked. This changes the bookmark's own name, not just its location, and can be undone. However this round is organized, the switch stands on its own: while it is on, every GitHub bookmark in scope is rewritten."
   },
+  "settingsAboutTitle": {
+    "message": "About"
+  },
+  "settingsAboutVersion": {
+    "message": "Version $version$",
+    "placeholders": { "version": { "content": "$1" } }
+  },
+  "settingsAboutSource": {
+    "message": "Source code"
+  },
   "prefsBack": {
     "message": "Back"
   },
