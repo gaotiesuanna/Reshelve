@@ -1,5 +1,6 @@
 import { findEmptyFolders, type EmptyFolder } from './empty'
 import type { BookmarkNode } from './ports'
+import type { BookmarkItem } from './types'
 
 /** 用户在清理页勾出来的三张名单。执行与预览用的是同一份。 */
 export interface CleanupSelection {
@@ -14,6 +15,21 @@ export interface CleanupSelection {
   /** 要删掉的空目录。 */
   deleteFolderIds: string[]
 }
+/**
+ * 按用户输入的片段匹配书签标题或网址。匹配完全在本地完成；空白查询不代表
+ * 「匹配全部」，避免输入框刚清空时误把整库书签加入待移动名单。
+ */
+export function bookmarksMatchingContent(
+  items: readonly BookmarkItem[],
+  query: string,
+): BookmarkItem[] {
+  const needle = query.trim().toLocaleLowerCase()
+  if (needle === '') return []
+  return items.filter((item) =>
+    item.title.toLocaleLowerCase().includes(needle)
+    || item.url.toLocaleLowerCase().includes(needle))
+}
+
 
 /** 把一批书签从树里剪掉，返回新树。原树不动。 */
 function pruneTree(nodes: BookmarkNode[], vacated: Set<string>): BookmarkNode[] {

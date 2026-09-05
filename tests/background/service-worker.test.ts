@@ -229,12 +229,13 @@ describe('一次只放一轮长任务', () => {
     expect(send({ kind: 'apply', plan: {} as never, accepted: [], clientId: 'win-b' })?.ok).toBe(false)
   })
 
-  it('导入与清理落地同样独占', () => {
+  it('导入、清理和内容聚合落地同样独占', () => {
     onConnect(fakePort('win-a'))
     onConnect(fakePort('win-b'))
     send({ kind: 'import', nodes: [], targetName: 'x', clientId: 'win-a' })
 
     expect(send({ kind: 'apply_cleanup', input: {} as never, clientId: 'win-b' })?.ok).toBe(false)
+    expect(send({ kind: 'apply_aggregate', input: {} as never, clientId: 'win-b' })?.ok).toBe(false)
   })
 
   it('落地跑完之后位子放开', async () => {

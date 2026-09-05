@@ -32,9 +32,9 @@ const sessions = createSessions()
 /**
  * 必须独占后台的请求。判准是「会不会动全局单例」，不是「跑得久不久」。
  *
- * analyze / check_links 是长任务，这好理解。真正容易漏的是后面四个：apply、undo、
- * import、apply_cleanup 全都在改**同一棵书签树**，而 apply 与 undo 还共用
- * engine/snapshot.ts 里唯一那个 SNAPSHOT_KEY——两个窗口同时落地，后写的快照会把
+ * analyze / check_links 是长任务，这好理解。真正容易漏的是后面这些：apply、undo、
+ * import、apply_cleanup、apply_aggregate 全都在改**同一棵书签树**，而落地操作与 undo
+ * 还共用 engine/snapshot.ts 里唯一那个 SNAPSHOT_KEY——两个窗口同时落地，后写的快照会把
  * 先写的整个盖掉，于是先落地那一次**再也撤销不回去**。这比进度串台严重得多。
  *
  * analyze 也必须挡住 apply：分析产出的方案是对着某一刻的书签树算的，
@@ -48,13 +48,13 @@ const sessions = createSessions()
  * 并发跑没有互相破坏的余地，挡住它们只会让另一个窗口连书签树都读不了。
  */
 const EXCLUSIVE: ReadonlySet<Request['kind']> = new Set([
-  'analyze', 'check_links', 'apply', 'undo', 'import', 'apply_cleanup', 'reclassify',
+  'analyze', 'check_links', 'apply', 'undo', 'import', 'apply_cleanup', 'apply_aggregate', 'reclassify',
 ])
 
 /**
  * 独占任务里**吃取消信号**的那几种。
  *
- * 与 EXCLUSIVE 分开是必须的：apply / undo / import / apply_cleanup 从不读
+ * 与 EXCLUSIVE 分开是必须的：apply / undo / import / apply_cleanup / apply_aggregate 从不读
  * isCancelled、不收 signal，界面也不给它们取消按钮。把它们一并当成可取消，
  * 换来的是「点了取消 → 日志说正在取消 → 它照样跑完」这种骗人的三连。
  */

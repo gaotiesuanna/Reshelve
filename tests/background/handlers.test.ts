@@ -3623,6 +3623,37 @@ describe('cleanup_scan', () => {
   })
 })
 
+describe('apply_aggregate', () => {
+  it('routes the selected bookmarks to the local aggregation engine', async () => {
+    const bookmarks = createFakeBookmarks([
+      { id: '0', title: '', children: [
+        { id: '1', title: '书签栏', children: [
+          { id: '10', title: '来源', children: [
+            { id: '100', title: '路由器', url: 'http://192.168.5.1' },
+          ]},
+          { id: '11', title: '归档', children: [] },
+        ]},
+      ]},
+    ])
+    const ports = { bookmarks: bookmarks.api, storage: createFakeStorage() }
+
+    const response = await handle(ports, {
+      kind: 'apply_aggregate',
+      input: {
+        planId: 'aggregate-1',
+        bookmarkIds: ['100'],
+        destination: { kind: 'existing', folderId: '11' },
+        folderTitle: '局域网设备',
+      },
+    })
+
+    expect(response.ok).toBe(true)
+    if (!response.ok || response.kind !== 'apply_aggregate') throw new Error('unexpected')
+    expect(response.result).toMatchObject({ moved: 1, createdFolder: true })
+    expect(bookmarks.structure()).toContain('书签栏/归档/局域网设备/路由器')
+  })
+})
+
 describe('cleanup_stale_scan', () => {
   it('routes a scoped request to the stale scan engine', async () => {
     const bookmarks = createFakeBookmarks([

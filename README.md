@@ -60,6 +60,9 @@ Full policy: [Privacy Policy / 隐私权政策](https://gist.github.com/gaotiesu
 
 ## Also included
 
+- **Group by content** for bookmarks whose title or URL contains text you enter. Review the
+  matches first, then move the selected bookmarks into a new folder at the location you
+  choose. Matching stays local, uses no model, and does not visit those URLs.
 - **Export** selected folders to JSON — full folder structure, or a flat list of links.
 - **Import** a bookmark file someone shared with you. You see what's inside before anything
   is written, and everything lands in one new folder. `javascript:` and `data:` links are

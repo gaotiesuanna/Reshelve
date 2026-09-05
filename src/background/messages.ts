@@ -1,6 +1,7 @@
 import type { OrganizePlan, ScanResult } from '@/core/types'
 import type { ApplyResult } from '@/engine/apply'
 import type { CleanupInput, CleanupResult, CleanupScan } from '@/engine/cleanup'
+import type { AggregateInput, AggregateResult } from '@/engine/aggregate'
 import type { LinkResult, LinkTarget } from '@/engine/linkCheck'
 import type { UndoResult } from '@/engine/undo'
 import type { BookmarkNode } from '@/core/ports'
@@ -57,6 +58,7 @@ export type Request =
   | { kind: 'cleanup_scan' }
   | { kind: 'apply_cleanup'; input: CleanupInput }
   | { kind: 'cleanup_stale_scan'; scopeRootIds: string[] }
+  | { kind: 'apply_aggregate'; input: AggregateInput }
   /**
    * 必须走后台：service worker 才有那份 host 权限的完整上下文，
    * 而且长时间的批量请求需要 keepalive 撑着，与 analyze 同一条路。
@@ -100,6 +102,7 @@ export type Response =
   | { ok: true; kind: 'cleanup_scan'; scan: CleanupScan }
   | { ok: true; kind: 'apply_cleanup'; result: CleanupResult }
   | { ok: true; kind: 'cleanup_stale_scan'; scan: StaleScanResult }
+  | { ok: true; kind: 'apply_aggregate'; result: AggregateResult }
   | { ok: true; kind: 'check_links'; results: LinkResult[] }
   | { ok: true; kind: 'reclassify'; plan: OrganizePlan }
   /**

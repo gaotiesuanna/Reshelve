@@ -81,6 +81,7 @@ describe('英文界面渲染守卫：步骤组件', () => {
     useStore.setState({
       cleanupScan: { duplicates: [], emptyFolders: [], items: [], folders: [], scopeRootIds: [] },
       cleanupResult: null,
+      aggregateResult: null,
       cleanupChecked: new Set(),
       cleanupMove: new Set(),
       cleanupFolders: new Set(),

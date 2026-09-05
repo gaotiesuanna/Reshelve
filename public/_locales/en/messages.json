@@ -336,6 +336,95 @@
   "cleanupTabLinks": {
     "message": "Dead links"
   },
+  "cleanupTabAggregate": {
+    "message": "Group"
+  },
+  "cleanupAggregateExplain": {
+    "message": "Enter part of a title or URL, review the matches, then move the selected bookmarks into one folder. Matching stays local, uses no model, and does not visit the URLs."
+  },
+  "cleanupAggregateQueryLabel": {
+    "message": "Match content"
+  },
+  "cleanupAggregateQueryPlaceholder": {
+    "message": "For example: 127.1.2."
+  },
+  "cleanupAggregateNoMatches": {
+    "message": "No bookmark title or URL contains that text."
+  },
+  "cleanupAggregateMatchCount": {
+    "message": "$count$ found, $selected$ selected",
+    "placeholders": { "count": { "content": "$1" }, "selected": { "content": "$2" } }
+  },
+  "cleanupAggregateSelectAll": {
+    "message": "Select all"
+  },
+  "cleanupAggregateClearAll": {
+    "message": "Clear selection"
+  },
+  "cleanupAggregateMatchListLabel": {
+    "message": "Content matches"
+  },
+  "cleanupAggregateSelectItem": {
+    "message": "Group $title$",
+    "placeholders": { "title": { "content": "$1" } }
+  },
+  "cleanupAggregateFolderLabel": {
+    "message": "New folder name"
+  },
+  "cleanupAggregateFolderPlaceholder": {
+    "message": "For example: Local network"
+  },
+  "cleanupAggregateParentLabel": {
+    "message": "Create it in"
+  },
+  "cleanupAggregateParentSearchPlaceholder": {
+    "message": "Type a path or search existing folders"
+  },
+  "cleanupAggregateParentNoMatches": {
+    "message": "No matching folders"
+  },
+  "cleanupAggregateParentUseTyped": {
+    "message": "Press Enter to use this path"
+  },
+  "cleanupAggregateParentHint": {
+    "message": "Type a path or choose from the list. Missing folders will be created."
+  },
+  "cleanupAggregateRunOne": {
+    "message": "Group $count$ bookmark",
+    "placeholders": { "count": { "content": "$1" } }
+  },
+  "cleanupAggregateRunOther": {
+    "message": "Group $count$ bookmarks",
+    "placeholders": { "count": { "content": "$1" } }
+  },
+  "cleanupAggregateDoneOne": {
+    "message": "Done: moved $count$ bookmark into \"$folder$\".",
+    "placeholders": { "count": { "content": "$1" }, "folder": { "content": "$2" } }
+  },
+  "cleanupAggregateDoneOther": {
+    "message": "Done: moved $count$ bookmarks into \"$folder$\".",
+    "placeholders": { "count": { "content": "$1" }, "folder": { "content": "$2" } }
+  },
+  "cleanupAggregateAlreadyThereOne": {
+    "message": "$count$ more was already in the target folder and was not moved again.",
+    "placeholders": { "count": { "content": "$1" } }
+  },
+  "cleanupAggregateAlreadyThereOther": {
+    "message": "$count$ more were already in the target folder and were not moved again.",
+    "placeholders": { "count": { "content": "$1" } }
+  },
+  "cleanupAggregateUndo": {
+    "message": "Undo this grouping"
+  },
+  "cleanupAggregateAgain": {
+    "message": "Group more"
+  },
+  "busyAggregating": {
+    "message": "Grouping bookmarks…"
+  },
+  "errAggregateFailed": {
+    "message": "Could not group the bookmarks."
+  },
   "cleanupStaleExplain": {
     "message": "Find long-unused bookmarks in the current scope from each bookmark's last-opened time recorded by Chrome. Browsing history is not read."
   },

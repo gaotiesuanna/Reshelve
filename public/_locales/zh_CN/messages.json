@@ -336,6 +336,95 @@
   "cleanupTabLinks": {
     "message": "失效链接"
   },
+  "cleanupTabAggregate": {
+    "message": "内容聚合"
+  },
+  "cleanupAggregateExplain": {
+    "message": "输入标题或网址中的一段内容，先核对匹配结果，再把选中的收藏移入一个文件夹。匹配只在本地完成，不调用模型，也不访问这些网址。"
+  },
+  "cleanupAggregateQueryLabel": {
+    "message": "匹配内容"
+  },
+  "cleanupAggregateQueryPlaceholder": {
+    "message": "例如：127.1.2."
+  },
+  "cleanupAggregateNoMatches": {
+    "message": "没有标题或网址包含这段内容。"
+  },
+  "cleanupAggregateMatchCount": {
+    "message": "找到 $count$ 条，已选 $selected$ 条",
+    "placeholders": { "count": { "content": "$1" }, "selected": { "content": "$2" } }
+  },
+  "cleanupAggregateSelectAll": {
+    "message": "全选"
+  },
+  "cleanupAggregateClearAll": {
+    "message": "清空选择"
+  },
+  "cleanupAggregateMatchListLabel": {
+    "message": "内容匹配结果"
+  },
+  "cleanupAggregateSelectItem": {
+    "message": "聚合 $title$",
+    "placeholders": { "title": { "content": "$1" } }
+  },
+  "cleanupAggregateFolderLabel": {
+    "message": "聚合文件夹名称"
+  },
+  "cleanupAggregateFolderPlaceholder": {
+    "message": "例如：局域网设备"
+  },
+  "cleanupAggregateParentLabel": {
+    "message": "新文件夹放在"
+  },
+  "cleanupAggregateParentSearchPlaceholder": {
+    "message": "输入路径或搜索现有文件夹"
+  },
+  "cleanupAggregateParentNoMatches": {
+    "message": "没有匹配的文件夹"
+  },
+  "cleanupAggregateParentUseTyped": {
+    "message": "按 Enter 使用输入的路径"
+  },
+  "cleanupAggregateParentHint": {
+    "message": "可手动输入路径，也可从下拉列表选择；缺失的目录会自动创建。"
+  },
+  "cleanupAggregateRunOne": {
+    "message": "聚合 $count$ 条收藏",
+    "placeholders": { "count": { "content": "$1" } }
+  },
+  "cleanupAggregateRunOther": {
+    "message": "聚合 $count$ 条收藏",
+    "placeholders": { "count": { "content": "$1" } }
+  },
+  "cleanupAggregateDoneOne": {
+    "message": "聚合完成：已将 $count$ 条收藏移入「$folder$」。",
+    "placeholders": { "count": { "content": "$1" }, "folder": { "content": "$2" } }
+  },
+  "cleanupAggregateDoneOther": {
+    "message": "聚合完成：已将 $count$ 条收藏移入「$folder$」。",
+    "placeholders": { "count": { "content": "$1" }, "folder": { "content": "$2" } }
+  },
+  "cleanupAggregateAlreadyThereOne": {
+    "message": "另有 $count$ 条已经在目标文件夹中，未重复移动。",
+    "placeholders": { "count": { "content": "$1" } }
+  },
+  "cleanupAggregateAlreadyThereOther": {
+    "message": "另有 $count$ 条已经在目标文件夹中，未重复移动。",
+    "placeholders": { "count": { "content": "$1" } }
+  },
+  "cleanupAggregateUndo": {
+    "message": "撤销本次聚合"
+  },
+  "cleanupAggregateAgain": {
+    "message": "再聚合一轮"
+  },
+  "busyAggregating": {
+    "message": "正在聚合收藏……"
+  },
+  "errAggregateFailed": {
+    "message": "聚合收藏失败。"
+  },
   "cleanupStaleExplain": {
     "message": "按 Chrome 记录的每条书签上次打开时间，找出当前范围内长期未使用的书签。不读取浏览历史。"
   },

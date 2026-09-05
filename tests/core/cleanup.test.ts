@@ -1,6 +1,7 @@
 import { describe, it, expect } from 'vitest'
-import { emptyAfterRemoval } from '@/core/cleanup'
+import { bookmarksMatchingContent, emptyAfterRemoval } from '@/core/cleanup'
 import type { BookmarkNode } from '@/core/ports'
+import type { BookmarkItem } from '@/core/types'
 
 const tree: BookmarkNode[] = [
   { id: '0', title: '', children: [
@@ -64,5 +65,31 @@ describe('emptyAfterRemoval', () => {
     const before = JSON.stringify(tree)
     emptyAfterRemoval(tree, ['1'], ['100'])
     expect(JSON.stringify(tree)).toBe(before)
+  })
+})
+
+describe('bookmarksMatchingContent', () => {
+  const items: BookmarkItem[] = [
+    {
+      id: 'local', title: 'Router admin', url: 'http://192.168.5.1/login',
+      parentId: '10', index: 0, currentPath: ['书签栏', '网络'],
+    },
+    {
+      id: 'title', title: '192.168.5. NAS', url: 'https://nas.example.com',
+      parentId: '10', index: 1, currentPath: ['书签栏', '网络'],
+    },
+    {
+      id: 'other', title: 'React', url: 'https://react.dev',
+      parentId: '11', index: 0, currentPath: ['书签栏', '开发'],
+    },
+  ]
+
+  it('同时匹配标题和网址，忽略大小写及查询两端空白', () => {
+    expect(bookmarksMatchingContent(items, '  ROUTER  ').map((item) => item.id)).toEqual(['local'])
+    expect(bookmarksMatchingContent(items, '192.168.5.').map((item) => item.id)).toEqual(['local', 'title'])
+  })
+
+  it('空白查询不匹配整库', () => {
+    expect(bookmarksMatchingContent(items, '   ')).toEqual([])
   })
 })

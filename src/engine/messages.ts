@@ -86,3 +86,17 @@ export function msgCleanupMoveFailed(locale: Locale, detail: string): string {
 export function msgCleanupFolderNotEmpty(locale: Locale): string {
   return locale === 'zh_CN' ? '目录里还有书签，未删除' : 'Folder still contains bookmarks, not deleted'
 }
+
+// ---- aggregateBookmarks ----
+
+export function msgAggregateTargetUnavailable(locale: Locale): string {
+  return locale === 'zh_CN' ? '目标位置已不存在或不是文件夹' : 'The target location no longer exists or is not a folder'
+}
+
+export function msgAggregateFolderNameRequired(locale: Locale): string {
+  return locale === 'zh_CN' ? '请输入聚合文件夹名称' : 'Enter a folder name for the grouped bookmarks'
+}
+
+export function msgAggregateFolderCreateFailed(locale: Locale, detail: string): string {
+  return locale === 'zh_CN' ? `聚合文件夹创建失败：${detail}` : `Failed to create the grouping folder: ${detail}`
+}

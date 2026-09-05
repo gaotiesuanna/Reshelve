@@ -19,6 +19,7 @@ import type { Ports } from '@/core/ports'
 import type { CachedClassification, OrganizePlan, TagResult } from '@/core/types'
 import { applyPlan } from '@/engine/apply'
 import { applyCleanup, scanForCleanup } from '@/engine/cleanup'
+import { aggregateBookmarks } from '@/engine/aggregate'
 import { scanStaleBookmarks } from '@/engine/stale'
 import { checkLinks } from '@/engine/linkCheck'
 import { loadSnapshot } from '@/engine/snapshot'
@@ -963,6 +964,13 @@ export async function handle(
           String(result.moved),
         ))
         return { ok: true, kind: 'apply_cleanup', result }
+      }
+
+      case 'apply_aggregate': {
+        const result = await aggregateBookmarks(ports, request.input, locale, {
+          onProgress: progress('cleanup'),
+        })
+        return { ok: true, kind: 'apply_aggregate', result }
       }
 
       case 'check_links': {

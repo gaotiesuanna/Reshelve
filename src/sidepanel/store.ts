@@ -15,6 +15,7 @@ import type { CleanupSelection } from '@/core/cleanup'
 import type { DuplicateGroup } from '@/core/duplicates'
 import type { ApplyResult } from '@/engine/apply'
 import type { CleanupResult, CleanupScan } from '@/engine/cleanup'
+import type { AggregateInput, AggregateResult } from '@/engine/aggregate'
 import type { StaleScanResult } from '@/core/stale'
 import type { ImportResult } from '@/engine/importTree'
 import type { LinkResult } from '@/engine/linkCheck'
@@ -306,7 +307,7 @@ interface State {
   undoAvailable: boolean
   busy: string | null
   /** 当前在跑哪一步，决定能不能取消。 */
-  busyKind: 'init' | 'scan' | 'analyze' | 'apply' | 'undo' | 'cleanup' | 'checkLinks' | 'reclassify' | null
+  busyKind: 'init' | 'scan' | 'analyze' | 'apply' | 'undo' | 'cleanup' | 'aggregate' | 'checkLinks' | 'reclassify' | null
   /**
    * 上一次失败的是哪一步，`null` 表示没有可重试的东西。
    *
@@ -370,6 +371,8 @@ interface State {
   cleanupScan: CleanupScan | null
   /** 清理执行的结果，非 null 时清理页切到结果视图。 */
   cleanupResult: CleanupResult | null
+  /** 内容聚合执行结果；非 null 时清理页展示本轮去向与撤销入口。 */
+  aggregateResult: AggregateResult | null
   /** 每组重复项当前选中保留哪条，键是 DuplicateGroup.key。缺省时回落到 group.keepId。 */
   cleanupKeep: Record<string, string>
   /** 被勾中待删的书签 id，跨重复项的所有组共用一个集合。 */
@@ -472,6 +475,7 @@ interface State {
   runCleanupScan(): Promise<void>
   runStaleScan(): Promise<void>
   runCleanup(): Promise<void>
+  runAggregate(input: Omit<AggregateInput, 'planId'>): Promise<void>
   toggleCleanupItem(id: string): void
   setCleanupKeep(groupKey: string, id: string): void
   toggleCleanupMove(id: string): void
@@ -538,6 +542,7 @@ export const useStore = create<State>((set, get) => ({
   cleanupScan: null,
   cleanupResult: null,
   cleanupKeep: {},
+  aggregateResult: null,
   cleanupChecked: new Set(),
   cleanupFolders: new Set(),
   cleanupMove: new Set(),
@@ -1035,6 +1040,7 @@ export const useStore = create<State>((set, get) => ({
       cleanupFolders: new Set(),
       cleanupStaleMove: new Set(),
       cleanupResult: null,
+      aggregateResult: null,
       busy: null,
       busyKind: null,
     })
@@ -1122,6 +1128,32 @@ export const useStore = create<State>((set, get) => ({
     // 补上 Task 6 漏掉的一步：不刷新的话，store 里的 tree 还是清理前那棵。
     // 连着做第二次清理时，空目录预览走 emptyAfterRemoval(tree, ...) 用的就是这棵过期的
     // tree，会按「已经删掉的书签还在」来算，报出一批根本不会变空的目录。
+    await get().refreshTree()
+  },
+
+  async runAggregate(input) {
+    const hasDestination = input.destination.kind === 'existing'
+      ? input.destination.folderId !== ''
+      : input.destination.segments.some((part) => part.trim() !== '')
+    if (input.bookmarkIds.length === 0 || !hasDestination || input.folderTitle.trim() === '') return
+    set({ busy: t('busyAggregating'), busyKind: 'aggregate', error: null, progress: null, logs: [] })
+    const stopKeepalive = startKeepalive(ensureConnection())
+    const res = await send({
+      kind: 'apply_aggregate',
+      input: { ...input, planId: `aggregate-${Date.now()}` },
+    }).finally(stopKeepalive)
+    if (!res.ok) return fail(set, res.error, null)
+    if (res.kind !== 'apply_aggregate') return set({ busy: null, busyKind: null })
+    if (res.result.status === 'failed') {
+      return fail(set, res.result.error ?? t('errAggregateFailed'), null)
+    }
+    set({ aggregateResult: res.result, busy: null, busyKind: null })
+    const undoRes = await send({ kind: 'get_undo_state' })
+    set({
+      undoAvailable: undoRes.ok && undoRes.kind === 'get_undo_state'
+        ? undoRes.available
+        : get().undoAvailable,
+    })
     await get().refreshTree()
   },
 

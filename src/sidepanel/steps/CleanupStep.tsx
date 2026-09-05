@@ -4,6 +4,7 @@ import { emptyAfterRemoval } from '@/core/cleanup'
 import type { DuplicateGroup } from '@/core/duplicates'
 import type { BookmarkItem } from '@/core/types'
 import { StaleCleanupSection } from '../components/StaleCleanupSection'
+import { AggregateCleanupSection } from '../components/AggregateCleanupSection'
 import { ProgressPanel } from '../components/ProgressPanel'
 import { useStore } from '../store'
 /**
@@ -69,12 +70,13 @@ const secondaryAction = [
   'disabled:cursor-not-allowed disabled:opacity-40',
 ].join(' ')
 
-type CleanupTab = 'stale' | 'duplicates' | 'links'
+type CleanupTab = 'stale' | 'duplicates' | 'links' | 'aggregate'
 
 const CLEANUP_TABS: Array<{ key: CleanupTab; labelKey: Parameters<typeof t>[0] }> = [
   { key: 'stale', labelKey: 'cleanupTabStale' },
   { key: 'duplicates', labelKey: 'cleanupTabDuplicates' },
   { key: 'links', labelKey: 'cleanupTabLinks' },
+  { key: 'aggregate', labelKey: 'cleanupTabAggregate' },
 ]
 
 /**
@@ -92,7 +94,7 @@ const subTabOff = `${subTabBase} text-neutral-600 hover:text-neutral-800`
 
 export function CleanupStep() {
   const {
-    tree, cleanupScan, cleanupResult, cleanupChecked, cleanupFolders,
+    tree, cleanupScan, cleanupResult, aggregateResult, cleanupChecked, cleanupFolders,
     cleanupLinks, linkCheckState, cleanupMove, cleanupStaleMove,
     startLinkCheck, toggleCleanupMove, toggleCleanupItem,
     busy, busyKind, progress, logs, cancel,
@@ -123,6 +125,65 @@ export function CleanupStep() {
     () => new Set((cleanupScan?.emptyFolders ?? []).map((f) => f.id)),
     [cleanupScan],
   )
+
+  if (aggregateResult !== null) {
+    return (
+      <div className="space-y-3 text-sm leading-caption">
+        <p className="font-medium text-neutral-800">
+          {plural(
+            aggregateResult.moved,
+            'cleanupAggregateDoneOne',
+            'cleanupAggregateDoneOther',
+            String(aggregateResult.moved),
+            aggregateResult.folderTitle,
+          )}
+        </p>
+        {aggregateResult.alreadyInTarget > 0 && (
+          <p className="text-neutral-500">
+            {plural(
+              aggregateResult.alreadyInTarget,
+              'cleanupAggregateAlreadyThereOne',
+              'cleanupAggregateAlreadyThereOther',
+              String(aggregateResult.alreadyInTarget),
+            )}
+          </p>
+        )}
+        {aggregateResult.skipped.length > 0 && (
+          <ul className="space-y-1 text-neutral-500">
+            {aggregateResult.skipped.map((each) => (
+              <li key={each.bookmarkId}>
+                {t('cleanupSkippedItem', each.bookmarkId, each.reason)}
+              </li>
+            ))}
+          </ul>
+        )}
+        <div className="space-y-2 pt-1">
+          <div className="flex gap-2">
+            <button
+              className={`flex-1 ${secondaryAction}`}
+              disabled={!aggregateResult.changed || !undoAvailable || busy !== null}
+              onClick={() => void undo()}
+            >
+              {t('cleanupAggregateUndo')}
+            </button>
+            <button
+              className={`flex-1 ${secondaryAction}`}
+              disabled={busy !== null}
+              onClick={() => void runCleanupScan()}
+            >
+              {t('cleanupAggregateAgain')}
+            </button>
+          </div>
+          <button
+            className="w-full cursor-pointer rounded-md bg-neutral-800 py-2 text-base leading-body font-medium text-white transition-colors duration-150 hover:bg-neutral-900 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-neutral-400 focus-visible:ring-offset-1 motion-reduce:transition-none"
+            onClick={() => window.close()}
+          >
+            {t('cleanupFinish')}
+          </button>
+        </div>
+      </div>
+    )
+  }
 
   if (cleanupResult !== null) {
     return (
@@ -331,7 +392,7 @@ export function CleanupStep() {
           </div>
         )}
 
-        {willBeEmpty.length > 0 && (
+        {tab !== 'aggregate' && willBeEmpty.length > 0 && (
           <section className="space-y-2">
             <h2 className="text-sm leading-caption font-medium text-neutral-700">{t('cleanupSectionEmpty')}</h2>
             <ul className="space-y-1">
@@ -361,24 +422,36 @@ export function CleanupStep() {
             </ul>
           </section>
         )}
+        {tab === 'aggregate' && (
+          <div
+            role="tabpanel"
+            id="cleanup-panel-aggregate"
+            aria-labelledby="cleanup-tab-aggregate"
+          >
+            <AggregateCleanupSection />
+          </div>
+        )}
+
       </div>
 
-      {/* 吸底的负外边距与 pb-4 的用意见 ScopeStep.tsx 底部那一大段注释，此处照抄 */}
-      <div className="sticky -bottom-4 -mx-4 -mb-4 mt-3 space-y-2 border-t border-neutral-200 bg-white px-4 pb-4 pt-3">
-        {/* 撤销只有一个槽，清理会把上一次 AI 整理的快照覆盖掉。不静默覆盖 */}
-        {undoAvailable && (
-          <p className="text-xs leading-relaxed text-amber-700">
-            {t('cleanupOverwriteUndoWarning')}
-          </p>
-        )}
-        <button
-          className="w-full cursor-pointer rounded-md bg-neutral-800 py-2 text-base leading-body font-medium text-white hover:enabled:bg-neutral-900 disabled:cursor-not-allowed disabled:opacity-40"
-          disabled={total === 0 || busy !== null}
-          onClick={() => void runCleanup()}
-        >
-          {plural(total, 'cleanupRunOne', 'cleanupRunOther', String(total))}
-        </button>
-      </div>
+      {tab !== 'aggregate' && (
+        /* 吸底的负外边距与 pb-4 的用意见 ScopeStep.tsx 底部那一大段注释，此处照抄 */
+        <div className="sticky -bottom-4 -mx-4 -mb-4 mt-3 space-y-2 border-t border-neutral-200 bg-white px-4 pb-4 pt-3">
+          {/* 撤销只有一个槽，清理会把上一次 AI 整理的快照覆盖掉。不静默覆盖 */}
+          {undoAvailable && (
+            <p className="text-xs leading-relaxed text-amber-700">
+              {t('cleanupOverwriteUndoWarning')}
+            </p>
+          )}
+          <button
+            className="w-full cursor-pointer rounded-md bg-neutral-800 py-2 text-base leading-body font-medium text-white hover:enabled:bg-neutral-900 disabled:cursor-not-allowed disabled:opacity-40"
+            disabled={total === 0 || busy !== null}
+            onClick={() => void runCleanup()}
+          >
+            {plural(total, 'cleanupRunOne', 'cleanupRunOther', String(total))}
+          </button>
+        </div>
+      )}
       {(tab === 'duplicates' || busy !== null) && (
         <ProgressPanel
           busy={busy}

@@ -6,7 +6,7 @@ import { Shell } from '@/sidepanel/components/Shell'
 import { useStore } from '@/sidepanel/store'
 import { send } from '@/sidepanel/lib/send'
 import type { BookmarkNode } from '@/core/ports'
-import type { BookmarkItem } from '@/core/types'
+import type { BookmarkItem, FolderItem } from '@/core/types'
 import type { StaleScanResult } from '@/core/stale'
 import type { CleanupResult } from '@/engine/cleanup'
 
@@ -118,6 +118,7 @@ beforeEach(() => {
     error: null,
     cleanupScan: scan,
     cleanupResult: null,
+    aggregateResult: null,
     cleanupKeep: {},
     // exact 组的默认勾选：除保留项之外全勾上
     cleanupChecked: new Set(['101', '120']),
@@ -669,6 +670,161 @@ describe('CleanupStep 空状态', () => {
     })
     render(<CleanupStep />)
     expect((screen.getByRole('button', { name: /清理|clean/i }) as HTMLButtonElement).disabled).toBe(true)
+  })
+})
+
+describe('CleanupStep 内容聚合', () => {
+  const aggregateItems: BookmarkItem[] = [
+    item({
+      id: 'lan-1', title: '路由器后台', url: 'http://192.168.5.1',
+      parentId: '10', currentPath: ['书签栏', '目录甲'],
+    }),
+    item({
+      id: 'lan-2', title: 'NAS', url: 'http://192.168.5.2',
+      parentId: '11', currentPath: ['书签栏', '目录乙'],
+    }),
+    item({
+      id: 'web-1', title: 'React', url: 'https://react.dev',
+      parentId: '11', currentPath: ['书签栏', '目录乙'],
+    }),
+  ]
+  const aggregateFolders: FolderItem[] = [
+    { id: '1', title: '书签栏', parentId: '0', index: 0, path: [], depth: 0, level: 1 },
+    { id: '10', title: '目录甲', parentId: '1', index: 0, path: ['书签栏'], depth: 1, level: 2 },
+    { id: '11', title: '目录乙', parentId: '1', index: 1, path: ['书签栏'], depth: 1, level: 2 },
+  ]
+
+  it('输入内容后在本地预览标题或网址匹配，并允许排除单条', async () => {
+    useStore.setState({ cleanupScan: { ...scan, items: aggregateItems, folders: aggregateFolders } })
+    render(<CleanupStep />)
+    await openCleanupTab('内容聚合')
+
+    await userEvent.type(screen.getByRole('searchbox', { name: '匹配内容' }), '192.168.5.')
+
+    expect(screen.getByText('路由器后台')).toBeDefined()
+    expect(screen.getByText('NAS')).toBeDefined()
+    expect(screen.queryByText('React')).toBeNull()
+    expect(screen.getByText('找到 2 条，已选 2 条')).toBeDefined()
+    await userEvent.click(screen.getByRole('checkbox', { name: '聚合 NAS' }))
+    expect(screen.getByText('找到 2 条，已选 1 条')).toBeDefined()
+  })
+
+  it('匹配超过 200 条时仍可完整选择，不用缩小用户要求的范围', async () => {
+    const many = Array.from({ length: 201 }, (_, index) => item({
+      id: `lan-${index}`,
+      title: `设备 ${index}`,
+      url: `http://192.168.5.${index}`,
+      parentId: '10',
+      currentPath: ['书签栏', '目录甲'],
+    }))
+    useStore.setState({ cleanupScan: { ...scan, items: many, folders: aggregateFolders } })
+    render(<CleanupStep />)
+    await openCleanupTab('内容聚合')
+
+    await userEvent.type(screen.getByRole('searchbox', { name: '匹配内容' }), '192.168.5.')
+
+    expect(screen.getByText('找到 201 条，已选 201 条')).toBeDefined()
+    expect(screen.getByRole('button', { name: '聚合 201 条收藏' })).toBeDefined()
+  })
+
+  it('目标文件夹可按完整路径搜索，并支持键盘确认与取消', async () => {
+    useStore.setState({ cleanupScan: { ...scan, items: aggregateItems, folders: aggregateFolders } })
+    render(<CleanupStep />)
+    await openCleanupTab('内容聚合')
+    await userEvent.type(screen.getByRole('searchbox', { name: '匹配内容' }), '192.168.5.')
+
+    const picker = screen.getByRole('combobox', { name: '新文件夹放在' }) as HTMLInputElement
+    expect(picker.value).toBe('书签栏')
+    await userEvent.click(picker)
+    await userEvent.type(picker, '目录乙')
+
+    expect(screen.getAllByRole('option')).toHaveLength(1)
+    expect(screen.getByRole('option', { name: '书签栏 / 目录乙' })).toBeDefined()
+    await userEvent.keyboard('{ArrowDown}{Enter}')
+    expect(picker.value).toBe('书签栏 / 目录乙')
+    expect(picker.getAttribute('aria-expanded')).toBe('false')
+
+    await userEvent.click(picker)
+    await userEvent.type(picker, '不存在')
+    expect(screen.getByRole('option', { name: '按 Enter 使用输入的路径' }).getAttribute('aria-disabled')).toBe('true')
+    await userEvent.keyboard('{Escape}')
+    expect(picker.value).toBe('书签栏 / 目录乙')
+  })
+
+  it('手动输入下拉框中不存在的路径时，按路径目标发送请求', async () => {
+    useStore.setState({ cleanupScan: { ...scan, items: aggregateItems, folders: aggregateFolders } })
+    vi.mocked(send).mockResolvedValue({ ok: false, error: 'stop after request' } as never)
+    render(<CleanupStep />)
+    await openCleanupTab('内容聚合')
+    await userEvent.type(screen.getByRole('searchbox', { name: '匹配内容' }), '192.168.5.')
+    await userEvent.type(screen.getByRole('textbox', { name: '聚合文件夹名称' }), '局域网设备')
+
+    const picker = screen.getByRole('combobox', { name: '新文件夹放在' }) as HTMLInputElement
+    await userEvent.click(picker)
+    await userEvent.type(picker, '书签栏 / finished / 魔法')
+    await userEvent.keyboard('{Enter}')
+    expect(picker.value).toBe('书签栏 / finished / 魔法')
+    await userEvent.click(screen.getByRole('button', { name: '聚合 2 条收藏' }))
+
+    await waitFor(() => {
+      expect(send).toHaveBeenCalledWith({
+        kind: 'apply_aggregate',
+        input: {
+          planId: expect.stringMatching(/^aggregate-/),
+          bookmarkIds: ['lan-1', 'lan-2'],
+          destination: { kind: 'path', segments: ['书签栏', 'finished', '魔法'] },
+          folderTitle: '局域网设备',
+        },
+      })
+    })
+  })
+
+  it('填写文件夹名称和位置后发送明确名单，完成页提供撤销入口', async () => {
+    useStore.setState({ cleanupScan: { ...scan, items: aggregateItems, folders: aggregateFolders } })
+    vi.mocked(send).mockImplementation(async (request) => {
+      if (request.kind === 'apply_aggregate') {
+        return {
+          ok: true,
+          kind: 'apply_aggregate',
+          result: {
+            status: 'completed', moved: 2, alreadyInTarget: 0,
+            targetFolderId: 'new-folder', folderTitle: '局域网设备',
+            createdFolder: true, changed: true, skipped: [], error: null,
+          },
+        } as never
+      }
+      if (request.kind === 'get_undo_state') {
+        return { ok: true, kind: 'get_undo_state', available: true, createdAt: 1 } as never
+      }
+      if (request.kind === 'get_tree') return { ok: true, kind: 'get_tree', tree } as never
+      throw new Error(`unexpected request: ${request.kind}`)
+    })
+    render(<CleanupStep />)
+    await openCleanupTab('内容聚合')
+    await userEvent.type(screen.getByRole('searchbox', { name: '匹配内容' }), '192.168.5.')
+
+    const runBeforeName = screen.getByRole('button', { name: '聚合 2 条收藏' }) as HTMLButtonElement
+    expect(runBeforeName.disabled).toBe(true)
+    await userEvent.type(screen.getByRole('textbox', { name: '聚合文件夹名称' }), '局域网设备')
+    const parentPicker = screen.getByRole('combobox', { name: '新文件夹放在' })
+    await userEvent.click(parentPicker)
+    await userEvent.type(parentPicker, '目录乙')
+    await userEvent.click(screen.getByRole('option', { name: '书签栏 / 目录乙' }))
+    await userEvent.click(screen.getByRole('button', { name: '聚合 2 条收藏' }))
+
+    await waitFor(() => {
+      expect(send).toHaveBeenCalledWith({
+        kind: 'apply_aggregate',
+        input: {
+          planId: expect.stringMatching(/^aggregate-/),
+          bookmarkIds: ['lan-1', 'lan-2'],
+          destination: { kind: 'existing', folderId: '11' },
+          folderTitle: '局域网设备',
+        },
+      })
+    })
+    expect(await screen.findByText('聚合完成：已将 2 条收藏移入「局域网设备」。')).toBeDefined()
+    expect(screen.getByRole('button', { name: '撤销本次聚合' })).toBeDefined()
   })
 })
 
