@@ -1,0 +1,9 @@
+<!doctype html>
+<!-- offscreen 保活文档：任务在跑而侧栏全关时，靠它给 service worker 续命。
+     逻辑在 keepalive.ts，生命周期由后台管（见 background/service-worker.ts）。 -->
+<html lang="en">
+  <head><meta charset="utf-8" /><title>Reshelve keepalive</title></head>
+  <body>
+    <script type="module" src="./keepalive.ts"></script>
+  </body>
+</html>

@@ -44,6 +44,32 @@ const task = createTaskHub({
 // 锁的持有者不再是内存单槽，任何一次重启都会把没人认的锁当场销掉，
 // 「另一个窗口在跑」的幽灵锁从此不可能出现。
 void task.heal()
+// 保活文档活得比 SW 长不了也不该长：能走到这次冷启动，说明上一任 worker 已经
+// 死过一轮（心跳都没撑住它），journal 也已被 heal 判成 interrupted——
+// 留下来的文档只会白发消息，直接清掉。今天没有文档时这步是吞掉异常的空操作。
+closeKeepaliveDoc()
+
+/**
+ * offscreen 保活文档（src/offscreen/keepalive.html）：
+ * 任务在跑而侧栏全关时，靠它每 20s 给 SW 发消息续命。任务开跑才创建、收尾即关，
+ * 平时不占任何资源。文档不在了还去关、或已存在还去建，Chrome 都会抛错——
+ * 这里把两条路都当成「已是想要的状态」吞掉。
+ */
+const KEEPALIVE_URL = 'src/offscreen/keepalive.html'
+
+function ensureKeepaliveDoc(): void {
+  if (chrome.offscreen === undefined) return
+  void chrome.offscreen.createDocument({
+    url: KEEPALIVE_URL,
+    reasons: ['WORKERS'],
+    justification: '在侧栏全部关闭时维持 service worker 存活，让用户发起的书签整理任务跑完',
+  }).catch(() => {})
+}
+
+function closeKeepaliveDoc(): void {
+  if (chrome.offscreen === undefined) return
+  void chrome.offscreen.closeDocument().catch(() => {})
+}
 
 /**
  * 必须独占后台的请求。判准是「会不会动全局单例」，不是「跑得久不久」。
@@ -90,6 +116,9 @@ chrome.runtime.onConnect.addListener((port) => {
 })
 
 chrome.runtime.onMessage.addListener((message: PanelRequest, _sender, sendResponse) => {
+  // offscreen 文档的保活心跳：收到即重置空闲计时，目的已达，不进业务管线
+  if ((message as { type?: string }).type === 'keepalive') return false
+
   if (message.kind === 'cancel') {
     // 任务是全局的，任何侧栏的取消掐的都是同一轮。日志广播给所有面板：
     // 每个正在看这轮任务的人都该知道它正在收尾。
@@ -144,6 +173,8 @@ chrome.runtime.onMessage.addListener((message: PanelRequest, _sender, sendRespon
     sendResponse({ ok: false, error: t('errTaskRunning') })
     return false
   }
+  // 认领成功才请保活文档进场；用 begin 的结果当闸，被拒的请求不留痕迹
+  if (exclusive) ensureKeepaliveDoc()
 
   // 两道闸都要：task.signal 只回答「当前这轮可不可取消」，回答不了
   // 「眼下这条请求**是不是**那一轮」。少了 exclusive 这一道，同一个窗口在分析途中
@@ -158,11 +189,13 @@ chrome.runtime.onMessage.addListener((message: PanelRequest, _sender, sendRespon
   })
     .then((response: Response) => {
       task.end(response)
+      closeKeepaliveDoc()
       sendResponse(response)
     })
     .catch((error: unknown) => {
       const response: Response = { ok: false, error: String(error) }
       task.end(response)
+      closeKeepaliveDoc()
       sendResponse(response)
     })
   return true // 保持消息通道开启以支持异步响应

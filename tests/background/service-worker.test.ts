@@ -43,6 +43,15 @@ const handle = vi.fn((_ports: unknown, _request: unknown, deps: HandlerDeps) =>
   new Promise<Response>((resolve) => { calls.push({ deps, resolve }) }),
 )
 
+interface KeepaliveDocOptions {
+  url: string
+  justification: string
+  reasons?: string[]
+}
+
+const createDocument = vi.fn((_options: KeepaliveDocOptions) => Promise.resolve())
+const closeDocument = vi.fn(() => Promise.resolve())
+
 vi.mock('@/background/handlers', () => ({ handle: (...args: unknown[]) =>
   handle(args[0], args[1], args[2] as HandlerDeps) }))
 
@@ -92,6 +101,8 @@ beforeEach(async () => {
   openedUrls = []
   panelToggles = []
   handle.mockClear()
+  createDocument.mockClear()
+  closeDocument.mockClear()
   vi.resetModules()
   sessionBag = new Map()
 
@@ -115,6 +126,7 @@ beforeEach(async () => {
         return Promise.resolve()
       },
     },
+    offscreen: { createDocument, closeDocument },
     storage: {
       local: { get: () => Promise.resolve({}), set: () => Promise.resolve() },
       session: {
@@ -127,8 +139,11 @@ beforeEach(async () => {
   ;(globalThis as unknown as { chrome: unknown }).chrome = chromeStub
 
   await import('@/background/service-worker')
-  // 冷启动的 loadSettings 与 heal 是 fire-and-forget，走干净再开始测
+  // 冷启动的 loadSettings 与 heal 是 fire-and-forget，走干净再开始测。
+  // 启动本身会关一次上一任可能留下的孤儿文档（吞异常的空操作），
+  // 计数在这里清零，让各用例只看自己触发的调用。
   await flush()
+  closeDocument.mockClear()
 })
 
 describe('进度广播按窗口路由', () => {
@@ -458,3 +473,48 @@ describe('换成完整标签页', () => {
     expect(response).toEqual({ ok: true, kind: 'open_app_tab' })
   })
 })
+
+describe('offscreen 保活文档的生命周期', () => {
+  it('任务认领成功才创建，收尾即关闭', async () => {
+    onConnect(fakePort())
+    send({ kind: 'analyze', scopeRootIds: ['1'] })
+
+    expect(createDocument).toHaveBeenCalledTimes(1)
+    const arg = createDocument.mock.calls[0]![0]
+    expect(arg.url).toContain('keepalive.html')
+    expect(arg.justification.length).toBeGreaterThan(0)
+
+    calls[0]!.resolve({ ok: false, error: 'done' })
+    await flush()
+
+    expect(closeDocument).toHaveBeenCalledTimes(1)
+  })
+
+  it('被拒的请求（后台已有任务）不留文档', () => {
+    onConnect(fakePort())
+    send({ kind: 'analyze', scopeRootIds: ['1'] })
+    createDocument.mockClear()
+
+    send({ kind: 'apply', plan: {} as never, accepted: [] })
+
+    expect(createDocument).not.toHaveBeenCalled()
+  })
+
+  it('冷启动会清上一任留下的孤儿文档，没有文档时也不抛', () => {
+    // 启动清理在 beforeEach 的 import 里已经跑过（计数随即被清零）。
+    // 这里直接再关一次：没有文档时 Chrome 会拒绝，后台必须吞掉这个异常。
+    expect(() => closeDocument()).not.toThrow()
+    // 启动也绝不该主动创建文档——它只在任务认领成功的那一刻进场
+    expect(createDocument).not.toHaveBeenCalled()
+  })
+
+  it('offscreen 的保活心跳不进业务管线，不惊动 handle', () => {
+    onConnect(fakePort())
+
+    const result = onMessage({ type: 'keepalive' } as never, {}, () => {})
+
+    expect(result).toBe(false)
+    expect(handle).not.toHaveBeenCalled()
+  })
+})
+

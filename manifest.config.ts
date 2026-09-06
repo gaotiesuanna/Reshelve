@@ -14,7 +14,9 @@ export default defineManifest({
   homepage_url: 'https://github.com/gaotiesuanna/Reshelve',
   // favicon：HTML 导出要把图标写进 ICON 属性，靠它读 chrome-extension://<id>/_favicon/
   // （只读 Chrome 本地已缓存的图标，不发外部请求）
-  permissions: ['bookmarks', 'storage', 'unlimitedStorage', 'sidePanel', 'favicon'],
+  // offscreen：任务后台化之后（docs/specs/background-tasks.md），侧栏关掉时靠一个
+  // 不可见文档每 20s 给 service worker 发消息保活，长任务才不因空闲被浏览器回收。
+  permissions: ['bookmarks', 'storage', 'unlimitedStorage', 'sidePanel', 'favicon', 'offscreen'],
   // history 只给看板的「访问」排行用，装的时候不要。点「允许读取浏览记录」才申请。
   optional_permissions: ['history'],
   // https 那两条给模型端点用（按用户填的单个域名申请，见 sidepanel/lib/permissions.ts）。

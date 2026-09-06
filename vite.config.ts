@@ -45,4 +45,16 @@ export default defineConfig({
   resolve: {
     alias: { '@': fileURLToPath(new URL('./src', import.meta.url)) },
   },
+  build: {
+    rollupOptions: {
+      input: {
+        /**
+         * offscreen 保活文档不在 manifest 的常规字段里，crxjs 不会自动收进构建，
+         * 手动补一个入口（文档本体见 src/offscreen/keepalive.html，创建与关闭在
+         * background/service-worker.ts）。
+         */
+        'offscreen/keepalive': fileURLToPath(new URL('./src/offscreen/keepalive.html', import.meta.url)),
+      },
+    },
+  },
 })
