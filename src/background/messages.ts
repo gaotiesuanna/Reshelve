@@ -11,6 +11,7 @@ import type { ImportResult } from '@/engine/importTree'
 import type { OrganizeMode } from '@/core/mode'
 import type { TestFailure } from '@/llm/probe'
 import type { StaleScanResult } from '@/core/stale'
+import type { TaskRecord } from './events'
 
 /**
  * 失败分类跟着探针本身定义在 llm/probe.ts（那一层零浏览器依赖），这里再导出一次，
@@ -18,7 +19,15 @@ import type { StaleScanResult } from '@/core/stale'
  */
 export type { TestFailure }
 
-export type HandledRequest =
+/**
+ * 面板发给后台的业务请求。
+ *
+ * 曾经每条消息还捎带着发信侧栏的 clientId（传输层身份），后台据此决定进度推给谁、
+ * 取消掐哪一轮。任务改为全局单轮 + 广播之后（见 background/sessions.ts 的头注释），
+ * 窗口身份失去了存在的理由，字段整个删掉——旧侧栏升级后多发的那半个字段，后台
+ * 读类型时看不到它，自然忽略。
+ */
+export type Request =
   | { kind: 'get_tree' }
   | { kind: 'scan'; scopeRootIds: string[] }
   | {
@@ -77,31 +86,6 @@ export type HandledRequest =
    */
   | { kind: 'reclassify'; plan: OrganizePlan; bookmarkIds: string[] }
 
-/**
- * 侧栏能发的全部请求。open_app_tab 由 service worker 直接代办
- * （开标签页、关侧栏都要 chrome API，handlers 那层够不着也不该够着），
- * 所以它不进 HandledRequest——handle() 的 switch 保持穷尽。
- */
-export type Request = HandledRequest
-  /**
-   * 侧栏换成完整标签页。必须走后台：侧栏没有 close API，唯一的关法是
-   * sidePanel.enabled 先关后开，而面板一关侧栏页面就被卸载——
-   * 让侧栏自己做，「再启用」那一步永远轮不到执行，扩展图标从此点了没反应。
-   * mode 只作透传（写进标签页 URL），所以是裸 string，合法性由侧栏那边校验。
-   */
-  | { kind: 'open_app_tab'; mode: string }
-
-/**
- * 侧栏发过来的原始消息：请求本体，外加发信那个侧栏的身份。
- *
- * clientId 刻意**不进 Request**：它是传输层的事（后台要分清进度推给哪个窗口、
- * 取消该掐哪一轮，见 background/sessions.ts），而 handle() 处理的是业务请求，
- * 不该知道自己是被哪个窗口叫起来的。分成两个类型，这条边界就由类型系统看着。
- *
- * 可选是为了扩展刚更新、旧侧栏还没重载那一小段时间——那时的消息不带 clientId，
- * 后台退回 ANONYMOUS_CLIENT，行为与改造前的单槽一致，不至于整个不响应。
- */
-export type IncomingMessage = Request & { clientId?: string }
 
 export type Response =
   | { ok: true; kind: 'get_tree'; tree: BookmarkNode[] }
@@ -124,8 +108,29 @@ export type Response =
   | { ok: true; kind: 'check_links'; results: LinkResult[] }
   | { ok: true; kind: 'reclassify'; plan: OrganizePlan }
   | { ok: true; kind: 'open_app_tab' }
+  /** 当前后台任务的完整记录（含在途进度与终态载荷）；没有就是 null。 */
+  | { ok: true; kind: 'get_task'; record: TaskRecord | null }
+  | { ok: true; kind: 'clear_task' }
   /**
    * cancelled 为 true 表示用户主动取消，不是出错。
    * reason 只有 test_model 会带：失败时说清是哪一类，别的请求没有这个分类。
    */
   | { ok: false; error: string; cancelled?: boolean; reason?: TestFailure }
+
+/**
+ * 面板会发、但**不走 handle()** 的控制消息，由 service-worker 直接代办或作答
+ * （见 service-worker.ts 的 onMessage）。与 Request 分开，handle 的 switch
+ * 就不必为它们添永远走不到的分支：
+ *
+ * - get_task / clear_task 回答「后台现在在干嘛」，由任务中枢直接作答；
+ * - open_app_tab 把侧栏换成完整标签页：侧栏没有 close API，唯一关法是
+ *   sidePanel.enabled 先关后开，而面板一关侧栏页面就被卸载——让侧栏自己做，
+ *   「再启用」那一步永远轮不到执行，扩展图标从此点了没反应。
+ *   mode 只作透传（写进标签页 URL），所以是裸 string，合法性由侧栏那边校验。
+ */
+export type ControlRequest =
+  | { kind: 'get_task' }
+  | { kind: 'clear_task' }
+  | { kind: 'open_app_tab'; mode: string }
+
+export type PanelRequest = Request | ControlRequest

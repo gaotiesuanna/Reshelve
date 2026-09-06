@@ -39,7 +39,7 @@ import {
 import { findBookmarksBar } from '@/core/import'
 import { importTree } from '@/engine/importTree'
 import type { EmitProgress, ProgressPhase } from './events'
-import type { HandledRequest, Response } from './messages'
+import type { Request, Response } from './messages'
 
 /**
  * 「切开撑爆的目录」这一步最多多花几次模型调用的**下限**。实际预算见 deepenBudget。
@@ -95,7 +95,7 @@ export interface HandlerDeps {
 
 export async function handle(
   ports: Ports,
-  request: HandledRequest,
+  request: Request,
   deps: HandlerDeps = {},
 ): Promise<Response> {
   const createClient = deps.createClient

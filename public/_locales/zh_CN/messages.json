@@ -1602,8 +1602,11 @@
   "errRetry": {
     "message": "重试"
   },
-  "errAnotherWindowBusy": {
-    "message": "另一个窗口的侧栏正在跑 Reshelve。等它跑完，或者去那边取消，然后再试一次。"
+  "errTaskRunning": {
+    "message": "后台已有一个任务正在运行，可在任意侧栏的 Reshelve 面板查看进度或取消。"
+  },
+  "errClearTaskFailed": {
+    "message": "清理任务记录失败，重开一次面板即可。"
   },
   "errBackgroundRecycled": {
     "message": "后台已被浏览器回收，本次操作中断。"

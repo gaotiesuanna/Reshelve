@@ -1,31 +1,65 @@
-import type { ProgressEvent } from './events'
+import type { ProgressEvent, TaskRecord, TaskStreamMessage } from './events'
+import type { Request, Response } from './messages'
+import { appendEvent, clearTask, healTask, readTask, writeTask, type TaskStorage } from './task-journal'
 
 /**
- * 侧栏与 service worker 的多对一关系管理。
+ * 后台唯一那轮独占任务的管理：认领、进度广播、取消、收尾。
  *
- * Chrome 的侧栏是**每个浏览器窗口一个实例**，而 service worker 全局只有一个。
- * 这个模块存在之前，SW 里三样东西都是模块级单槽——一条 progressPort、一个
- * cancelled 标记、一个 AbortController——于是开两个窗口的侧栏会撞出两种事故：
+ * 历史包袱说明这一层为什么长这样。Chrome 的侧栏每个窗口一个实例，而 SW 全局只有
+ * 一个；最早三样东西（progressPort、cancelled、AbortController）都是模块级单槽，
+ * 两个窗口同时开侧栏会撞出两种事故：后连上的把 progressPort 顶掉、先开那个窗口的
+ * 进度当场哑掉；在任一窗口点取消会掐掉另一窗口那轮已经花了钱的分析。后来按
+ * clientId 把每个窗口分了家。
  *
- * 1. 后连上的侧栏把 progressPort 顶掉，先开那个窗口的进度条与日志当场哑掉。
- *    正在跑的分析没停，但用户那边看起来就是卡死了。
- * 2. 在任一窗口点取消，abort 的是全局那一个 controller——掐掉的是**另一个窗口**
- *    那轮已经花了钱、跑了几分钟的分析。
+ * 再后来发现分家分错了方向：**任务是全局的，不是窗口的**。独占锁本来就只放一轮；
+ * 按 clientId 认主，意味着持有者一关侧栏就成了没人认领的幽灵锁——新面板认领被拒、
+ * 取消又不认新 id，只能重载扩展才能脱困（线上复现）。而任务进度与结果也随着持有者
+ * 的文档一起消失。
  *
- * 这里按 clientId（每个侧栏文档启动时自己生成，见 sidepanel/lib/clientId.ts）
- * 把两件事分开：进度事件只推给发起那次请求的侧栏；取消只掐自己那一轮。
+ * 现在的语义：**同一时刻至多一轮任务，任何侧栏都是它的观察者**——进度广播给所有
+ * 连着的面板，取消任意面板都能按，进度与终态落进 task-journal（storage.session），
+ * 面板关了重开凭 get_task 接回来。窗口身份（clientId）从此不再需要。
  *
  * 不做的事：**不支持两轮长任务同时跑**。SW 里还有一批真正的单例——撤销快照只有
- * 一个 SNAPSHOT_KEY、分类缓存是整块读写、i18n 的 setLocale 是模块级状态——放两轮
- * 并发进来，它们会互相覆盖，那是比进度串台严重得多的事故。所以第二个窗口想开跑时
- * 收到的是一句说得清的「另一个窗口正在忙」，而不是一次静默的互相破坏。
+ * 一个 SNAPSHOT_KEY、分类缓存整块读写、i18n 的 setLocale 是模块级状态——放两轮
+ * 并发进来，它们会互相覆盖，那是比进度串台严重得多的事故。第二个想开跑的请求收到
+ * 的是一句说得清的「后台已有任务在跑」，而不是一次静默的互相破坏。
  */
 
-/** 侧栏没报上身份时用的兜底 id（扩展刚更新、旧侧栏还没重载时会这样）。 */
-export const ANONYMOUS_CLIENT = 'anonymous'
+export interface TaskHub {
+  /** 面板连上来。post 由调用方绑到具体的 chrome.runtime.Port 上，本模块不碰 chrome。 */
+  attach(post: (message: TaskStreamMessage) => void): void
+  detach(post: (message: TaskStreamMessage) => void): void
+  /**
+   * 认领「当前唯一那轮独占任务」。已有任务在跑时返回 false，调用方据此回绝，
+   * 且**必须在动手之前**回绝——被拒的那次请求一个书签都没碰，再点一次是安全的。
+   *
+   * cancellable 没有默认值，是有意的：漏传会让 analyze 悄悄失去取消能力，
+   * 那种 bug 编译器抓不到，必须由调用方每次显式回答。
+   */
+  begin(kind: Request['kind'], cancellable: boolean): boolean
+  /** 广播一条进度事件给所有面板，并追加进 journal。没有在跑的任务时是空操作。 */
+  emit(event: ProgressEvent): void
+  /** 收尾。终态写进 journal 并广播 finished；此后锁位放开，进度事件不再受理。 */
+  end(response: Response): void
+  /** 取消当前任务。没有在跑的任务、或那轮本就不可取消时返回 false。 */
+  cancel(): boolean
+  isCancelled(): boolean
+  /** 当前那轮的取消信号；没有任务、或那轮不可取消时为 undefined。 */
+  signal(): AbortSignal | undefined
+  /** 当前任务记录：内存优先（比落盘新），没有再读 journal。 */
+  record(): Promise<TaskRecord | null>
+  /**
+   * 清掉 journal 里的终态记录（结果被消费、用户开新的一轮时调）。
+   * 还有任务在跑时是有意不动的——跑着的东西不因没人看就失去记录。
+   */
+  clear(): Promise<void>
+  /** SW 冷启动自愈：journal 里还躺着的 running/cancelling 改写为 interrupted。 */
+  heal(): Promise<void>
+}
 
 interface Run {
-  clientId: string
+  record: TaskRecord
   cancelled: boolean
   /**
    * 只有可取消的那几种请求才有 controller。
@@ -38,86 +72,108 @@ interface Run {
   controller: AbortController | null
 }
 
-export interface Sessions {
-  /** 侧栏连上来。post 由调用方绑到具体的 chrome.runtime.Port 上，本模块不碰 chrome。 */
-  attach(clientId: string, post: (event: ProgressEvent) => void): void
-  detach(clientId: string): void
-  /** 把事件推给指定侧栏。对方不在（窗口关了）就丢掉——一次广播都不该发生。 */
-  emit(clientId: string, event: ProgressEvent): void
-  /**
-   * 认领「当前唯一那一轮独占任务」。别的侧栏正占着时返回 false，调用方据此回绝。
-   * 同一个侧栏再次认领算重开一轮（换新的 controller），与改造前逐轮新建的行为一致。
-   *
-   * cancellable 没有默认值，是有意的：漏传会让 analyze 悄悄失去取消能力，
-   * 那种 bug 编译器抓不到，必须由调用方每次显式回答。
-   */
-  beginRun(clientId: string, cancellable: boolean): boolean
-  /** 收工。只有持有者能清，晚到的收尾不会把别人刚开的那轮抹掉。 */
-  endRun(clientId: string): void
-  /**
-   * 取消自己那一轮。没有自己的那一轮、或那一轮本就不可取消时返回 false，
-   * 调用方据此决定要不要打「正在取消」的日志——对不可取消的任务打了就是骗人。
-   */
-  cancel(clientId: string): boolean
-  isCancelled(clientId: string): boolean
-  /** 自己那一轮的取消信号；不持有当前这轮、或那一轮不可取消时为 undefined。 */
-  signal(clientId: string): AbortSignal | undefined
+function createId(): string {
+  const uuid = globalThis.crypto?.randomUUID
+  if (uuid !== undefined) return globalThis.crypto.randomUUID()
+  return `t${Math.random().toString(36).slice(2)}${Date.now().toString(36)}`
 }
 
-export function createSessions(): Sessions {
-  const posts = new Map<string, (event: ProgressEvent) => void>()
+export function createTaskHub(storage: TaskStorage): TaskHub {
+  const posts = new Set<(message: TaskStreamMessage) => void>()
   let run: Run | null = null
 
-  /** 持有当前这一轮的是不是它。所有按 clientId 的判断都从这一个谓词出发。 */
-  const owns = (clientId: string): boolean => run !== null && run.clientId === clientId
+  const broadcast = (message: TaskStreamMessage): void => {
+    for (const post of posts) {
+      try {
+        post(message)
+      } catch {
+        // 通道已断（侧栏关了但 onDisconnect 还没到）。丢掉这条并注销，
+        // 不影响正在进行的任务。
+        posts.delete(post)
+      }
+    }
+  }
+
+  /** 落盘是尽力而为：内存里的 run 才是权威，写失败不该打断任务。 */
+  const persist = (record: TaskRecord): void => {
+    void writeTask(storage, record).catch(() => {})
+  }
 
   return {
-    attach(clientId, post) {
-      posts.set(clientId, post)
+    attach(post) {
+      posts.add(post)
     },
 
-    detach(clientId) {
-      posts.delete(clientId)
-      // 有意不动 run：侧栏关掉不等于要中止已经在跑的整理。它照常跑完，
-      // 只是没人接进度了——这与改造前「postMessage 抛异常就丢掉」的行为一致。
-      // run 会在自己结束时由 endRun 清掉，不会把后台永久占住。
+    detach(post) {
+      posts.delete(post)
+      // 有意不动 run：侧栏关掉不等于要中止已经在跑的任务。它照常跑完，
+      // 终态进 journal，下一个打开侧栏的人照样看得到。
     },
 
-    emit(clientId, event) {
-      const post = posts.get(clientId)
-      if (post === undefined) return
-      try {
-        post(event)
-      } catch {
-        // 通道已断（侧栏关了但 onDisconnect 还没到）。丢掉这条事件并注销，
-        // 不影响正在进行的整理。
-        posts.delete(clientId)
+    begin(kind, cancellable) {
+      if (run !== null) return false
+      const record: TaskRecord = {
+        id: createId(),
+        kind,
+        startedAt: Date.now(),
+        status: 'running',
+        cancellable,
+        events: [],
       }
-    },
-
-    beginRun(clientId, cancellable) {
-      if (run !== null && run.clientId !== clientId) return false
-      run = { clientId, cancelled: false, controller: cancellable ? new AbortController() : null }
+      run = { record, cancelled: false, controller: cancellable ? new AbortController() : null }
+      broadcast({ kind: 'started', record })
+      persist(record)
       return true
     },
 
-    endRun(clientId) {
-      if (owns(clientId)) run = null
+    emit(event) {
+      if (run === null) return
+      run.record = appendEvent(run.record, event)
+      broadcast({ kind: 'progress', event })
+      persist(run.record)
     },
 
-    cancel(clientId) {
-      if (!owns(clientId) || run!.controller === null) return false
-      run!.cancelled = true
-      run!.controller.abort()
+    end(response) {
+      if (run === null) return
+      const finished: TaskRecord = {
+        ...run.record,
+        status: response.ok ? 'done' : response.cancelled === true ? 'cancelled' : 'error',
+        ...(response.ok ? { result: response } : { error: response.error }),
+        finishedAt: Date.now(),
+      }
+      run = null
+      broadcast({ kind: 'finished', record: finished })
+      persist(finished)
+    },
+
+    cancel() {
+      if (run === null || run.controller === null) return false
+      run.cancelled = true
+      run.record = { ...run.record, status: 'cancelling' }
+      run.controller.abort()
+      persist(run.record)
       return true
     },
 
-    isCancelled(clientId) {
-      return owns(clientId) && run!.cancelled
+    isCancelled() {
+      return run?.cancelled ?? false
     },
 
-    signal(clientId) {
-      return owns(clientId) ? (run!.controller?.signal ?? undefined) : undefined
+    signal() {
+      return run?.controller?.signal
+    },
+
+    async record() {
+      return run?.record ?? (await readTask(storage))
+    },
+
+    async clear() {
+      if (run !== null) return
+      await clearTask(storage)
+    },
+
+    async heal() {
+      await healTask(storage)
     },
   }
 }

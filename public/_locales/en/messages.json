@@ -1602,8 +1602,11 @@
   "errRetry": {
     "message": "Retry"
   },
-  "errAnotherWindowBusy": {
-    "message": "Another window's side panel is already running Reshelve. Wait for it to finish, or cancel it there, then try again."
+  "errTaskRunning": {
+    "message": "A task is already running in the background. Watch or cancel it from any Reshelve side panel."
+  },
+  "errClearTaskFailed": {
+    "message": "Couldn't clear the task record. Reopen the panel to continue."
   },
   "errBackgroundRecycled": {
     "message": "The browser suspended the background and interrupted this run."

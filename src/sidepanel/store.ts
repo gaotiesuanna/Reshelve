@@ -24,7 +24,8 @@ import type { UndoResult } from '@/engine/undo'
 import type { Settings } from '@/storage/settings'
 import { DEFAULT_SETTINGS, activeLlm, endpointKey } from '@/storage/settings'
 import { send } from './lib/send'
-import type { TestFailure } from '@/background/messages'
+import type { Request, Response, TestFailure } from '@/background/messages'
+import type { TaskRecord } from '@/background/events'
 import { ensureAllHostsPermission, ensureHostPermission, hasHostPermission } from './lib/permissions'
 import { connectProgress, startKeepalive, type ProgressConnection } from './lib/progress'
 import { applyDocumentLang } from './lib/documentLang'
@@ -150,6 +151,81 @@ export function appendLog(logs: LogLine[], event: ProgressEvent, id: number): Lo
   return next.length > MAX_LOGS ? next.slice(next.length - MAX_LOGS) : next
 }
 
+/**
+ * 把后台 journal 里缓冲的事件接回界面：带 message 的进日志，带 done/total 的更新进度条。
+ *
+ * 重开侧栏接回一轮正在跑的任务时，界面上不能是一片空白——journal 里那串事件
+ * 就是它错过的全部历史（见 background/task-journal.ts）。
+ */
+function replayEvents(
+  events: ProgressEvent[],
+  logs: LogLine[],
+  logSeq: number,
+  progress: Progress | null,
+): { logs: LogLine[]; logSeq: number; progress: Progress | null } {
+  let nextLogs = logs
+  let nextSeq = logSeq
+  let nextProgress = progress
+  for (const event of events) {
+    nextLogs = appendLog(nextLogs, event, nextSeq)
+    nextSeq += 1
+    if (event.done !== undefined && event.total !== undefined) {
+      nextProgress = { phase: event.phase, done: event.done, total: event.total }
+    }
+  }
+  return { logs: nextLogs, logSeq: nextSeq, progress: nextProgress }
+}
+
+/**
+ * 后台任务 kind 与界面 busy 状态的两张对照表。
+ *
+ * busyKind 驱动取消按钮（只有 analyze/checkLinks/reclassify 给按）与界面禁用，
+ * 与各 action 自己 set 的取值保持同一套；import 有意映射 null，与 confirmImport
+ * 的现状一致（导入有自己的进行时界面，不给取消）。
+ */
+const BUSY_KIND_BY_TASK: Partial<Record<Request['kind'], State['busyKind']>> = {
+  analyze: 'analyze',
+  check_links: 'checkLinks',
+  reclassify: 'reclassify',
+  apply: 'apply',
+  undo: 'undo',
+  import: null,
+  apply_cleanup: 'cleanup',
+  apply_aggregate: 'aggregate',
+}
+
+type MessageKey = Parameters<typeof t>[0]
+
+const BUSY_LABEL_BY_TASK: Partial<Record<Request['kind'], MessageKey>> = {
+  analyze: 'busyAnalyzing',
+  check_links: 'busyCheckingLinks',
+  reclassify: 'busyReclassifying',
+  apply: 'busyApplying',
+  undo: 'busyUndoing',
+  import: 'busyImporting',
+  apply_cleanup: 'busyApplying',
+  apply_aggregate: 'busyAggregating',
+}
+
+/**
+ * 发出一条独占任务的请求，并记下「这轮是我发起的」。
+ *
+ * ownPending 是终态广播的去重闸：后台收尾时会向**所有**侧栏广播 finished，
+ * 发起者自己的 send() 也会带回同一份结果——两条路各收场一次，apply 的部分落地
+ * 那条精细路径就会被广播的粗粒度收场覆盖掉。发起者凭 ownPending 跳过广播，
+ * 只走自己的收场（见 noteTaskFinished）。
+ */
+async function sendTask(set: (partial: Partial<State>) => void, request: Request): Promise<Response> {
+  set({ ownPending: true })
+  try {
+    return await send(request)
+  } finally {
+    // 自己这轮已收场：终态广播若晚到（消息顺序不保证），pendingTaskId 已对不上，
+    // 不会再触发一次采纳
+    set({ ownPending: false, pendingTaskId: null })
+  }
+}
+
 /** 与后台的进度长连接，整个侧栏共用一条。断开时置回 null，由 ensureConnection 重开。 */
 let connection: ProgressConnection | null = null
 
@@ -162,7 +238,9 @@ let connection: ProgressConnection | null = null
  */
 function openConnection(): ProgressConnection | null {
   return connectProgress({
+    onStarted: (record) => useStore.getState().noteTaskStarted(record),
     onEvent: (event) => useStore.getState().pushEvent(event),
+    onFinished: (record) => useStore.getState().noteTaskFinished(record),
     onDisconnect: () => {
       // 先把死对象扔掉：这条通道之后一个事件都收不到了，留着它
       // ensureConnection 就会以为还连着（这正是「运行日志只有 1 条」的成因）。
@@ -310,6 +388,16 @@ interface State {
   /** 当前在跑哪一步，决定能不能取消。 */
   busyKind: 'init' | 'scan' | 'analyze' | 'apply' | 'undo' | 'cleanup' | 'aggregate' | 'checkLinks' | 'reclassify' | null
   /**
+   * 正在看的（或自己刚发起的）那轮后台任务的 id，来自任务广播与 get_task。
+   *
+   * 它是终态广播的采纳闸：finished 到达时 id 对得上、且这轮不是自己发起的
+   * （ownPending 为 false），才把结果接进界面。发起面板有自己那条更精细的
+   * 收场路径（apply 的部分落地等），不能被广播的粗粒度收场覆盖。
+   */
+  pendingTaskId: string | null
+  /** 自己发起的独占请求在途中的标记，见 sendTask。 */
+  ownPending: boolean
+  /**
    * 上一次失败的是哪一步，`null` 表示没有可重试的东西。
    *
    * 不复用 `busyKind`——那个字段的语义是「**正在**跑哪一步」，用来决定能不能取消；
@@ -407,6 +495,22 @@ interface State {
   refreshTree(): Promise<void>
   pushEvent(event: ProgressEvent): void
   cancel(): Promise<void>
+  /**
+   * 后台任务广播的三个接入口。任务是全局的，这个面板随时可能只是观察者：
+   *
+   * - noteTaskStarted：后台开了一轮。自己发起的（ownPending）只记下 id；
+   *   旁观的面板直接进入进度视图——任何窗口都该能看正在跑的任务。
+   * - noteTaskFinished：后台收尾。只有「从跑起来那一刻就在看这轮」的面板
+   *   （pendingTaskId 对得上、且自己不是发起者）才采纳终态；发起者自己的
+   *   send() 会收场，广播对它是重复的。其余面板只当没听见——它们的页面上
+   *   正做着自己的事，不该被别人的结果拽走。
+   * - adoptRunningTask / adoptFinishedTask：从 get_task 的快照接回一轮任务，
+   *   init 恢复与广播收尾共用同一套落点。
+   */
+  noteTaskStarted(record: TaskRecord): void
+  noteTaskFinished(record: TaskRecord): void
+  adoptRunningTask(record: TaskRecord): void
+  adoptFinishedTask(record: TaskRecord): Promise<void>
   toggle(id: string): void
   goScan(): Promise<void>
   setSettings(settings: Settings): Promise<void>
@@ -530,6 +634,8 @@ export const useStore = create<State>((set, get) => ({
   undoAvailable: false,
   busy: null,
   busyKind: null,
+  pendingTaskId: null,
+  ownPending: false,
   retryable: null,
   error: null,
   progress: null,
@@ -593,6 +699,128 @@ export const useStore = create<State>((set, get) => ({
     })
   },
 
+  noteTaskStarted(record) {
+    if (get().ownPending) {
+      // 自己刚发出去的那条请求开的车：busy 已由 action 自己设好，这里只记 id
+      set({ pendingTaskId: record.id })
+      return
+    }
+    get().adoptRunningTask(record)
+  },
+
+  noteTaskFinished(record) {
+    const { pendingTaskId, ownPending } = get()
+    if (record.id !== pendingTaskId || ownPending) return
+    void get().adoptFinishedTask(record)
+  },
+
+  adoptRunningTask(record) {
+    // 从空日志接：started 广播时缓冲是空的，mid-run 接回时缓冲就是全部错过的事件
+    const replayed = replayEvents(record.events, [], get().logSeq, null)
+    set({
+      pendingTaskId: record.id,
+      busy: t(BUSY_LABEL_BY_TASK[record.kind] ?? 'busyReading'),
+      busyKind: BUSY_KIND_BY_TASK[record.kind] ?? null,
+      retryable: null,
+      error: null,
+      ...replayed,
+    })
+  },
+
+  async adoptFinishedTask(record) {
+    const replayed = replayEvents(record.events, [], get().logSeq, null)
+    /** 所有终态共同的底座：busy 收掉、广播闸清掉、日志与进度条接回现场。 */
+    const base = {
+      pendingTaskId: null,
+      busy: null,
+      busyKind: null,
+      ...replayed,
+    }
+    if (record.status === 'cancelled') {
+      // 主动取消不是错误，日志里已经有记录，不弹红条
+      return set(base)
+    }
+    if (record.status === 'interrupted') {
+      // 复用「后台被中断」的词条：SW 被回收或扩展重载，已完成批次有缓存，重试很快
+      set(base)
+      return fail(set, t('errBackgroundRecycled'), record.kind === 'analyze' ? 'analyze' : null)
+    }
+    if (record.status === 'error') {
+      set(base)
+      return fail(set, record.error ?? t('sendErrNoResponse'), record.kind === 'analyze' ? 'analyze' : null)
+    }
+    const res = record.result
+    // journal 受损（done 却没有载荷）时按无事发生收场：busy 已清，日志还在
+    if (res === undefined || !res.ok) return set(base)
+    switch (res.kind) {
+      case 'analyze': {
+        return set({
+          ...base,
+          plan: res.plan,
+          // 与 analyze() 同一条默认：全选，放错比不放更可接受
+          accepted: new Set(res.plan.rows.map((r) => r.bookmarkId)),
+          reclassifyMarked: new Set(),
+          structureEdits: EMPTY_EDITS,
+          step: nextStepAfterAnalyze(res.plan.rebuildStructure),
+        })
+      }
+      case 'reclassify': {
+        // 重开接回的场景：方案接回来、回到复核页；重分类的勾选语境已随旧面板消失
+        return set({ ...base, plan: res.plan, step: 'review' })
+      }
+      case 'apply': {
+        set({ ...base, applyResult: res.result, undoAvailable: true, step: 'result' })
+        return void (await get().refreshTree())
+      }
+      case 'undo': {
+        set({ ...base, undoResult: res.result, undoAvailable: false, step: 'result' })
+        return void (await get().refreshTree())
+      }
+      case 'import': {
+        // 导入结果的展示依赖当时那份文件预览（blocked、目标名），接不回来；
+        // 日志已回放，重开的人能看清发生了什么
+        return set(base)
+      }
+      case 'apply_cleanup': {
+        set({ ...base, cleanupResult: res.result })
+        await get().refreshTree()
+        const undoRes = await send({ kind: 'get_undo_state' })
+        set({
+          undoAvailable: undoRes.ok && undoRes.kind === 'get_undo_state' ? undoRes.available : get().undoAvailable,
+        })
+        return
+      }
+      case 'apply_aggregate': {
+        if (res.result.status === 'failed') {
+          set(base)
+          return fail(set, res.result.error ?? t('errAggregateFailed'), null)
+        }
+        set({ ...base, aggregateResult: res.result })
+        await get().refreshTree()
+        const undoRes = await send({ kind: 'get_undo_state' })
+        set({
+          undoAvailable: undoRes.ok && undoRes.kind === 'get_undo_state' ? undoRes.available : get().undoAvailable,
+        })
+        return
+      }
+      case 'check_links': {
+        // 与 startLinkCheck 的收场同一套：只留 dead 与 suspect，确定失效默认勾上
+        const interesting = res.results.filter((r) => r.verdict !== 'alive')
+        return set({
+          ...base,
+          linkCheckState: 'done',
+          cleanupLinks: interesting,
+          cleanupChecked: new Set([
+            ...get().cleanupChecked,
+            ...interesting.filter((r) => r.verdict === 'dead').map((r) => r.bookmarkId),
+          ]),
+        })
+      }
+      default:
+        return set(base)
+    }
+  },
+
   async cancel() {
     // 只标记取消，真正的收尾由正在进行的 analyze 自己完成
     set({ busy: t('busyCancelling'), busyKind: null })
@@ -615,6 +843,14 @@ export const useStore = create<State>((set, get) => ({
       busy: null,
       busyKind: null,
     })
+    // 后台可能有一轮接得回来的任务：本面板上次关掉时在跑的、或另一个窗口开的、
+    // 或跑完了还没人消费的。任务是全局的，这个面板是它的观察者，接不回来才算漏。
+    // 接回的方式与广播同一条路（adoptRunningTask / adoptFinishedTask）。
+    const taskRes = await send({ kind: 'get_task' })
+    const record = taskRes.ok && taskRes.kind === 'get_task' ? (taskRes.record ?? null) : null
+    if (record === null) return
+    if (record.status === 'running' || record.status === 'cancelling') get().adoptRunningTask(record)
+    else void get().adoptFinishedTask(record)
   },
 
   toggle(id) {
@@ -679,7 +915,7 @@ export const useStore = create<State>((set, get) => ({
     })
     // 分析可能跑好几分钟，期间持续 ping，别让后台因空闲被回收
     const stopKeepalive = startKeepalive(ensureConnection())
-    const res = await send({
+    const res = await sendTask(set, {
       kind: 'analyze',
       scopeRootIds: [...get().checkedIds],
       // null 表示没推翻，这时候一个字段都不带，后台自己判
@@ -842,7 +1078,7 @@ export const useStore = create<State>((set, get) => ({
     })
     // 跟 analyze 一样：这一步要花时间调模型，持续 ping 别让后台因空闲被回收
     const stopKeepalive = startKeepalive(ensureConnection())
-    const res = await send({ kind: 'reclassify', plan, bookmarkIds: marked }).finally(stopKeepalive)
+    const res = await sendTask(set, { kind: 'reclassify', plan, bookmarkIds: marked }).finally(stopKeepalive)
     if (isStale(get, set, run)) return
     // 主动取消不是错误，日志里已经有记录，不弹红条，也不算失败
     if (!res.ok && res.cancelled === true) {
@@ -881,7 +1117,7 @@ export const useStore = create<State>((set, get) => ({
     const stopKeepalive = startKeepalive(ensureConnection())
     const accepted = get().accepted
     // 按实际会落地的目录重排编号，避免出现 01、02、04 这样的空号
-    const res = await send({
+    const res = await sendTask(set, {
       kind: 'apply',
       plan: renumberPlan(plan, accepted, get().scan?.folders ?? []),
       accepted: [...accepted],
@@ -946,7 +1182,7 @@ export const useStore = create<State>((set, get) => ({
 
   async undo() {
     set({ busy: t('busyUndoing'), busyKind: 'undo', error: null, progress: null, logs: [] })
-    const res = await send({ kind: 'undo' })
+    const res = await sendTask(set, { kind: 'undo' })
     // 不给重试入口：undo 失败时书签可能处于半撤销状态，重跑有二次改动的风险
     if (!res.ok) return fail(set, res.error, null)
     if (res.kind !== 'undo') return set({ busy: null, busyKind: null })
@@ -980,7 +1216,7 @@ export const useStore = create<State>((set, get) => ({
     if (file === null) return
     set({ busy: t('busyImporting'), busyKind: null, error: null, progress: null, logs: [] })
 
-    const res = await send({
+    const res = await sendTask(set, {
       kind: 'import',
       nodes: file.preview.nodes,
       targetName: file.preview.targetName,
@@ -1136,7 +1372,7 @@ export const useStore = create<State>((set, get) => ({
     }
     set({ busy: t('busyApplying'), busyKind: 'cleanup', error: null, progress: null, logs: [] })
     const stopKeepalive = startKeepalive(ensureConnection())
-    const res = await send({
+    const res = await sendTask(set, {
       kind: 'apply_cleanup',
       input: {
         planId: `cleanup-${Date.now()}`,
@@ -1170,7 +1406,7 @@ export const useStore = create<State>((set, get) => ({
     if (input.bookmarkIds.length === 0 || !hasDestination || input.folderTitle.trim() === '') return
     set({ busy: t('busyAggregating'), busyKind: 'aggregate', error: null, progress: null, logs: [] })
     const stopKeepalive = startKeepalive(ensureConnection())
-    const res = await send({
+    const res = await sendTask(set, {
       kind: 'apply_aggregate',
       input: { ...input, planId: `aggregate-${Date.now()}` },
     }).finally(stopKeepalive)
@@ -1290,7 +1526,7 @@ export const useStore = create<State>((set, get) => ({
     // 一千条书签要查一分多钟，期间持续 ping，别让后台因空闲被回收——
     // 与 analyze、apply 用的是同一条 keepalive
     const stopKeepalive = startKeepalive(ensureConnection())
-    const res = await send({
+    const res = await sendTask(set, {
       kind: 'check_links',
       targets: scan.items.map((item) => ({ bookmarkId: item.id, url: item.url })),
     }).finally(stopKeepalive)
@@ -1329,6 +1565,10 @@ export const useStore = create<State>((set, get) => ({
       step: 'scope', scan: null, plan: null, accepted: new Set(), reclassifyMarked: new Set(),
       structureEdits: EMPTY_EDITS, modeOverride: null, titleOnly: false, titleRuleIds: [...DEFAULT_TITLE_RULE_IDS],
       applyResult: null, undoResult: null, error: null, retryable: null,
+      pendingTaskId: null,
     })
+    // journal 里那份终态一并作废：重开面板不该再被旧结果拽回去。
+    // 任务还在跑时后台会自己拒掉（见 sessions.ts 的 clear），发出去没有副作用。
+    void send({ kind: 'clear_task' })
   },
 }))

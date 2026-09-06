@@ -9,7 +9,7 @@ import { DEFAULT_SETTINGS, activeLlm } from '@/storage/settings'
 import { EMPTY_EDITS } from '@/core/structure'
 import { makePlan } from '../fakes/plan'
 import { withLlm } from '../fakes/settings'
-import type { ProgressEvent } from '@/background/events'
+import type { ProgressEvent, TaskRecord } from '@/background/events'
 import type { BookmarkNode } from '@/core/ports'
 
 vi.mock('@/sidepanel/lib/send', () => ({ send: vi.fn() }))
@@ -424,7 +424,12 @@ describe('放弃这一轮之后，在途结果不再落地', () => {
   it('扫描同理：在途时 reset，扫描回来不跳到偏好页', async () => {
     useStore.setState({ step: 'scope', scan: null })
     let finish: (v: unknown) => void = () => {}
-    vi.mocked(send).mockImplementation(() => new Promise((r) => { finish = r }) as never)
+    // 只有 scan 挂着等测试放行；reset() 顺手发的 clear_task 等其余消息立刻回话，
+    // 别把 finish 这个捕获位抢走
+    vi.mocked(send).mockImplementation((req: { kind: string }) =>
+      req.kind === 'scan'
+        ? (new Promise((r) => { finish = r }) as never)
+        : (Promise.resolve({ ok: true }) as never))
 
     const running = useStore.getState().goScan()
     await Promise.resolve()
@@ -1133,14 +1138,15 @@ describe('长连接断在空闲期时，下一次长任务前重连', () => {
     const ports: { emit: (e: ProgressEvent) => void; disconnect: () => void }[] = []
     chromeGlobal.chrome.runtime = {
       connect: () => {
-        let onEvent: ((e: ProgressEvent) => void) | undefined
+        let onEvent: ((message: unknown) => void) | undefined
         let onGone: (() => void) | undefined
         ports.push({
-          emit: (event) => onEvent?.(event),
+          // 后台广播的是包了一层的 TaskStreamMessage，测试侧只喂进度事件
+          emit: (event) => onEvent?.({ kind: 'progress', event }),
           disconnect: () => onGone?.(),
         })
         return {
-          onMessage: { addListener: (fn: (e: ProgressEvent) => void) => { onEvent = fn } },
+          onMessage: { addListener: (fn: (message: unknown) => void) => { onEvent = fn } },
           onDisconnect: { addListener: (fn: () => void) => { onGone = fn } },
           postMessage: () => {},
           disconnect: () => {},
@@ -1190,5 +1196,185 @@ describe('长连接断在空闲期时，下一次长任务前重连', () => {
     await useStore.getState().init()
     await useStore.getState().analyze()
     expect(ports.count()).toBe(1)
+  })
+})
+
+/**
+ * 任务后台化之后的接回流程：任务是全局的（见 background/sessions.ts），
+ * 面板只是观察者。重开面板要能接回在跑的进度；收尾广播要能落到没人收场的结果上；
+ * 发起面板自己的收场不能被广播覆盖。
+ */
+describe('后台任务的接回', () => {
+  const taskRecord = (over: Partial<TaskRecord> = {}): TaskRecord => ({
+    id: 'task-1', kind: 'analyze', startedAt: 1, status: 'running', cancellable: true, events: [],
+    ...over,
+  })
+
+  beforeEach(() => {
+    // zustand 是模块级单例，前一个用例留下的任务相关状态必须清干净
+    useStore.setState({
+      step: 'scope', scan: null, plan: null, accepted: new Set(), reclassifyMarked: new Set(),
+      applyResult: null, undoResult: null, cleanupResult: null, aggregateResult: null,
+      cleanupLinks: [], linkCheckState: 'idle', error: null, retryable: null,
+      logs: [], logSeq: 0, progress: null, busy: null, busyKind: null,
+      pendingTaskId: null, ownPending: false,
+    })
+    vi.mocked(send).mockReset()
+  })
+
+  describe('init 恢复', () => {
+    function stubInit(getTaskRecord: TaskRecord | null): void {
+      vi.mocked(send).mockImplementation((req: { kind: string }) => {
+        if (req.kind === 'get_task') return Promise.resolve({ ok: true, kind: 'get_task', record: getTaskRecord }) as never
+        if (req.kind === 'get_tree') return Promise.resolve({ ok: true, kind: 'get_tree', tree: [] }) as never
+        if (req.kind === 'get_settings') {
+          return Promise.resolve({ ok: true, kind: 'get_settings', settings: DEFAULT_SETTINGS }) as never
+        }
+        if (req.kind === 'get_undo_state') {
+          return Promise.resolve({ ok: true, kind: 'get_undo_state', available: false, createdAt: null }) as never
+        }
+        return Promise.resolve({ ok: true }) as never
+      })
+    }
+
+    it('有一轮在跑：回到进度视图，日志与进度条从 journal 接回现场', async () => {
+      stubInit(taskRecord({
+        events: [
+          { phase: 'classify', message: '批次 1/3 完成' },
+          { phase: 'classify', message: '', done: 25, total: 75 },
+        ],
+      }))
+
+      await useStore.getState().init()
+
+      const state = useStore.getState()
+      expect(state.busy).toBe(t('busyAnalyzing'))
+      expect(state.busyKind).toBe('analyze')
+      expect(state.pendingTaskId).toBe('task-1')
+      expect(state.logs.map((l) => l.message)).toEqual(['批次 1/3 完成'])
+      expect(state.progress).toEqual({ phase: 'classify', done: 25, total: 75 })
+    })
+
+    it('有一轮跑完的 analyze：方案直接进复核页并默认全选', async () => {
+      const plan = makePlan()
+      stubInit(taskRecord({
+        status: 'done',
+        result: { ok: true, kind: 'analyze', plan },
+        finishedAt: 2,
+      }))
+
+      await useStore.getState().init()
+
+      const state = useStore.getState()
+      expect(state.plan).toBe(plan)
+      expect(state.step).toBe(nextStepAfterAnalyze(plan.rebuildStructure))
+      expect(state.busy).toBeNull()
+      expect([...state.accepted]).toEqual(plan.rows.map((r) => r.bookmarkId))
+    })
+
+    it('有一轮被回收中断的 analyze：红条解释、analyze 可重试（有缓存，重试快）', async () => {
+      stubInit(taskRecord({ status: 'interrupted', error: '后台没了', finishedAt: 2 }))
+
+      await useStore.getState().init()
+
+      const state = useStore.getState()
+      expect(state.error).toBe(t('errBackgroundRecycled'))
+      expect(state.retryable).toBe('analyze')
+      expect(state.busy).toBeNull()
+    })
+
+    it('apply 跑完的结果同样接得回来：结果页 + 可撤销', async () => {
+      const result = { status: 'completed', moved: [], skipped: [], tempToReal: {} } as never
+      stubInit(taskRecord({
+        kind: 'apply', status: 'done', result: { ok: true, kind: 'apply', result }, finishedAt: 2,
+      }))
+
+      await useStore.getState().init()
+
+      const state = useStore.getState()
+      expect(state.applyResult).toBe(result)
+      expect(state.step).toBe('result')
+      expect(state.undoAvailable).toBe(true)
+    })
+
+    it('后台没有任务：一切照旧', async () => {
+      stubInit(null)
+
+      await useStore.getState().init()
+
+      expect(useStore.getState().busy).toBeNull()
+      expect(useStore.getState().pendingTaskId).toBeNull()
+      expect(useStore.getState().plan).toBeNull()
+    })
+  })
+
+  describe('广播闸', () => {
+    it('旁观的面板收到 started 直接进进度视图', () => {
+      useStore.getState().noteTaskStarted(taskRecord({ kind: 'check_links' }))
+
+      const state = useStore.getState()
+      expect(state.busy).toBe(t('busyCheckingLinks'))
+      expect(state.busyKind).toBe('checkLinks')
+      expect(state.pendingTaskId).toBe('task-1')
+    })
+
+    it('发起面板收到 started 只记 id，不覆盖自己设好的 busy', () => {
+      useStore.setState({ ownPending: true, busy: '自己设的', busyKind: 'analyze' })
+      useStore.getState().noteTaskStarted(taskRecord())
+
+      expect(useStore.getState().busy).toBe('自己设的')
+      expect(useStore.getState().pendingTaskId).toBe('task-1')
+    })
+
+    it('旁观面板收到 finished 采纳终态', () => {
+      useStore.setState({ pendingTaskId: 'task-1' })
+      useStore.getState().noteTaskFinished(taskRecord({
+        status: 'error', error: '模型挂了', finishedAt: 2,
+      }))
+
+      const state = useStore.getState()
+      expect(state.busy).toBeNull()
+      expect(state.error).toBe('模型挂了')
+      expect(state.pendingTaskId).toBeNull()
+    })
+
+    it('发起面板收到 finished 跳过——自己的 send 会收场，广播对它是重复的', () => {
+      useStore.setState({ pendingTaskId: 'task-1', ownPending: true, busy: '正在应用…', busyKind: 'apply' })
+      useStore.getState().noteTaskFinished(taskRecord({
+        kind: 'apply', status: 'done', finishedAt: 2,
+        result: { ok: true, kind: 'apply', result: {} as never },
+      }))
+
+      const state = useStore.getState()
+      expect(state.applyResult).toBeNull()
+      expect(state.busy).toBe('正在应用…')
+    })
+
+    it('不是自己在看的那轮（reset 之后迟到的收尾）不采纳', () => {
+      useStore.setState({ pendingTaskId: null })
+      useStore.getState().noteTaskFinished(taskRecord({ status: 'done', finishedAt: 2 }))
+
+      expect(useStore.getState().plan).toBeNull()
+      expect(useStore.getState().error).toBeNull()
+    })
+
+    it('cancelled 终态只收掉 busy，不弹红条', () => {
+      useStore.setState({ pendingTaskId: 'task-1' })
+      useStore.getState().noteTaskFinished(taskRecord({ status: 'cancelled', finishedAt: 2 }))
+
+      const state = useStore.getState()
+      expect(state.busy).toBeNull()
+      expect(state.error).toBeNull()
+    })
+  })
+
+  it('reset 把 journal 里的终态一并作废，通知后台 clear_task', async () => {
+    vi.mocked(send).mockResolvedValue({ ok: true, kind: 'clear_task' } as never)
+    useStore.setState({ pendingTaskId: 'task-1' })
+
+    useStore.getState().reset()
+
+    expect(useStore.getState().pendingTaskId).toBeNull()
+    expect(vi.mocked(send)).toHaveBeenCalledWith({ kind: 'clear_task' })
   })
 })

@@ -5,7 +5,7 @@ import { useStore } from '@/sidepanel/store'
 import { setLocale } from '@/i18n'
 import { DEFAULT_SETTINGS } from '@/storage/settings'
 import { send } from '@/sidepanel/lib/send'
-import type { Request, Response } from '@/background/messages'
+import type { PanelRequest, Response } from '@/background/messages'
 import type { BookmarkNode } from '@/core/ports'
 
 vi.mock('@/sidepanel/lib/send', () => ({ send: vi.fn() }))
@@ -23,7 +23,7 @@ const tree: BookmarkNode[] = [
 
 /** init() 会连着发三条请求，全部按中文界面兜住，语言只由用例自己改。 */
 function stubSend(): void {
-  vi.mocked(send).mockImplementation(async (request: Request): Promise<Response> => {
+  vi.mocked(send).mockImplementation(async (request: PanelRequest): Promise<Response> => {
     if (request.kind === 'get_tree') return { ok: true, kind: 'get_tree', tree }
     if (request.kind === 'get_settings') {
       return { ok: true, kind: 'get_settings', settings: { ...DEFAULT_SETTINGS, uiLocale: 'zh_CN' } }
@@ -31,6 +31,7 @@ function stubSend(): void {
     if (request.kind === 'get_undo_state') {
       return { ok: true, kind: 'get_undo_state', available: false, createdAt: null }
     }
+    if (request.kind === 'get_task') return { ok: true, kind: 'get_task', record: null }
     return { ok: true, kind: 'save_settings' }
   })
 }

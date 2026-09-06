@@ -1,8 +1,10 @@
-import { progressPortName, type ProgressEvent } from '@/background/events'
-import { CLIENT_ID } from './clientId'
+import { PROGRESS_PORT, type ProgressEvent, type TaskRecord, type TaskStreamMessage } from '@/background/events'
 
 export interface ProgressHandlers {
+  onStarted: (record: TaskRecord) => void
   onEvent: (event: ProgressEvent) => void
+  /** 后台广播「某轮任务收尾了」，record 是含终态与全部缓冲事件的完整记录。 */
+  onFinished: (record: TaskRecord) => void
   /** 长连接断开——通常意味着 service worker 被浏览器回收了。 */
   onDisconnect: () => void
 }
@@ -14,13 +16,20 @@ export interface ProgressConnection {
 }
 
 /**
- * 连接后台的进度通道。测试环境没有 chrome API，返回 null 表示没连上。
+ * 订阅后台的任务广播。测试环境没有 chrome API，返回 null 表示没连上。
+ *
+ * 连接名不带任何身份（演进史见 background/sessions.ts）：任务是全局的，
+ * 每个打开的侧栏都是同一轮任务的观察者，收到的广播一模一样。
  */
 export function connectProgress(handlers: ProgressHandlers): ProgressConnection | null {
   if (typeof chrome === 'undefined' || chrome.runtime?.connect === undefined) return null
-  // 连接名里带上本侧栏的身份，后台据此只把属于这个窗口的进度推回来
-  const port = chrome.runtime.connect({ name: progressPortName(CLIENT_ID) })
-  port.onMessage.addListener((event) => handlers.onEvent(event as ProgressEvent))
+  const port = chrome.runtime.connect({ name: PROGRESS_PORT })
+  port.onMessage.addListener((raw) => {
+    const message = raw as TaskStreamMessage
+    if (message.kind === 'started') handlers.onStarted(message.record)
+    else if (message.kind === 'finished') handlers.onFinished(message.record)
+    else handlers.onEvent(message.event)
+  })
   port.onDisconnect.addListener(() => handlers.onDisconnect())
   return {
     ping: () => {
