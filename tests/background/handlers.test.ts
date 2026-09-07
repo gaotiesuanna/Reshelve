@@ -3595,6 +3595,85 @@ describe('结构自检：撑爆的叶子再切一层', () => {
     expect(giveUp[0]!.message).not.toContain('主题')
     expect(giveUp[0]!.message).toContain('分开')
   })
+
+  it('「其他」装超上限时继续分类：主题不够就重抽，切开后提升到一级', async () => {
+    const REST = 18
+    const VPN = 3
+    const fake = createFakeBookmarks([
+      { id: '0', title: '', children: [
+        { id: '1', title: '书签栏', children: [
+          { id: '11', title: '收件箱', children: [
+            ...Array.from({ length: VPN }, (_, i) => ({
+              id: `v${i}`, title: `VPN ${i}`, url: `https://vpn.example/${i}`,
+            })),
+            ...Array.from({ length: REST }, (_, i) => ({
+              id: `r${i}`, title: `杂项 ${i}`, url: `https://misc.example/${i}`,
+            })),
+          ] },
+        ]},
+      ]},
+    ])
+    let tagPasses = 0
+    let designCalls = 0
+    const designPrompts: string[] = []
+    const complete = vi.fn(async (prompt: string) => {
+      if (prompt.includes('标签清单：')) {
+        designCalls += 1
+        designPrompts.push(prompt)
+        if (designCalls === 1) {
+          return { folders: [{ title: 'VPN', topics: ['VPN'], children: [] }] }
+        }
+        return { folders: [
+          { title: 'GitHub', topics: ['GitHub'], children: [] },
+          { title: '文档', topics: ['文档'], children: [] },
+        ] }
+      }
+      if (!prompt.includes('候选目录')) {
+        tagPasses += 1
+        const bookmarkIds = [...prompt.matchAll(/"bookmark_id":\s*"([^"]+)"/g)].map((m) => m[1]!)
+        if (tagPasses === 1) {
+          return { results: bookmarkIds.map((id) => ({
+            bookmark_id: id,
+            primary_topic: id.startsWith('v') ? 'VPN' : '',
+            secondary_topic: null,
+          })) }
+        }
+        return { results: bookmarkIds.map((id, i) => ({
+          bookmark_id: id,
+          primary_topic: i % 2 === 0 ? 'GitHub' : '文档',
+          secondary_topic: null,
+        })) }
+      }
+      const folders = [...prompt.matchAll(/^- id=(\S+) 目录=(.+)$/gm)]
+      const vpnId = folders.find((m) => m[2]!.includes('VPN'))?.[1]
+      const otherId = folders.find((m) => m[2]!.includes('其他'))?.[1]
+      const bookmarkIds = [...prompt.matchAll(/"bookmark_id":\s*"([^"]+)"/g)].map((m) => m[1]!)
+      return { results: bookmarkIds.map((id) => ({
+        bookmark_id: id,
+        target_category_id: id.startsWith('v') ? vpnId : otherId,
+        confidence: 0.9,
+        reason: 'r',
+      })) }
+    })
+    const events: ProgressEvent[] = []
+    const ports = { bookmarks: fake.api, storage: createFakeStorage() }
+    await saveSettings(ports, settings)
+    const plan = await analyzePlan(ports, {
+      createClient: () => ({ complete } as unknown as LlmClient),
+      now: () => 1,
+      onEvent: (event: ProgressEvent) => events.push(event),
+    }, 'rebuild')
+
+    expect(tagPasses).toBeGreaterThanOrEqual(2)
+    expect(events.some((e) => e.message.includes('重新抽取标签'))).toBe(true)
+    expect(designPrompts.some((p) => p.includes('来自「其他」'))).toBe(false)
+    const created = plan.operations.flatMap((o) =>
+      o.type === 'create_folder' ? [stripNumberPrefix(o.title)] : [])
+    expect(created).toContain('GitHub')
+    expect(created).toContain('文档')
+    expect(plan.candidates.some((c) => c.path.length === 1 && c.path[0]!.endsWith('GitHub'))).toBe(true)
+    expect(plan.candidates.some((c) => c.path.length === 1 && c.path[0]!.endsWith('文档'))).toBe(true)
+  })
 })
 
 describe('cleanup_scan', () => {

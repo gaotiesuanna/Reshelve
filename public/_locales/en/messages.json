@@ -1655,6 +1655,13 @@
       }
     }
   },
+  "logDeepenRetag": {
+    "message": "\"$title$\" holds $count$ bookmarks but not enough topics; re-extracting labels to split it",
+    "placeholders": {
+      "title": { "content": "$1" },
+      "count": { "content": "$2" }
+    }
+  },
   "logDeepenNoSplit": {
     "message": "\"$title$\" holds $count$ bookmarks, but the designed subfolders did not separate them; left as is",
     "placeholders": {

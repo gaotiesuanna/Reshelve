@@ -1655,6 +1655,13 @@
       }
     }
   },
+  "logDeepenRetag": {
+    "message": "「$title$」装了 $count$ 个书签但主题不够，正在重新抽取标签再分",
+    "placeholders": {
+      "title": { "content": "$1" },
+      "count": { "content": "$2" }
+    }
+  },
   "logDeepenNoSplit": {
     "message": "「$title$」装了 $count$ 个书签，设计出的子目录没能把它们分开，保持原样",
     "placeholders": {

@@ -177,9 +177,13 @@ function buildDesignPrompt(topics: TopicCount[], options: DesignOptions, locale:
   return [
     ...foldersPrompt(locale, {
       total,
-      parentTitle: options.oneLevel === true ? (options.parentTitle ?? '') : undefined,
+      ...(options.oneLevel === true && options.parentTitle !== undefined && options.parentTitle !== ''
+        ? { parentTitle: options.parentTitle }
+        : {}),
       maxSiblings,
-      ...(options.allowChildren === undefined ? {} : { allowChildren: options.allowChildren }),
+      ...(options.oneLevel === true
+        ? { allowChildren: false }
+        : options.allowChildren === undefined ? {} : { allowChildren: options.allowChildren }),
       ...(options.startLevel === undefined ? {} : { startLevel: options.startLevel }),
       ...(options.containerTitle === undefined ? {} : { containerTitle: options.containerTitle }),
       ...(options.minFolderSize === undefined ? {} : { minFolderSize: options.minFolderSize }),

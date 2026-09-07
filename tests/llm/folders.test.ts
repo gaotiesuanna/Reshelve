@@ -198,7 +198,7 @@ describe('designFolders', () => {
     // oneLevel 时应该被无视——提示词与实际截断都不跟着它走
     const result = await designFolders(topics, { complete }, { oneLevel: true, maxTopFolders: 30 })
     expect(result!.folders).toHaveLength(SHAPE_MAX_SIBLINGS)
-    expect(complete.mock.calls[0]![0]).toContain(`子目录不超过 ${SHAPE_MAX_SIBLINGS} 个`)
+    expect(complete.mock.calls[0]![0]).toContain(`一级目录不超过 ${SHAPE_MAX_SIBLINGS} 个`)
   })
 
   it('maxTopFolders 覆盖截断上限，非 oneLevel 时仍给「其他」留位', async () => {

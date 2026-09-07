@@ -1,5 +1,5 @@
 import { currentLocale, resolveLocale, setLocale, t } from '@/i18n'
-import { buildCandidatesFromFolders, stripNumberPrefix } from '@/core/map'
+import { buildCandidatesFromFolders, normalizeName, stripNumberPrefix } from '@/core/map'
 import {
   collapseSameNameFolders, createTemporaryIdFactory, dropFallbackFromCandidates, expandFolder,
   findOversizedFolders, measureFallbackShare, measureTopSiblings, promoteFallbackChildren,
@@ -12,7 +12,7 @@ import { MIN_FOLDER_BOOKMARKS, pruneReason, pruneSmallFolders } from '@/core/pru
 import { findScopeRoots, looseBookmarks, scanTree } from '@/core/scan'
 import { detectMode } from '@/core/mode'
 import { planTitleRewrites } from '@/core/titles'
-import { buildCategoryTree, MAX_SIBLINGS as PRODUCT_MAX_SIBLINGS } from '@/core/tree'
+import { buildCategoryTree, FALLBACK_TITLE, MAX_SIBLINGS as PRODUCT_MAX_SIBLINGS } from '@/core/tree'
 import { deriveShape, FALLBACK_SHARE_LIMIT, MAX_LEAF, SHAPE_MAX_SIBLINGS } from '@/core/shape'
 import { clusterHomeless, dropAlreadyGrouped, planFallbackFolder, planNewFolders } from '@/core/newTopics'
 import type { Ports } from '@/core/ports'
@@ -639,6 +639,8 @@ export async function handle(
           const nextTemporaryId = createTemporaryIdFactory(newFolders)
           let deepenCalls = 0
           let previousMax = Number.MAX_SAFE_INTEGER
+          const gaveUp = new Set<string>()
+          const fallbackKey = normalizeName(FALLBACK_TITLE[locale])
           for (;;) {
             // scope: 'all' 而不是默认的 'new'——复用的已有目录（设计出的名字撞上旧名，
             // 走 candidates 而不进 newFolders）本轮也是设计的一部分，书签正往里搬。
@@ -647,11 +649,14 @@ export async function handle(
             // 没收到书签的用户目录 count 为 0，不会因为放宽 scope 就被卷进来。
             const oversized = findOversizedFolders({
               candidates, newFolders, classifications, locale, scope: 'all',
-            })
+            }).filter((folder) => !gaveUp.has(folder.id))
             if (oversized.length === 0) break
             // 止损：这一轮最大占用没比上一轮小，说明模型切不动了，再问也是同一个答案。
             // 前面几道（清单空了、撞封顶、调用数上限）都可能被一个「每次返回同一个划分」
             // 的模型绕过，只有「产出没有变好就停」拦得住。
+            // 放弃过的目录（主题不够、设计失败、没切开）从名单里拿掉，避免「其他」
+            // 一切失败就把 previousMax 钉死、整轮下切停掉（真实库里 100+ 条收容所
+            // 正是这样一刀未切）。
             if (oversized[0]!.count >= previousMax) break
             previousMax = oversized[0]!.count
 
@@ -661,36 +666,56 @@ export async function handle(
               const mine = new Set(
                 classifications.filter((c) => c.targetCategoryId === folder.id).map((c) => c.bookmarkId),
               )
-              const subTags = preDesignTags.filter((tag) => mine.has(tag.bookmarkId))
-              const topics = collectTopics(subTags)
-              // 标签本身就只有一种主题时切不出第二个目录，不为此再花一次抽取调用。
-              // 主题数要报出来：三条放弃路径（主题不够、设计失败、设计了但没分开）里
-              // 只有这一条真是标签的问题，而它们此前共用一句「标签不足以再分」——
-              // 真实那一遍「其他」装了 109 条一刀没切，日志说不清是卡在哪一条。
+              let subTags = preDesignTags.filter((tag) => mine.has(tag.bookmarkId))
+              let topics = collectTopics(subTags)
+              const isFallback = normalizeName(folder.title) === fallbackKey
+              // 「其他」是异构收容所：抽标签时常被标成空主题，主题数不够不能就此停。
+              // 普通主题目录仍不重抽——真只有一个主题，再问一遍也切不出第二刀。
+              if (topics.length < 2 && isFallback && mine.size > MAX_LEAF) {
+                if (isCancelled()) return CANCELLED
+                const items = scan.bookmarks.filter((b) => mine.has(b.id))
+                log('classify', t('logDeepenRetag', folder.title, String(items.length)))
+                const fresh = await extractTags(items, client, locale, {
+                  onLog: (message, level) => log('classify', message, level),
+                  isCancelled,
+                })
+                if (isCancelled()) return CANCELLED
+                const freshById = new Map(fresh.map((tag) => [tag.bookmarkId, tag]))
+                preDesignTags = [
+                  ...preDesignTags.filter((tag) => !freshById.has(tag.bookmarkId)),
+                  ...fresh,
+                ]
+                subTags = fresh
+                topics = collectTopics(subTags)
+              }
               if (topics.length < 2) {
                 log('classify', t('logDeepenNoTopics', folder.title, String(folder.count), String(topics.length)), 'warn')
+                gaveUp.add(folder.id)
                 continue
               }
-              // 这一步要发起新的付费请求，取消必须挡在它前面检查——与全文件另外
-              // 九处「先查取消再往下走」保持一致
               if (isCancelled()) return CANCELLED
               log('classify', t('logDeepenStart', folder.title, String(folder.count), String(MAX_LEAF)))
               deepenCalls += 1
               const design = await designFolders(topics, client, locale, {
                 oneLevel: true,
-                parentTitle: folder.title,
+                // 「其他」没有可当分类依据的共同点，把父目录名塞进提示词只会让模型
+                // 以为这些书签共享一个主题。省略之后走「为这摊标签设计一层目录」。
+                ...(isFallback ? {} : { parentTitle: folder.title }),
                 minFolderSize: MIN_FOLDER_BOOKMARKS,
-                // 子目录的**绝对**层级。不传 maxTopFolders：oneLevel 摊按 llm/folders.ts
-                // 的既有约定固定用 SHAPE_MAX_SIBLINGS，与 core/tree.ts 的组内截断对齐
                 startLevel: rootLevel + folder.level + 1,
                 onLog: (message, level) => log('classify', message, level),
                 isCancelled,
               })
               if (isCancelled()) return CANCELLED
-              // 设计失败保留原样：一个偏大的目录也好过整摊书签失去归属
-              if (design === null) continue
+              if (design === null) {
+                gaveUp.add(folder.id)
+                continue
+              }
               const parent = candidates.find((c) => c.id === folder.id)
-              if (parent === undefined) continue
+              if (parent === undefined) {
+                gaveUp.add(folder.id)
+                continue
+              }
               const expanded = expandFolder({
                 parent,
                 tags: applyDesign(subTags, design),
@@ -700,10 +725,9 @@ export async function handle(
                 maxLeaf: MAX_LEAF,
                 locale,
               })
-              // 标签是够的（上面已经确认至少两个主题），是设计出来的子目录没能真正
-              // 把书签分开——怪标签就是甩锅给了无辜的一方
               if (expanded.createdCount === 0) {
                 log('classify', t('logDeepenNoSplit', folder.title, String(folder.count)), 'warn')
+                gaveUp.add(folder.id)
                 continue
               }
               newFolders = [...newFolders, ...expanded.newFolders]
