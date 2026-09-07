@@ -24,12 +24,18 @@ describe('deriveShape', () => {
     expect(deriveShape(201).depth).toBe(2)
   })
 
-  it('两层时叶子回到甜点，一级目录数取「均衡」与「够用」里更大的那个', () => {
+  it('两层时一级目录数不少于一层刚撑破时的数量', () => {
     const shape = deriveShape(600)
     expect(shape.depth).toBe(2)
     expect(shape.leaves).toBe(50)
-    // floor(√50)=7，ceil(50/10)=5 → 取 7
-    expect(shape.top).toBe(7)
+    // 一层顶格是 10；floor(√50)=7、ceil(50/10)=5 都更小，取 10
+    expect(shape.top).toBe(SHAPE_MAX_SIBLINGS)
+  })
+
+  it('跨过 N=201 进两层时，一级主题数不得比一层时更少', () => {
+    expect(deriveShape(200)).toMatchObject({ depth: 1, top: SHAPE_MAX_SIBLINGS })
+    expect(deriveShape(201)).toMatchObject({ depth: 2, top: SHAPE_MAX_SIBLINGS })
+    expect(deriveShape(245)).toMatchObject({ depth: 2, top: SHAPE_MAX_SIBLINGS })
   })
 
   it('深度必须单调——L=91 附近曾经会「两层→三层→两层」', () => {
@@ -60,9 +66,9 @@ describe('deriveShape', () => {
   })
 
   it('topCap 收紧时，一层可能装不下——深度会被顶上去', () => {
-    // 123 条按甜点要 11 个叶子；cap 收到 6 时 123/6 = 20.5 > 20，一层撑不下，
-    // 于是分两层：leaves 仍是 11，branch = max(floor(√11)=3, ceil(11/10)=2, 3) = 3。
-    expect(deriveShape(123, 6)).toMatchObject({ depth: 2, top: 3, leaves: 11 })
+    // 123 条按甜点要 11 个叶子；cap 收到 6 时 123/6 = 20.5 > 20，一层撑不下。
+    // 两层的一级数不少于一层时的 top1=6，再被 cap 夹住仍是 6。
+    expect(deriveShape(123, 6)).toMatchObject({ depth: 2, top: 6, leaves: 11 })
   })
 
   it('topCap 宽到装得下时，它只封顶一级目录数，不改变深度', () => {
@@ -72,10 +78,7 @@ describe('deriveShape', () => {
   })
 
   it('两层布局的一级目录数必须服从 topCap，不能悄悄超发', () => {
-    // 600 条：默认预算下 leaves=50，branch = max(floor(√50)=7, ceil(50/10)=5, 3) = 7。
-    // cap 收到 5 时，branch 必须被 topCap 夹住，不能还是不服从预算的 7——
-    // 否则一级目录数会把同层撑爆。
-    expect(deriveShape(600)).toMatchObject({ depth: 2, top: 7 })
+    expect(deriveShape(600)).toMatchObject({ depth: 2, top: SHAPE_MAX_SIBLINGS })
     expect(deriveShape(600, 5)).toMatchObject({ depth: 2, top: 5 })
   })
 

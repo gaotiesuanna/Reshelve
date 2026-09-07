@@ -105,15 +105,20 @@ export function deriveShape(n: number, topCap: number = SHAPE_MAX_SIBLINGS): Fol
   if (leaves > topCap * SHAPE_MAX_SIBLINGS) {
     return { leaves, depth: 3, top: 0, perLeaf: n / leaves }
   }
-  // branch 就是一级目录数，必须服从 topCap：写死上限的话，预算收紧时两层布局仍会吐出
-  // 最多 SHAPE_MAX_SIBLINGS 个一级目录，把同层撑爆。
-  // 分叉取「均衡」与「够用」里更大的那个。只取 floor(√L) 会在 L=91 处算出 10.1 个
-  // 二级、超上限退回三层，而 L=100 又回到两层——**深度非单调**。这个坑票 10 踩过一次。
-  // 注意 Math.ceil(leaves / SHAPE_MAX_SIBLINGS) 这一项分母不变：它问的是「每个一级下
-  // 最多 SHAPE_MAX_SIBLINGS 个二级，那至少要几个一级」，分母是二级的上限、不是一级的预算。
+  // branch 就是一级目录数，必须服从 topCap。
+  //
+  // 还要不少于一层刚撑破时的一级数（top1）。N=200 一层 10 个目录；N=201 进两层
+  // 若只取 floor(√leaves) 会掉到 4 个主题——模型只能挑 4 个最显眼的簇，其余全进
+  // 「其他」。真实库 245 条就这样变成 4 个窄主题 + 164 条收容所。两层是加孩子，
+  // 不是把一级主题砍掉。
   const branch = Math.min(
     topCap,
-    Math.max(Math.floor(Math.sqrt(leaves)), Math.ceil(leaves / SHAPE_MAX_SIBLINGS), 3),
+    Math.max(
+      top1,
+      Math.floor(Math.sqrt(leaves)),
+      Math.ceil(leaves / SHAPE_MAX_SIBLINGS),
+      3,
+    ),
   )
   return { leaves, depth: 2, top: branch, perLeaf: n / leaves }
 }
