@@ -8,6 +8,9 @@ import { InlineStatus } from '../components/InlineStatus'
 import { PrimaryButton, SecondaryButton, StickyActionBar } from '../components/IndexControls'
 import { fieldClass } from '../components/buttonStyles'
 
+const mergeSelectClass = 'w-[8.5rem] max-w-full min-w-0 rounded-index border border-index-line bg-index-canvas px-1 py-1 text-xs text-index-ink'
+const titleFieldClass = `${fieldClass} min-h-0 min-w-0 py-1`
+
 export function StructureStep() {
   const { plan, structureEdits, renameNode, removeNode, mergeNode, confirmStructure, backToPreferences } = useStore()
   const nodes = useMemo(
@@ -55,7 +58,7 @@ export function StructureStep() {
                 <span className="flex items-center gap-1">
                   <select
                     aria-label={t('structureMergeInto', node.title)}
-                    className="min-w-0 rounded-index border border-index-line bg-index-canvas px-1 py-1 text-xs text-index-ink"
+                    className={mergeSelectClass}
                     defaultValue=""
                     onChange={(e) => {
                       if (e.target.value !== '') mergeNode(node.id, e.target.value)
@@ -84,7 +87,7 @@ export function StructureStep() {
                     title={node.removable ? (
                   <input
                         aria-label={node.title}
-                        className={`${fieldClass} min-h-0 py-1`}
+                        className={titleFieldClass}
                     value={node.title}
                     onChange={(e) => renameNode(node.id, e.target.value)}
                   />
@@ -93,54 +96,53 @@ export function StructureStep() {
                 )}
                     measure={t('structureIncoming', String(node.count))}
                     value={actions}
-                  >
-                    {node.children.length > 0 && (
-                      <ol>
-                        {node.children.map((child, childIndex) => (
-                          <li key={child.id}>
-                            <IndexRow
-                              index={String(childIndex + 1).padStart(2, '0')}
-                              title={(
-                      <input
-                                  aria-label={child.title}
-                                  className={`${fieldClass} min-h-0 py-1`}
-                        value={child.title}
-                        onChange={(e) => renameNode(child.id, e.target.value)}
-                      />
-                              )}
-                              measure={t('structureIncoming', String(child.count))}
-                              value={(
-                                <span className="flex items-center gap-1">
-                                  <select
-                        aria-label={t('structureMergeInto', child.title)}
-                                    className="min-w-0 rounded-index border border-index-line bg-index-canvas px-1 py-1 text-xs text-index-ink"
-                        defaultValue=""
-                        onChange={(e) => {
-                          if (e.target.value !== '') mergeNode(child.id, e.target.value)
-                        }}
-                      >
-                        <option value="">{t('structureMergePlaceholder')}</option>
-                        {node.children
-                          .filter((sibling) => sibling.id !== child.id)
-                          .map((sibling) => (
-                            <option key={sibling.id} value={sibling.id}>{sibling.title}</option>
-                          ))}
-                                  </select>
-                                  <SecondaryButton
-                                    aria-label={t('structureDelete', child.title)}
-                                    size="sm"
-                                    onClick={() => removeNode(child.id)}
-                                  >
-                                    ✕
-                                  </SecondaryButton>
-                                </span>
-                              )}
-                            />
-                          </li>
-                        ))}
-                      </ol>
-                    )}
-                  </IndexRow>
+                  />
+                  {node.children.length > 0 && (
+                    <ol className="ml-8 border-l border-index-line">
+                      {node.children.map((child, childIndex) => (
+                        <li key={child.id}>
+                          <IndexRow
+                            index={String(childIndex + 1).padStart(2, '0')}
+                            title={(
+                              <input
+                                aria-label={child.title}
+                                className={titleFieldClass}
+                                value={child.title}
+                                onChange={(e) => renameNode(child.id, e.target.value)}
+                              />
+                            )}
+                            measure={t('structureIncoming', String(child.count))}
+                            value={(
+                              <span className="flex items-center gap-1">
+                                <select
+                                  aria-label={t('structureMergeInto', child.title)}
+                                  className={mergeSelectClass}
+                                  defaultValue=""
+                                  onChange={(e) => {
+                                    if (e.target.value !== '') mergeNode(child.id, e.target.value)
+                                  }}
+                                >
+                                  <option value="">{t('structureMergePlaceholder')}</option>
+                                  {node.children
+                                    .filter((sibling) => sibling.id !== child.id)
+                                    .map((sibling) => (
+                                      <option key={sibling.id} value={sibling.id}>{sibling.title}</option>
+                                    ))}
+                                </select>
+                                <SecondaryButton
+                                  aria-label={t('structureDelete', child.title)}
+                                  size="sm"
+                                  onClick={() => removeNode(child.id)}
+                                >
+                                  ✕
+                                </SecondaryButton>
+                              </span>
+                            )}
+                          />
+                        </li>
+                      ))}
+                    </ol>
+                  )}
                 </li>
               )
             })}

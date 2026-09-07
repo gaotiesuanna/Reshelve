@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
-import { act, render, screen } from '@testing-library/react'
+import { act, render, screen, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { setLocale } from '@/i18n'
 import { makePlan } from '../fakes/plan'
@@ -187,6 +187,11 @@ describe('英文界面渲染守卫：步骤组件', () => {
     // 它是 GitHub 下唯一的子目录，过滤掉自己之后下拉一个选项都不剩，标题本身仍只出现在
     // <input value> 里，从没进过 textContent（实测确认，见评审 final-review.md M1）
     assertNoChinese(container, 'StructureStep', /前端|其他/g)
+    // 英文 "N incoming" / "Merge into…" 比中文长，不能把标题列挤没
+    const githubRow = screen.getByDisplayValue('GitHub').closest('li')!
+    expect(githubRow.textContent).toContain('incoming')
+    expect(within(githubRow).getByRole('combobox', { name: 'Merge GitHub into' })).toBeTruthy()
+    expect(within(githubRow).getByDisplayValue('AI 工具')).toBeTruthy()
   })
 
   it('StructureStep（合并模式：合并到输入框与「源目录会被删除」说明）', () => {
