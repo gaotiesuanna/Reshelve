@@ -1,4 +1,4 @@
-import { useMemo } from 'react'
+import { useMemo, type ReactNode } from 'react'
 import { buildStructureView } from '@/core/structure'
 import { currentLocale, plural, t } from '@/i18n'
 import { joinTitles } from '../lib/listText'
@@ -8,8 +8,21 @@ import { InlineStatus } from '../components/InlineStatus'
 import { PrimaryButton, SecondaryButton, StickyActionBar } from '../components/IndexControls'
 import { fieldClass } from '../components/buttonStyles'
 
-const mergeSelectClass = 'w-[8.5rem] max-w-full min-w-0 rounded-index border border-index-line bg-index-canvas px-1 py-1 text-xs text-index-ink'
-const titleFieldClass = `${fieldClass} min-h-0 min-w-0 py-1`
+const mergeSelectClass = 'w-[8.5rem] max-w-full min-w-[5.5rem] rounded-index border border-index-line bg-index-canvas px-1 py-1 text-xs text-index-ink'
+const titleFieldClass = `${fieldClass} min-h-0 min-w-0 truncate py-1`
+
+/** 默认侧栏 <400px：只留数字，把「incoming」的宽度还给标题。拉宽后跟截图那一排一致。 */
+function incomingMeasure(count: number): ReactNode {
+  const full = t('structureIncoming', String(count))
+  const countText = String(count)
+  const unit = full.startsWith(countText) ? full.slice(countText.length) : full
+  return (
+    <span title={full}>
+      <span className="tabular-nums">{countText}</span>
+      <span className="max-[399px]:hidden">{unit}</span>
+    </span>
+  )
+}
 
 export function StructureStep() {
   const { plan, structureEdits, renameNode, removeNode, mergeNode, confirmStructure, backToPreferences } = useStore()
@@ -55,7 +68,7 @@ export function StructureStep() {
             {nodes.map((node, index) => {
               const prefix = String(index + 1).padStart(2, '0')
               const actions = node.removable ? (
-                <span className="flex items-center gap-1">
+                <span className="flex min-w-0 items-center gap-1">
                   <select
                     aria-label={t('structureMergeInto', node.title)}
                     className={mergeSelectClass}
@@ -73,6 +86,7 @@ export function StructureStep() {
                   </select>
                   <SecondaryButton
                     aria-label={t('structureDelete', node.title)}
+                    className="shrink-0"
                     size="sm"
                     onClick={() => removeNode(node.id)}
                   >
@@ -87,14 +101,15 @@ export function StructureStep() {
                     title={node.removable ? (
                   <input
                         aria-label={node.title}
+                        title={node.title}
                         className={titleFieldClass}
                     value={node.title}
                     onChange={(e) => renameNode(node.id, e.target.value)}
                   />
                 ) : (
-                      <span className="break-words text-index-muted">{node.title}</span>
+                      <span className="block truncate text-index-muted" title={node.title}>{node.title}</span>
                 )}
-                    measure={t('structureIncoming', String(node.count))}
+                    measure={incomingMeasure(node.count)}
                     value={actions}
                   />
                   {node.children.length > 0 && (
@@ -106,14 +121,15 @@ export function StructureStep() {
                             title={(
                               <input
                                 aria-label={child.title}
+                                title={child.title}
                                 className={titleFieldClass}
                                 value={child.title}
                                 onChange={(e) => renameNode(child.id, e.target.value)}
                               />
                             )}
-                            measure={t('structureIncoming', String(child.count))}
+                            measure={incomingMeasure(child.count)}
                             value={(
-                              <span className="flex items-center gap-1">
+                              <span className="flex min-w-0 items-center gap-1">
                                 <select
                                   aria-label={t('structureMergeInto', child.title)}
                                   className={mergeSelectClass}
@@ -131,6 +147,7 @@ export function StructureStep() {
                                 </select>
                                 <SecondaryButton
                                   aria-label={t('structureDelete', child.title)}
+                                  className="shrink-0"
                                   size="sm"
                                   onClick={() => removeNode(child.id)}
                                 >

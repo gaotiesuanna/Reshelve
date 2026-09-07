@@ -30,12 +30,14 @@ export function IndexRow({
     <>
       <span className="w-8 shrink-0 font-mono text-xs text-neutral-400">{index}</span>
       {leading !== undefined && <span className="shrink-0">{leading}</span>}
-      <span className="min-w-[8rem] flex-1 basis-[8rem]">
+      {/* 一条横排，和侧栏拉宽后的样子一致。标题保底 5rem 并吃剩余宽度；
+          操作列可收缩，避免默认侧栏把标题挤成一个字母。 */}
+      <span className="min-w-[5rem] flex-1">
         {title}
         {description !== undefined && <span className="mt-0.5 block break-words text-sm leading-body text-index-muted">{description}</span>}
       </span>
       {measure !== undefined && <span className="shrink-0 whitespace-nowrap text-xs text-index-muted">{measure}</span>}
-      {value !== undefined && <span className="min-w-0 max-w-full shrink-0 text-sm text-index-ink">{value}</span>}
+      {value !== undefined && <span className="min-w-0 text-sm text-index-ink">{value}</span>}
     </>
   )
 
@@ -43,7 +45,7 @@ export function IndexRow({
 
   return (
     <div className="border-b border-index-line">
-      <div className="flex min-h-index-row flex-wrap items-center gap-x-2 gap-y-1.5 px-3 py-2 text-left">
+      <div className="flex min-h-index-row items-center gap-2 px-3 py-2 text-left">
         {content}
         {hasToggle ? (
           <button
