@@ -87,12 +87,11 @@ describe('PreferencesStep 仅规范化书签标题', () => {
     useStore.setState({ analyze })
     render(<PreferencesStep />)
 
-    const option = screen.getByRole('checkbox', { name: '仅规范化书签标题' }) as HTMLInputElement
+    const option = screen.getByRole('radio', { name: '仅规范化书签标题' }) as HTMLInputElement
     expect(option.checked).toBe(false)
     await userEvent.click(option)
 
     expect(useStore.getState().titleOnly).toBe(true)
-    expect(screen.getAllByText(/不调用模型/).length).toBeGreaterThan(0)
     expect(screen.queryByText('将使用')).toBeNull()
     expect(screen.getByRole('button', { name: '预览标题改名' })).toBeTruthy()
     expect(screen.queryByRole('button', { name: '开始 AI 分析' })).toBeNull()
@@ -104,7 +103,7 @@ describe('PreferencesStep 仅规范化书签标题', () => {
   it('进入 title-only 时默认只勾 GitHub，其它平台不勾', async () => {
     setup(tidyScan)
     render(<PreferencesStep />)
-    await userEvent.click(screen.getByRole('checkbox', { name: '仅规范化书签标题' }))
+    await userEvent.click(screen.getByRole('radio', { name: '仅规范化书签标题' }))
 
     expect((screen.getByRole('checkbox', { name: /GitHub/ }) as HTMLInputElement).checked).toBe(true)
     expect((screen.getByRole('checkbox', { name: /YouTube/ }) as HTMLInputElement).checked).toBe(false)
@@ -116,7 +115,7 @@ describe('PreferencesStep 仅规范化书签标题', () => {
     render(<PreferencesStep />)
     expect(screen.getByTestId('prefs-clean-option')).toBeTruthy()
 
-    await userEvent.click(screen.getByRole('checkbox', { name: '仅规范化书签标题' }))
+    await userEvent.click(screen.getByRole('radio', { name: '仅规范化书签标题' }))
     expect(screen.queryByTestId('prefs-clean-option')).toBeNull()
 
     await userEvent.click(screen.getByRole('checkbox', { name: /YouTube/ }))
@@ -130,7 +129,7 @@ describe('PreferencesStep 仅规范化书签标题', () => {
     )
     setup(scan)
     render(<PreferencesStep />)
-    await userEvent.click(screen.getByRole('checkbox', { name: '仅规范化书签标题' }))
+    await userEvent.click(screen.getByRole('radio', { name: '仅规范化书签标题' }))
     expect(screen.getByRole('checkbox', { name: /GitHub/ }).closest('label')?.textContent).toMatch(/1/)
   })
 })
@@ -165,51 +164,61 @@ describe('PreferencesStep 不再有域名聚合', () => {
 })
 
 describe('PreferencesStep 清理空文件夹的说明', () => {
-  // 这段说明描述的行为在合并模式下有例外：
-  // 源文件夹会被清空删除，而且删不删跟这个开关无关（apply.ts 里是
-  // `removeEmptyFolders === true || mergeRootId !== null`）。
-  // 界面上唯一一处讲「什么不会被删」的地方说了假话，比不讲更糟。
-  function cleanDetail(): HTMLElement {
+  async function cleanDetail(): Promise<HTMLElement> {
     setup(messyScan)
     render(<PreferencesStep />)
-    // 查这张卡而不是 label：说明已经从 label 里搬出来，成了卡片里勾选行下面的一行
-    // （dl 套在 label 里是无效 HTML，两条边框还会和卡片的行间线叠成双线）。
     const card = screen.getByTestId('prefs-clean-option')
     expect(within(card).getByText('整理后清理空文件夹')).toBeTruthy()
-    expect(within(card).getByRole('button', { name: '说明' }).getAttribute('aria-expanded')).toBe('true')
+    const toggle = within(card).getByRole('button', { name: '说明' })
+    expect(toggle.getAttribute('aria-expanded')).toBe('false')
+    await userEvent.click(toggle)
+    expect(toggle.getAttribute('aria-expanded')).toBe('true')
     return within(card).getByText(/删除范围内不含任何书签的文件夹/)
   }
 
-  it('交代合并时源文件夹会被删除，且不受这个开关约束', () => {
-    const body = cleanDetail()
+  it('交代合并时源文件夹会被删除，且不受这个开关约束', async () => {
+    const body = await cleanDetail()
     expect(body.textContent).toMatch(/合并/)
     expect(body.textContent).toMatch(/删除/)
     expect(body.textContent).toMatch(/不受.*开关/)
   })
 
-  it('例外那半句本身要带上「可撤销」——删除很吓人，撤销才是让人敢按的那句', () => {
-    const body = cleanDetail().textContent ?? ''
-    // 只查整段里有没有「撤销」是查不出东西的：原文早就有「撤销时会连同目录一起还原」，
-    // 那句讲的是别的事。要看的是「合并」之后那半句自己有没有交代可撤销。
+  it('例外那半句本身要带上「可撤销」——删除很吓人，撤销才是让人敢按的那句', async () => {
+    const body = (await cleanDetail()).textContent ?? ''
     const exception = body.slice(body.indexOf('合并'))
     expect(exception).toMatch(/删除|清理/)
     expect(exception).toMatch(/撤销/)
   })
 
-  /**
-   * 清不清空文件夹是一条偏好，跟这轮动哪些目录无关。挂在「当前范围」标题底下时，
-   * 那个标题就在替它说话——说它是范围的一部分。所以它自己占一格。
-   */
-  it('自己占一格，不挂在「当前范围」底下', () => {
+  it('跟在整理方式单选组后面，不进 radio group，也不挂在「当前范围」底下', () => {
     setup(messyScan)
     render(<PreferencesStep />)
-    expect(screen.getByText('整理选项')).toBeTruthy()
+    expect(screen.getByRole('heading', { name: '整理方式' })).toBeTruthy()
+    expect(screen.queryByText('整理选项')).toBeNull()
     expect(
       within(screen.getByTestId('preferences-section')).queryByText('整理后清理空文件夹'),
     ).toBeNull()
-    // 上面那条 queryBy 为 null 单独看是可疑的——它绿着，分不清是真的搬走了还是查错了
-    // 地方。配上这条：东西确实还在页面上，只是不在「当前范围」那一格里。
     expect(screen.getByTestId('prefs-clean-option').textContent).toMatch('整理后清理空文件夹')
+    expect(
+      within(screen.getByRole('radiogroup', { name: '整理方式' })).queryByRole('checkbox', {
+        name: '整理后清理空文件夹',
+      }),
+    ).toBeNull()
+    expect(screen.getByRole('checkbox', { name: '整理后清理空文件夹' })).toBeTruthy()
+  })
+
+  it('清理选项可独立勾选，不改变整理方式选中项', async () => {
+    setup(tidyScan)
+    render(<PreferencesStep />)
+    const additive = screen.getByRole('radio', { name: '归入现有目录（默认）' }) as HTMLInputElement
+    expect(additive.checked).toBe(true)
+    const clean = screen.getByRole('checkbox', { name: '整理后清理空文件夹' }) as HTMLInputElement
+    expect(clean.checked).toBe(true)
+    await userEvent.click(clean)
+    expect(useStore.getState().settings.removeEmptyFolders).toBe(false)
+    expect(additive.checked).toBe(true)
+    expect(useStore.getState().titleOnly).toBe(false)
+    expect(useStore.getState().modeOverride).toBeNull()
   })
 })
 
@@ -218,7 +227,7 @@ describe('PreferencesStep 清理空文件夹的说明', () => {
  * ——这次整理该动多大范围、多深——用户明确要求把它们并列成一组单选，不再是
  * 「顶部一个逃生口按钮 + 下面选项列表里一个孤零零的勾选框」。
  */
-describe('PreferencesStep 整理方式三选一', () => {
+describe('PreferencesStep 整理方式四选一', () => {
   function radioGroup(): HTMLElement {
     return screen.getByRole('radiogroup', { name: '整理方式' })
   }
@@ -230,17 +239,17 @@ describe('PreferencesStep 整理方式三选一', () => {
     setup(tidyScan)
     render(<PreferencesStep />)
     expect(radio('归入现有目录（默认）').checked).toBe(true)
-    // 理由来自 core/mode.ts，带着实际数字
     expect(screen.getByText(/带编号前缀/)).toBeTruthy()
   })
 
-  it('三个选项都在，且互斥（同一个 name，浏览器原生保证单选）', () => {
+  it('四个选项都在，且互斥（同一个 name，浏览器原生保证单选）', () => {
     setup(tidyScan)
     render(<PreferencesStep />)
     const group = radioGroup()
     const inputs = within(group).getAllByRole('radio') as HTMLInputElement[]
-    expect(inputs).toHaveLength(3)
+    expect(inputs).toHaveLength(4)
     expect(new Set(inputs.map((i) => i.name)).size).toBe(1)
+    expect(radio('仅规范化书签标题').checked).toBe(false)
   })
 
   it('选「只处理散落书签」：写回设置，不推翻模式判断', async () => {
@@ -249,6 +258,7 @@ describe('PreferencesStep 整理方式三选一', () => {
     await userEvent.click(radio('只处理散落书签'))
     expect(useStore.getState().settings.onlyLooseInAdditive).toBe(true)
     expect(useStore.getState().modeOverride).toBeNull()
+    expect(useStore.getState().titleOnly).toBe(false)
   })
 
   it('选「重新设计整棵树」：推翻模式判断', async () => {
@@ -256,9 +266,7 @@ describe('PreferencesStep 整理方式三选一', () => {
     render(<PreferencesStep />)
     await userEvent.click(radio('重新设计整棵树'))
     expect(useStore.getState().modeOverride).toBe('rebuild')
-    // 结论句与选项说明里都带着「重新设计整棵目录树」这半句，用 getAllByText——
-    // 两处都命中才是对的，getByText 在这里天然会因多重匹配而炸
-    expect(screen.getAllByText(/重新设计整棵目录树/).length).toBeGreaterThan(0)
+    expect(useStore.getState().titleOnly).toBe(false)
   })
 
   it('推翻之后改选「归入现有目录」：modeOverride 与 onlyLooseInAdditive 一起复位', async () => {
@@ -269,6 +277,7 @@ describe('PreferencesStep 整理方式三选一', () => {
 
     expect(useStore.getState().modeOverride).toBeNull()
     expect(useStore.getState().settings.onlyLooseInAdditive).toBe(false)
+    expect(useStore.getState().titleOnly).toBe(false)
   })
 
   it('推翻之后改选「只处理散落书签」：同样能直接切回去，不用先跳回默认', async () => {
@@ -279,28 +288,70 @@ describe('PreferencesStep 整理方式三选一', () => {
 
     expect(useStore.getState().modeOverride).toBeNull()
     expect(useStore.getState().settings.onlyLooseInAdditive).toBe(true)
+    expect(useStore.getState().titleOnly).toBe(false)
   })
 
-  it('三个选项各自的说明默认展开', () => {
+  it('四项短摘要默认可见，长说明默认收起', () => {
     setup(tidyScan)
     render(<PreferencesStep />)
     const group = radioGroup()
+    expect(within(group).getByText(/不会改名、合并或删除任何现有文件夹/)).toBeTruthy()
     expect(within(group).getByText(/只把直接散落在范围根下/)).toBeTruthy()
+    expect(within(group).getByText(/会重新设计整棵目录树/)).toBeTruthy()
+    expect(within(group).getByText(/本轮只规范化当前范围内的书签标题/)).toBeTruthy()
+    expect(within(group).queryByText(/实在分不进去的书签会按主题攒成新目录/)).toBeNull()
+    expect(within(group).queryByText(/选「归入现有目录」时，每一轮都会把范围内全部书签重新判断一遍/)).toBeNull()
+    expect(within(group).queryByText(/没进本轮设计的旧文件夹/)).toBeNull()
+    expect(within(group).queryByText(/也不会清理空文件夹/)).toBeNull()
     for (const button of within(group).getAllByRole('button', { name: '说明' })) {
-      expect(button.getAttribute('aria-expanded')).toBe('true')
+      expect(button.getAttribute('aria-expanded')).toBe('false')
     }
   })
 
-  // 判一团乱麻时没有逃生口——这是产品决定（issues/14 §5），不给「其实我觉得
-  // 已经整理过」的选项，所以这三选一整组都不出现，不是三选一里少一项。
-  it('判一团乱麻时不渲染这组单选', () => {
+  it('展开说明后仍能读到长正文', async () => {
+    setup(tidyScan)
+    render(<PreferencesStep />)
+    const group = radioGroup()
+    const toggles = within(group).getAllByRole('button', { name: '说明' })
+    await userEvent.click(toggles[0]!)
+    expect(within(group).getByText(/实在分不进去的书签会按主题攒成新目录/)).toBeTruthy()
+  })
+
+  it('判一团乱麻时仍渲染四项，默认选中重新设计，理由在范围区', () => {
     setup(messyScan)
     render(<PreferencesStep />)
-    // 空断言防身：先证明这一页真渲染了、而且查询在这一页上确实命中得了东西
-    expect(screen.getAllByText(/重新设计整棵目录树/).length).toBeGreaterThan(0)
     expect(screen.getByRole('button', { name: '返回' })).toBeTruthy()
+    expect(radio('重新设计整棵树').checked).toBe(true)
+    expect(within(radioGroup()).getAllByRole('radio')).toHaveLength(4)
+    expect(screen.getByText(/范围内一个目录都没有/)).toBeTruthy()
+  })
 
-    expect(screen.queryByRole('radiogroup', { name: '整理方式' })).toBeNull()
+  it('判一团乱麻时改选归入现有：显式推翻为 additive', async () => {
+    setup(messyScan)
+    render(<PreferencesStep />)
+    await userEvent.click(radio('归入现有目录（默认）'))
+    expect(useStore.getState().modeOverride).toBe('additive')
+    expect(useStore.getState().titleOnly).toBe(false)
+    expect(useStore.getState().settings.onlyLooseInAdditive).toBe(false)
+  })
+
+  it('判一团乱麻时改选只处理散落：同样显式推翻为 additive', async () => {
+    setup(messyScan)
+    render(<PreferencesStep />)
+    await userEvent.click(radio('只处理散落书签'))
+    expect(useStore.getState().modeOverride).toBe('additive')
+    expect(useStore.getState().settings.onlyLooseInAdditive).toBe(true)
+    expect(useStore.getState().titleOnly).toBe(false)
+  })
+
+  it('从标题模式改选归入现有会清掉 titleOnly', async () => {
+    setup(tidyScan)
+    render(<PreferencesStep />)
+    await userEvent.click(radio('仅规范化书签标题'))
+    expect(useStore.getState().titleOnly).toBe(true)
+    await userEvent.click(radio('归入现有目录（默认）'))
+    expect(useStore.getState().titleOnly).toBe(false)
+    expect(radio('归入现有目录（默认）').checked).toBe(true)
   })
 })
 
@@ -320,7 +371,7 @@ describe('PreferencesStep 散落书签名单', () => {
     return within(radioGroup()).getByRole('button', { name }) as HTMLButtonElement
   }
 
-  it('没选这项时不出现名单按钮——三个选项保持同样的一行标题 + 说明', () => {
+  it('没选这项时不出现名单按钮', () => {
     setup(tidyScanWithLoose)
     render(<PreferencesStep />)
     expect(within(radioGroup()).queryByRole('button', { name: /散落书签/ })).toBeNull()
@@ -405,7 +456,7 @@ describe('PreferencesStep 不再摆配一次就不动的设置', () => {
     // （原来拿域名聚合那组的 label 当锚点，它随 issues/38 的 D4 删掉了）
     expect(screen.getAllByRole('checkbox').length).toBeGreaterThan(0)
 
-    expect(screen.getByRole('checkbox', { name: '仅规范化书签标题' })).toBeTruthy()
+    expect(screen.getByRole('radio', { name: '仅规范化书签标题' })).toBeTruthy()
     expect(screen.queryByText(/仓库名 \(作者\)/)).toBeNull()
   })
 })
