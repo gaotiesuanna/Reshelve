@@ -1,5 +1,5 @@
 export default {
-  content: ['./src/**/*.{ts,tsx,html}'],
+  content: ['./src/sidepanel/**/*.{ts,tsx,html}'],
   theme: {
     fontFamily: {
       sans: 'var(--font-family-sans)',

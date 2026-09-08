@@ -232,7 +232,7 @@ export const youtubeRule = hostRule(
   'titleRuleYoutube',
   'titleRuleYoutubeReason',
   (d) => d === 'youtu.be' || isHostOrSubdomain(d, 'youtube.com'),
-  [/^YouTube\s*[-:–—]\s*/i],
+  [/^YouTube\s*[-:\u2013\u2014]\s*/i],
 )
 
 export const csdnRule = hostRule(
@@ -241,7 +241,7 @@ export const csdnRule = hostRule(
   'titleRuleCsdn',
   'titleRuleCsdnReason',
   (d) => isHostOrSubdomain(d, 'csdn.net'),
-  [/^CSDN博客\s*[-:–—]\s*/, /^CSDN\s*[-:–—]\s*/i],
+  [/^CSDN博客\s*[-:\u2013\u2014]\s*/, /^CSDN\s*[-:\u2013\u2014]\s*/i],
 )
 
 export const zhihuRule = hostRule(
@@ -250,7 +250,7 @@ export const zhihuRule = hostRule(
   'titleRuleZhihu',
   'titleRuleZhihuReason',
   (d) => isHostOrSubdomain(d, 'zhihu.com'),
-  [/^知乎\s*[-:–—]\s*/, /^问题\s*[-:–—]\s*/],
+  [/^知乎\s*[-:\u2013\u2014]\s*/, /^问题\s*[-:\u2013\u2014]\s*/],
 )
 
 export const juejinRule = hostRule(
@@ -259,7 +259,7 @@ export const juejinRule = hostRule(
   'titleRuleJuejin',
   'titleRuleJuejinReason',
   (d) => d === 'juejin.cn' || d === 'juejin.im',
-  [/^掘金\s*[-:–—]\s*/],
+  [/^掘金\s*[-:\u2013\u2014]\s*/],
 )
 
 export const bilibiliRule = hostRule(
@@ -268,7 +268,7 @@ export const bilibiliRule = hostRule(
   'titleRuleBilibili',
   'titleRuleBilibiliReason',
   (d) => d === 'b23.tv' || isHostOrSubdomain(d, 'bilibili.com'),
-  [/^哔哩哔哩\s*[-:–—]\s*/, /^bilibili\s*[-:–—]\s*/i],
+  [/^哔哩哔哩\s*[-:\u2013\u2014]\s*/, /^bilibili\s*[-:\u2013\u2014]\s*/i],
 )
 
 export const mediumRule = hostRule(
@@ -277,7 +277,7 @@ export const mediumRule = hostRule(
   'titleRuleMedium',
   'titleRuleMediumReason',
   (d) => isHostOrSubdomain(d, 'medium.com'),
-  [/^Medium\s*[-:–—]\s*/i, /\s*[-|·]\s*Medium$/i],
+  [/^Medium\s*[-:\u2013\u2014]\s*/i, /\s*[-|\u00B7]\s*Medium$/i],
 )
 
 export const devtoRule = hostRule(
@@ -286,6 +286,6 @@ export const devtoRule = hostRule(
   'titleRuleDevto',
   'titleRuleDevtoReason',
   (d) => d === 'dev.to',
-  [/^DEV Community\s*[-:–—]\s*/i, /\s*[-|·]\s*DEV Community$/i, /\s*[-|·]\s*DEV\.to$/i],
+  [/^DEV Community\s*[-:\u2013\u2014]\s*/i, /\s*[-|\u00B7]\s*DEV Community$/i, /\s*[-|\u00B7]\s*DEV\.to$/i],
 )
 
