@@ -1,5 +1,12 @@
 import { sanitizeUrl } from './sanitize'
 import type { BookmarkItem } from './types'
+import {
+  dockerRule,
+  gitlabRule,
+  huggingfaceRule,
+  npmRule,
+  pypiRule,
+} from './titleRules'
 
 /** 一次标题改写：改的是书签自己的名字，不影响它的位置。 */
 export interface TitleRewrite {
@@ -96,10 +103,15 @@ export const githubRule: TitleNormalizationRule = {
   },
 }
 
-export const TITLE_RULES: TitleNormalizationRule[] = [githubRule]
+export const TITLE_RULES: TitleNormalizationRule[] = [
+  githubRule, gitlabRule, npmRule, pypiRule, dockerRule, huggingfaceRule,
+]
 
 export const TITLE_RULE_GROUPS: TitleRuleGroup[] = [
   { id: 'github', category: 'code', label: 'titleRuleGithub', ruleIds: ['github'] },
+  { id: 'gitlab', category: 'code', label: 'titleRuleGitlab', ruleIds: ['gitlab'] },
+  { id: 'packages', category: 'code', label: 'titleRulePackages', ruleIds: ['npm', 'pypi', 'docker'] },
+  { id: 'huggingface', category: 'code', label: 'titleRuleHuggingface', ruleIds: ['huggingface'] },
 ]
 
 export const DEFAULT_TITLE_RULE_IDS: readonly string[] = ['github']
