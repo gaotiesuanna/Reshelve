@@ -908,6 +908,9 @@
   "prefsModeAdditiveBody": {
     "message": "不会改名、合并或删除任何现有文件夹。实在分不进去的书签会按主题攒成新目录；连主题都定不出来的，会归进一个「其他」目录。整理可一键撤销。"
   },
+  "prefsModeAdditiveSummary": {
+    "message": "不会改名、合并或删除任何现有文件夹。整理可一键撤销。"
+  },
   "prefsModeGroupLabel": {
     "message": "整理方式"
   },

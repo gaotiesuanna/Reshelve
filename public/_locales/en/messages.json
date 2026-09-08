@@ -908,6 +908,9 @@
   "prefsModeAdditiveBody": {
     "message": "No existing folder is renamed, merged, or deleted. Bookmarks that fit nowhere are gathered into new folders by topic; the ones that can't even be given a topic land in an \"Other\" folder. The whole run can be undone."
   },
+  "prefsModeAdditiveSummary": {
+    "message": "No existing folder is renamed, merged, or deleted. The whole run can be undone."
+  },
   "prefsModeGroupLabel": {
     "message": "How to organize"
   },
