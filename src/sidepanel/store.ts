@@ -7,6 +7,7 @@ import { applyPartialResult, renumberPlan, retargetRow } from '@/core/plan'
 import { applyStructureEdits, EMPTY_EDITS, type StructureEdits } from '@/core/structure'
 import type { OrganizeMode } from '@/core/mode'
 import type { OrganizePlan, ScanResult } from '@/core/types'
+import { DEFAULT_TITLE_RULE_IDS } from '@/core/titles'
 import {
   buildImportPreview, parseImportFile,
   type BlockedLink, type ImportError, type ImportPreview,
@@ -337,6 +338,8 @@ interface State {
   modeOverride: OrganizeMode | null
   /** 偏好页本轮只统一 GitHub 标题，不进 Settings。 */
   titleOnly: boolean
+  /** 标题规则勾选，只对本轮有效，不进 Settings。 */
+  titleRuleIds: string[]
   /** 已选中并解析成功的导入文件。 */
   importFile: { name: string; preview: ImportPreview } | null
   /** 文件级校验没过的原因，与 importFile 互斥。 */
@@ -409,6 +412,7 @@ interface State {
   setSettings(settings: Settings): Promise<void>
   setModeOverride(mode: OrganizeMode | null): void
   setTitleOnly(titleOnly: boolean): void
+  setTitleRuleIds(titleRuleIds: string[]): void
   analyze(): Promise<void>
   retry(): Promise<void>
   renameNode(id: string, title: string): void
@@ -534,6 +538,7 @@ export const useStore = create<State>((set, get) => ({
   structureEdits: EMPTY_EDITS,
   modeOverride: null,
   titleOnly: false,
+  titleRuleIds: [...DEFAULT_TITLE_RULE_IDS],
   importFile: null,
   importError: null,
   importDone: null,
@@ -629,7 +634,7 @@ export const useStore = create<State>((set, get) => ({
     if (isStale(get, set, run)) return
     if (!res.ok) return fail(set, res.error, 'scan')
     if (res.kind !== 'scan') return set({ busy: null, busyKind: null })
-    set({ scan: res.scan, step: 'preferences', modeOverride: null, titleOnly: false, busy: null, busyKind: null })
+    set({ scan: res.scan, step: 'preferences', modeOverride: null, titleOnly: false, titleRuleIds: [...DEFAULT_TITLE_RULE_IDS], busy: null, busyKind: null })
   },
 
   async setSettings(settings) {
@@ -643,6 +648,10 @@ export const useStore = create<State>((set, get) => ({
 
   setTitleOnly(titleOnly) {
     set({ titleOnly })
+  },
+
+  setTitleRuleIds(titleRuleIds) {
+    set({ titleRuleIds })
   },
 
   async analyze() {
@@ -676,6 +685,7 @@ export const useStore = create<State>((set, get) => ({
       // null 表示没推翻，这时候一个字段都不带，后台自己判
       modeOverride: get().modeOverride ?? undefined,
       titleOnly: get().titleOnly || undefined,
+      ruleIds: get().titleOnly ? get().titleRuleIds : undefined,
     }).finally(stopKeepalive)
     if (isStale(get, set, run)) return
     // 主动取消不是错误，日志里已经有记录，不弹红条，也不算失败，不记可重试
@@ -1317,7 +1327,7 @@ export const useStore = create<State>((set, get) => ({
       // 让在途的扫描/分析知道自己已经过期，回来时别再写 store
       runSeq: get().runSeq + 1,
       step: 'scope', scan: null, plan: null, accepted: new Set(), reclassifyMarked: new Set(),
-      structureEdits: EMPTY_EDITS, modeOverride: null, titleOnly: false,
+      structureEdits: EMPTY_EDITS, modeOverride: null, titleOnly: false, titleRuleIds: [...DEFAULT_TITLE_RULE_IDS],
       applyResult: null, undoResult: null, error: null, retryable: null,
     })
   },

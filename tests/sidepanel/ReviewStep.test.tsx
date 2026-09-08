@@ -61,12 +61,19 @@ describe('ReviewStep', () => {
     expect(useStore.getState().accepted.has('101')).toBe(true)
   })
 
-  it('title-only 方案展示逐条改名并按接受状态应用', async () => {
+  it('title-only 方案展示平台、旧标题、新标题和规则说明', async () => {
     const titlePlan: OrganizePlan = {
       ...plan,
       titleOnly: true,
       operations: [
-        { type: 'rename_bookmark', bookmarkId: '100', oldTitle: '旧标题', newTitle: 'react (facebook)' },
+        {
+          type: 'rename_bookmark',
+          bookmarkId: '100',
+          oldTitle: '旧标题',
+          newTitle: 'react (facebook)',
+          providerId: 'github',
+          reason: 'titleRuleGithubReason',
+        },
       ],
       rows: [],
       summary: { ...plan.summary, totalBookmarks: 1, movedBookmarks: 0, unchangedBookmarks: 1, renamedBookmarks: 1 },
@@ -75,13 +82,31 @@ describe('ReviewStep', () => {
 
     render(<ReviewStep />)
 
+    expect(screen.getByText('GitHub')).toBeTruthy()
     expect(screen.getByText('旧标题')).toBeTruthy()
     expect(screen.getByText('react (facebook)')).toBeTruthy()
+    expect(screen.getByText(/repo \(owner\)/)).toBeTruthy()
     const checkbox = screen.getByRole('checkbox', { name: '接受改名：旧标题' }) as HTMLInputElement
     expect(checkbox.checked).toBe(true)
 
     await userEvent.click(checkbox)
     expect(useStore.getState().accepted).toEqual(new Set())
+    expect((screen.getByRole('button', { name: '应用 0 项修改' }) as HTMLButtonElement).disabled).toBe(true)
+  })
+
+  it('title-only 没有改名时显示空状态并禁用应用', () => {
+    useStore.setState({
+      plan: {
+        ...plan,
+        titleOnly: true,
+        operations: [],
+        rows: [],
+        summary: { ...plan.summary, movedBookmarks: 0, renamedBookmarks: 0 },
+      },
+      accepted: new Set(),
+    })
+    render(<ReviewStep />)
+    expect(screen.getByText('当前范围没有可规范化标题。')).toBeTruthy()
     expect((screen.getByRole('button', { name: '应用 0 项修改' }) as HTMLButtonElement).disabled).toBe(true)
   })
 

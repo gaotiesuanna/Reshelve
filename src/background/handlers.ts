@@ -11,7 +11,7 @@ import {
 import { MIN_FOLDER_BOOKMARKS, pruneReason, pruneSmallFolders } from '@/core/prune'
 import { findScopeRoots, looseBookmarks, scanTree } from '@/core/scan'
 import { detectMode } from '@/core/mode'
-import { planTitleRewrites } from '@/core/titles'
+import { DEFAULT_TITLE_RULE_IDS, planTitleRewrites } from '@/core/titles'
 import { buildCategoryTree, FALLBACK_TITLE, MAX_SIBLINGS as PRODUCT_MAX_SIBLINGS } from '@/core/tree'
 import { deriveShape, FALLBACK_SHARE_LIMIT, MAX_LEAF, SHAPE_MAX_SIBLINGS } from '@/core/shape'
 import { clusterHomeless, dropAlreadyGrouped, planFallbackFolder, planNewFolders } from '@/core/newTopics'
@@ -136,7 +136,10 @@ export async function handle(
         if (request.titleOnly === true) {
           const tree = await ports.bookmarks.getTree()
           const scan = scanTree(tree, request.scopeRootIds)
-          const titleRewrites = planTitleRewrites(scan.bookmarks)
+          const titleRewrites = planTitleRewrites(
+            scan.bookmarks,
+            request.ruleIds ?? DEFAULT_TITLE_RULE_IDS,
+          )
           log('scan', t('logScanDone', String(scan.stats.totalBookmarks), String(scan.stats.totalFolders)))
           if (titleRewrites.length > 0) {
             log('classify', t('logTitleRewrites', String(titleRewrites.length)))

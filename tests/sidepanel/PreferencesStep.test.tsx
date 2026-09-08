@@ -74,29 +74,64 @@ function setup(scan: ScanResult, modeOverride: OrganizeMode | null = null): void
     // setSettings 会打 send()，必须替身；setModeOverride 只写 state，用真的那个
     setSettings: vi.fn(async (settings) => { useStore.setState({ settings }) }),
     titleOnly: false,
+    titleRuleIds: ['github'],
     setTitleOnly: vi.fn((titleOnly: boolean) => useStore.setState({ titleOnly })),
+    setTitleRuleIds: (titleRuleIds: string[]) => useStore.setState({ titleRuleIds }),
   })
 }
 
-describe('PreferencesStep 仅统一 GitHub 标题', () => {
+describe('PreferencesStep 仅规范化书签标题', () => {
   it('提供 title-only 选项，选中后不显示模型配置入口并切换开始按钮', async () => {
     setup(tidyScan)
     const analyze = vi.fn(async () => {})
     useStore.setState({ analyze })
     render(<PreferencesStep />)
 
-    const option = screen.getByRole('checkbox', { name: '仅统一 GitHub 书签标题' }) as HTMLInputElement
+    const option = screen.getByRole('checkbox', { name: '仅规范化书签标题' }) as HTMLInputElement
     expect(option.checked).toBe(false)
     await userEvent.click(option)
 
     expect(useStore.getState().titleOnly).toBe(true)
     expect(screen.getAllByText(/不调用模型/).length).toBeGreaterThan(0)
     expect(screen.queryByText('将使用')).toBeNull()
-    expect(screen.getByRole('button', { name: '预览 GitHub 标题改名' })).toBeTruthy()
+    expect(screen.getByRole('button', { name: '预览标题改名' })).toBeTruthy()
     expect(screen.queryByRole('button', { name: '开始 AI 分析' })).toBeNull()
 
-    await userEvent.click(screen.getByRole('button', { name: '预览 GitHub 标题改名' }))
+    await userEvent.click(screen.getByRole('button', { name: '预览标题改名' }))
     expect(analyze).toHaveBeenCalledTimes(1)
+  })
+
+  it('进入 title-only 时默认只勾 GitHub，其它平台不勾', async () => {
+    setup(tidyScan)
+    render(<PreferencesStep />)
+    await userEvent.click(screen.getByRole('checkbox', { name: '仅规范化书签标题' }))
+
+    expect((screen.getByRole('checkbox', { name: /GitHub/ }) as HTMLInputElement).checked).toBe(true)
+    expect((screen.getByRole('checkbox', { name: /YouTube/ }) as HTMLInputElement).checked).toBe(false)
+    expect((screen.getByRole('checkbox', { name: /GitLab/ }) as HTMLInputElement).checked).toBe(false)
+  })
+
+  it('勾选 YouTube 后 titleRuleIds 含 youtube，普通整理路径仍在未勾 title-only 时可见清理空文件夹', async () => {
+    setup(tidyScan)
+    render(<PreferencesStep />)
+    expect(screen.getByTestId('prefs-clean-option')).toBeTruthy()
+
+    await userEvent.click(screen.getByRole('checkbox', { name: '仅规范化书签标题' }))
+    expect(screen.queryByTestId('prefs-clean-option')).toBeNull()
+
+    await userEvent.click(screen.getByRole('checkbox', { name: /YouTube/ }))
+    expect(useStore.getState().titleRuleIds).toEqual(expect.arrayContaining(['github', 'youtube']))
+  })
+
+  it('GitHub 行显示当前范围可改名数量', async () => {
+    const scan = scanOf(
+      [ROOT, folder('10', '01 前端', '1', 1)],
+      [{ id: 'g', title: 'GitHub - sst/opencode', url: 'https://github.com/sst/opencode', parentId: '10', index: 0, currentPath: [] }],
+    )
+    setup(scan)
+    render(<PreferencesStep />)
+    await userEvent.click(screen.getByRole('checkbox', { name: '仅规范化书签标题' }))
+    expect(screen.getByRole('checkbox', { name: /GitHub/ }).closest('label')?.textContent).toMatch(/1/)
   })
 })
 
@@ -370,7 +405,7 @@ describe('PreferencesStep 不再摆配一次就不动的设置', () => {
     // （原来拿域名聚合那组的 label 当锚点，它随 issues/38 的 D4 删掉了）
     expect(screen.getAllByRole('checkbox').length).toBeGreaterThan(0)
 
-    expect(screen.getByRole('checkbox', { name: '仅统一 GitHub 书签标题' })).toBeTruthy()
+    expect(screen.getByRole('checkbox', { name: '仅规范化书签标题' })).toBeTruthy()
     expect(screen.queryByText(/仓库名 \(作者\)/)).toBeNull()
   })
 })

@@ -739,6 +739,82 @@ describe('handle', () => {
     expect(res.plan.rows.length).toBeGreaterThan(0)
     expect(res.plan.warnings.join()).toContain('1')
   })
+
+  it('title-only 缺省 ruleIds 仍只跑 GitHub；显式规则才改别的平台', async () => {
+    const fake = createFakeBookmarks([
+      { id: '0', title: '', children: [
+        { id: '1', title: '书签栏', children: [
+          { id: '100', title: 'GitHub - sst/opencode', url: 'https://github.com/sst/opencode' },
+          { id: '101', title: 'YouTube - 某个视频', url: 'https://www.youtube.com/watch?v=abc' },
+        ] },
+      ] },
+    ])
+    const ports = { bookmarks: fake.api, storage: createFakeStorage() }
+    const createClient = vi.fn(() => { throw new Error('title-only 不应创建模型客户端') })
+    const deps = { createClient, now: () => 1 }
+
+    const githubOnly = await handle(ports, { kind: 'analyze', scopeRootIds: ['1'], titleOnly: true }, deps)
+    if (!githubOnly.ok || githubOnly.kind !== 'analyze') return
+    expect(githubOnly.plan.operations.map((o) => o.type === 'rename_bookmark' ? o.bookmarkId : null)).toEqual(['100'])
+    expect(createClient).not.toHaveBeenCalled()
+
+    const youtube = await handle(ports, {
+      kind: 'analyze', scopeRootIds: ['1'], titleOnly: true, ruleIds: ['youtube'],
+    }, deps)
+    if (!youtube.ok || youtube.kind !== 'analyze') return
+    expect(youtube.plan.operations).toEqual([
+      {
+        type: 'rename_bookmark',
+        bookmarkId: '101',
+        oldTitle: 'YouTube - 某个视频',
+        newTitle: '某个视频',
+        providerId: 'youtube',
+        reason: 'titleRuleYoutubeReason',
+      },
+    ])
+  })
+
+  it('普通整理即使 YouTube 标题可清理，rewriteGithubTitles 也只改 GitHub', async () => {
+    const fake = createFakeBookmarks([
+      { id: '0', title: '', children: [
+        { id: '1', title: '书签栏', children: [
+          { id: '11', title: '收件箱', children: [
+            { id: 'g0', title: '书签 g0', url: 'https://github.com/sst/opencode' },
+            { id: 'y0', title: 'YouTube - 某个视频', url: 'https://www.youtube.com/watch?v=abc' },
+          ] },
+        ] },
+      ] },
+    ])
+    const ports = { bookmarks: fake.api, storage: createFakeStorage() }
+    await saveSettings(ports, {
+      ...DEFAULT_SETTINGS,
+      ...withLlm({ baseUrl: 'https://x/v1', apiKey: 'sk-x', model: 'm' }),
+      rewriteGithubTitles: true,
+    })
+    const complete = vi.fn(async (prompt: string) => {
+      if (!prompt.includes('候选目录')) {
+        return {
+          results: [
+            { bookmark_id: 'g0', primary_topic: '工具', secondary_topic: null },
+            { bookmark_id: 'y0', primary_topic: '工具', secondary_topic: null },
+          ],
+        }
+      }
+      return {
+        results: [
+          { bookmark_id: 'g0', target_category_id: null, confidence: 0, reason: '无合适目录' },
+          { bookmark_id: 'y0', target_category_id: null, confidence: 0, reason: '无合适目录' },
+        ],
+      }
+    })
+    const plan = await analyzePlan(
+      ports,
+      { createClient: () => ({ complete }), now: () => 1 },
+      'additive',
+    )
+    const renamed = plan.operations.flatMap((o) => o.type === 'rename_bookmark' ? [o.bookmarkId] : [])
+    expect(renamed).toEqual(['g0'])
+  })
 })
 
 describe('handle import', () => {

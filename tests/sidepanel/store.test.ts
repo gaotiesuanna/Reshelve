@@ -511,6 +511,47 @@ describe('放弃这一轮之后，在途结果不再落地', () => {
     await useStore.getState().goScan()
     expect(useStore.getState().modeOverride).toBeNull()
   })
+
+  it('title-only 请求带上本轮 ruleIds，不写 settings', async () => {
+    useStore.setState({ titleOnly: true, titleRuleIds: ['youtube', 'csdn'] })
+    vi.mocked(send).mockImplementation((req: { kind: string }) =>
+      req.kind === 'analyze'
+        ? (Promise.resolve({
+            ok: true, kind: 'analyze',
+            plan: { ...makePlan(), titleOnly: true, rows: [], operations: [] },
+          }) as never)
+        : (Promise.resolve({ ok: true }) as never))
+
+    await useStore.getState().analyze()
+    const call = vi.mocked(send).mock.calls
+      .map(([req]) => req as { kind: string; titleOnly?: boolean; ruleIds?: string[] })
+      .find((req) => req.kind === 'analyze')
+    expect(call?.titleOnly).toBe(true)
+    expect(call?.ruleIds).toEqual(['youtube', 'csdn'])
+    expect(vi.mocked(send).mock.calls.some(([req]) => (req as { kind: string }).kind === 'save_settings')).toBe(false)
+  })
+
+  it('普通分析不带 ruleIds', async () => {
+    useStore.setState({ titleOnly: false, titleRuleIds: ['youtube'] })
+    vi.mocked(send).mockImplementation((req: { kind: string }) =>
+      req.kind === 'analyze'
+        ? (Promise.resolve({ ok: true, kind: 'analyze', plan: makePlan() }) as never)
+        : (Promise.resolve({ ok: true }) as never))
+
+    await useStore.getState().analyze()
+    const call = vi.mocked(send).mock.calls
+      .map(([req]) => req as { kind: string; ruleIds?: string[] })
+      .find((req) => req.kind === 'analyze')
+    expect(call?.ruleIds).toBeUndefined()
+  })
+
+  it('goScan 把 titleOnly 与 titleRuleIds 恢复成 GitHub 默认', async () => {
+    useStore.setState({ titleOnly: true, titleRuleIds: ['youtube'] })
+    vi.mocked(send).mockResolvedValue({ ok: true, kind: 'scan', scan } as never)
+    await useStore.getState().goScan()
+    expect(useStore.getState().titleOnly).toBe(false)
+    expect(useStore.getState().titleRuleIds).toEqual(['github'])
+  })
 })
 
 describe('重新分类选中的建议', () => {

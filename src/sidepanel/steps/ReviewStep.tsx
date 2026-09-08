@@ -2,7 +2,9 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 import { localDate } from '@/core/export'
 import { MARK_CONFIDENCE, renumberPlan, summarize, wouldStrandFolder } from '@/core/plan'
 import type { PlanRow, UnchangedRow } from '@/core/types'
+import { TITLE_RULES } from '@/core/titles'
 import { plural, t } from '@/i18n'
+import type { MessageKey } from '@/i18n/messages'
 import { downloadJson } from '../lib/download'
 import { useStore } from '../store'
 import { ChevronDownIcon, DownloadIcon } from '../components/icons'
@@ -221,25 +223,40 @@ export function ReviewStep() {
 
       {titleOnly && titleOperations.length > 0 && (
         <ul className="mt-3 overflow-hidden rounded-index border border-index-line bg-neutral-50">
-          {titleOperations.map((operation) => (
-            <li key={operation.bookmarkId} className="border-b border-index-line px-2.5 py-2.5 last:border-b-0">
-              <label className="flex min-w-0 cursor-pointer items-start gap-2 text-sm leading-caption">
-                <input
-                  type="checkbox"
-                  aria-label={t('reviewTitleOnlySelect', operation.oldTitle)}
-                  className="mt-0.5 h-3.5 w-3.5 shrink-0 accent-index-ink"
-                  checked={accepted.has(operation.bookmarkId)}
-                  onChange={() => toggleAccepted(operation.bookmarkId)}
-                />
-                <span className="min-w-0 flex-1 break-words">
-                  <span className="font-medium text-index-ink">{operation.oldTitle}</span>
-                  <span className="mx-1 text-index-faint">→</span>
-                  <span className="text-index-muted">{operation.newTitle}</span>
-                </span>
-              </label>
-            </li>
-          ))}
+          {titleOperations.map((operation) => {
+            const rule = TITLE_RULES.find((r) => r.id === operation.providerId)
+            return (
+              <li key={operation.bookmarkId} className="border-b border-index-line px-2.5 py-2.5 last:border-b-0">
+                <label className="flex min-w-0 cursor-pointer items-start gap-2 text-sm leading-caption">
+                  <input
+                    type="checkbox"
+                    aria-label={t('reviewTitleOnlySelect', operation.oldTitle)}
+                    className="mt-0.5 h-3.5 w-3.5 shrink-0 accent-index-ink"
+                    checked={accepted.has(operation.bookmarkId)}
+                    onChange={() => toggleAccepted(operation.bookmarkId)}
+                  />
+                  <span className="min-w-0 flex-1 break-words">
+                    {rule !== undefined && (
+                      <span className="mb-0.5 block text-xs text-index-muted">{t(rule.label as MessageKey)}</span>
+                    )}
+                    <span className="font-medium text-index-ink">{operation.oldTitle}</span>
+                    <span className="mx-1 text-index-faint">→</span>
+                    <span className="text-index-muted">{operation.newTitle}</span>
+                    {operation.reason !== undefined && operation.reason !== '' && (
+                      <span className="mt-0.5 block text-xs text-index-faint">{t(operation.reason as MessageKey)}</span>
+                    )}
+                  </span>
+                </label>
+              </li>
+            )
+          })}
         </ul>
+      )}
+
+      {titleOnly && titleOperations.length === 0 && (
+        <div className="mt-3">
+          <InlineStatus tone="neutral">{t('reviewTitleOnlyEmpty')}</InlineStatus>
+        </div>
       )}
 
       {!titleOnly && plan.rows.length === 0 && (

@@ -1,8 +1,9 @@
 import { useMemo } from 'react'
 import { looseBookmarks, scopeFolderPaths } from '@/core/scan'
-import { planTitleRewrites } from '@/core/titles'
+import { TITLE_RULE_GROUPS, planTitleRewrites } from '@/core/titles'
 import { detectMode } from '@/core/mode'
 import { currentLocale, plural, t } from '@/i18n'
+import type { MessageKey } from '@/i18n/messages'
 import { isLocalBaseUrl, isModelConfigured } from '@/llm/config'
 import { activeLlm, type Endpoint } from '@/storage/settings'
 import { useStore } from '../store'
@@ -48,7 +49,7 @@ function pickableModels(endpoints: Endpoint[]): Array<{ baseUrl: string; model: 
 export function PreferencesStep() {
   const {
     scan, settings, setSettings, analyze, busy, reset, modeOverride, setModeOverride, openSettings,
-    tree, checkedIds, titleOnly, setTitleOnly,
+    tree, checkedIds, titleOnly, setTitleOnly, titleRuleIds, setTitleRuleIds,
   } = useStore()
   const locale = currentLocale()
   // 与后台是同一个纯函数——但前提是同一份扫描结果：书签在 goScan 之后、这次
@@ -68,10 +69,8 @@ export function PreferencesStep() {
     () => (scan === null ? [] : looseBookmarks(scan)),
     [scan],
   )
-  const githubRewriteCount = useMemo(
-    () => (scan === null ? 0 : planTitleRewrites(scan.bookmarks).length),
-    [scan],
-  )
+  const rewriteCountFor = (ruleIds: readonly string[]): number =>
+    scan === null ? 0 : planTitleRewrites(scan.bookmarks, ruleIds).length
   if (scan === null || decision === null) return null
   // judgedMessy 是自动判断本身的结论，不受 modeOverride 影响——它决定要不要给出
   // 「归入现有 / 只处理散落书签 / 重新设计」这三选一（逃生口只为「误判成已整理」
@@ -221,11 +220,6 @@ export function PreferencesStep() {
           <Detail flush defaultOpen label={detailLabel()}>
             {t('prefsGithubOnlyBody')}
           </Detail>
-          {titleOnly && (
-            <div className="px-3 py-2 text-xs leading-body text-index-muted">
-              {t('prefsGithubOnlyCount', String(githubRewriteCount))}
-            </div>
-          )}
           {!titleOnly && <div data-testid="prefs-clean-option">
         {/* 说明从 label 里搬了出来。三件事一起解决：dl 套在 label 里本就是无效 HTML；
             它自带的上下边和卡片的行间线会叠成双线；勾选行回到单行高度之后，复选框
@@ -281,6 +275,41 @@ export function PreferencesStep() {
       }
       {titleOnly && (
         <IndexSection title={t('prefsGithubOnlySection')}>
+          {(['code', 'content'] as const).map((category) => (
+            <div key={category} className="mt-2 first:mt-0">
+              <p className="px-3 text-xs font-medium text-index-muted">
+                {t(category === 'code' ? 'titleRuleCategoryCode' : 'titleRuleCategoryContent')}
+              </p>
+              <div className={choiceList}>
+                {TITLE_RULE_GROUPS.filter((group) => group.category === category).map((group) => {
+                  const checked = group.ruleIds.every((id) => titleRuleIds.includes(id))
+                  const count = rewriteCountFor(group.ruleIds)
+                  return (
+                    <label key={group.id} className={`${choiceRow} hover:bg-index-blue-soft`}>
+                      <input
+                        type="checkbox"
+                        className="h-3.5 w-3.5 shrink-0 accent-index-blue"
+                        checked={checked}
+                        onChange={(e) => {
+                          const next = new Set(titleRuleIds)
+                          if (e.target.checked) group.ruleIds.forEach((id) => next.add(id))
+                          else group.ruleIds.forEach((id) => next.delete(id))
+                          setTitleRuleIds([...next])
+                        }}
+                      />
+                      <span className="min-w-0 flex-1">
+                        {t(group.label as MessageKey)}
+                        <span className="ml-1 tabular-nums text-index-faint">{count}</span>
+                      </span>
+                    </label>
+                  )
+                })}
+              </div>
+            </div>
+          ))}
+          <div className="px-3 py-2 text-xs leading-body text-index-muted">
+            {t('prefsGithubOnlyCount', String(rewriteCountFor(titleRuleIds)))}
+          </div>
           <InlineStatus tone="neutral">{t('prefsGithubOnlyPreview')}</InlineStatus>
         </IndexSection>
       )}

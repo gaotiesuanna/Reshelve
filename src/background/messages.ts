@@ -33,6 +33,8 @@ export type Request =
       modeOverride?: OrganizeMode
       /** 只生成 GitHub 标题改名方案，不调用模型也不生成移动操作。 */
       titleOnly?: boolean
+      /** title-only 时选用的规则。缺省按 GitHub-only 处理，兼容旧侧栏。 */
+      ruleIds?: string[]
     }
   | { kind: 'apply'; plan: OrganizePlan; accepted: string[] }
   | { kind: 'undo' }

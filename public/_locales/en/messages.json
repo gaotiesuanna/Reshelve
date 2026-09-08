@@ -930,13 +930,13 @@
     "message": "Run options"
   },
   "prefsGithubOnlyTitle": {
-    "message": "Only normalize GitHub bookmark titles"
+    "message": "Only normalize bookmark titles"
   },
   "prefsGithubOnlyBody": {
-    "message": "Only GitHub bookmarks in the current scope that need a new title are included. No model call, bookmark move, folder change, or empty-folder cleanup is performed; review each rename before applying, and undo remains available."
+    "message": "Only bookmarks in the current scope that match the selected rules and need a new title are included. No model call, bookmark move, folder change, or empty-folder cleanup is performed; review each rename before applying, and undo remains available."
   },
   "prefsGithubOnlyCount": {
-    "message": "$count$ GitHub bookmarks in this scope need a new title.",
+    "message": "$count$ bookmarks in this scope will be renamed by the selected rules.",
     "placeholders": {
       "count": {
         "content": "$1"
@@ -944,10 +944,10 @@
     }
   },
   "prefsGithubOnlyScope": {
-    "message": "This run only normalizes GitHub bookmark titles in the current scope. It does not call a model or change bookmark locations."
+    "message": "This run only normalizes bookmark titles in the current scope. It does not call a model or change bookmark locations."
   },
   "prefsGithubOnlySection": {
-    "message": "GitHub titles"
+    "message": "Title rules"
   },
   "prefsGithubOnlyPreview": {
     "message": "The next step shows the rename list first, so you can accept or reject each item."
@@ -1012,7 +1012,7 @@
     "message": "Start AI analysis"
   },
   "prefsGithubOnlyStart": {
-    "message": "Preview GitHub renames"
+    "message": "Preview title renames"
   },
   "prefsGoConfigure": {
     "message": "Set up the model first"
@@ -1127,7 +1127,7 @@
     }
   },
   "reviewTitleOnlySummaryOne": {
-    "message": "$total$ GitHub title rename planned, $accepted$ selected.",
+    "message": "$total$ title rename planned, $accepted$ selected.",
     "placeholders": {
       "total": {
         "content": "$1"
@@ -1138,7 +1138,7 @@
     }
   },
   "reviewTitleOnlySummaryOther": {
-    "message": "$total$ GitHub title renames planned, $accepted$ selected.",
+    "message": "$total$ title renames planned, $accepted$ selected.",
     "placeholders": {
       "total": {
         "content": "$1"
@@ -1149,10 +1149,10 @@
     }
   },
   "reviewTitleOnlySection": {
-    "message": "GitHub title renames"
+    "message": "Title renames"
   },
   "reviewTitleOnlyRenamesOne": {
-    "message": "$count$ GitHub bookmark title will be normalized.",
+    "message": "$count$ bookmark title will be normalized.",
     "placeholders": {
       "count": {
         "content": "$1"
@@ -1160,7 +1160,7 @@
     }
   },
   "reviewTitleOnlyRenamesOther": {
-    "message": "$count$ GitHub bookmark titles will be normalized.",
+    "message": "$count$ bookmark titles will be normalized.",
     "placeholders": {
       "count": {
         "content": "$1"
@@ -1174,6 +1174,96 @@
         "content": "$1"
       }
     }
+  },
+  "reviewTitleOnlyEmpty": {
+    "message": "Nothing in this scope has a title that can be normalized."
+  },
+  "titleRuleCategoryCode": {
+    "message": "Code and development"
+  },
+  "titleRuleCategoryContent": {
+    "message": "Content platforms"
+  },
+  "titleRuleGithub": {
+    "message": "GitHub"
+  },
+  "titleRuleGithubReason": {
+    "message": "Build repo (owner) from the URL; keep a short path for files."
+  },
+  "titleRuleGitlab": {
+    "message": "GitLab"
+  },
+  "titleRuleGitlabReason": {
+    "message": "Build project · group from the last two URL segments."
+  },
+  "titleRulePackages": {
+    "message": "npm / PyPI / Docker Hub"
+  },
+  "titleRuleNpm": {
+    "message": "npm"
+  },
+  "titleRuleNpmReason": {
+    "message": "Build package (npm) from the package URL."
+  },
+  "titleRulePypi": {
+    "message": "PyPI"
+  },
+  "titleRulePypiReason": {
+    "message": "Build package (PyPI) from the project URL."
+  },
+  "titleRuleDocker": {
+    "message": "Docker Hub"
+  },
+  "titleRuleDockerReason": {
+    "message": "Build image (Docker) from the image URL and keep the namespace."
+  },
+  "titleRuleHuggingface": {
+    "message": "Hugging Face"
+  },
+  "titleRuleHuggingfaceReason": {
+    "message": "Build name (owner) from a model or dataset URL; mark datasets."
+  },
+  "titleRuleYoutube": {
+    "message": "YouTube"
+  },
+  "titleRuleYoutubeReason": {
+    "message": "Strip the YouTube prefix and keep the original title."
+  },
+  "titleRuleCsdn": {
+    "message": "CSDN"
+  },
+  "titleRuleCsdnReason": {
+    "message": "Strip the CSDN prefix and keep the original title."
+  },
+  "titleRuleZhihu": {
+    "message": "Zhihu"
+  },
+  "titleRuleZhihuReason": {
+    "message": "Strip the Zhihu prefix and keep the original title."
+  },
+  "titleRuleJuejin": {
+    "message": "Juejin"
+  },
+  "titleRuleJuejinReason": {
+    "message": "Strip the Juejin prefix and keep the original title."
+  },
+  "titleRuleBilibili": {
+    "message": "Bilibili"
+  },
+  "titleRuleBilibiliReason": {
+    "message": "Strip the Bilibili prefix and keep the original title."
+  },
+  "titleRuleMedium": {
+    "message": "Medium / Dev.to"
+  },
+  "titleRuleMediumReason": {
+    "message": "Strip Medium site affixes and keep the original title."
+  },
+  "titleRuleDevto": {
+    "message": "Dev.to"
+  },
+  "titleRuleDevtoReason": {
+    "message": "Strip DEV Community site affixes and keep the original title."
   },
   "reviewCreateFoldersOne": {
     "message": "Will create $count$ folder",
