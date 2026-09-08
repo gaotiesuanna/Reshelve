@@ -103,7 +103,7 @@ export type BookmarkOperation =
   | { type: 'move_folder'; folderId: string; fromParentId: string; originalIndex: number; toParentId: string }
   | { type: 'move_bookmark'; bookmarkId: string; fromParentId: string; originalIndex: number; toCategoryId: string; toTemporaryId: string | null; confidence: number; reason: string }
   | { type: 'rename_folder'; folderId: string; oldTitle: string; newTitle: string }
-  | { type: 'rename_bookmark'; bookmarkId: string; oldTitle: string; newTitle: string }
+  | { type: 'rename_bookmark'; bookmarkId: string; oldTitle: string; newTitle: string; providerId?: string; reason?: string }
 
 /** Review 界面里的一行，与一条 move 操作一一对应。 */
 export interface PlanRow {

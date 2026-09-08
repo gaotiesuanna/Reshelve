@@ -93,6 +93,8 @@ export function buildPlan(input: BuildPlanInput): OrganizePlan {
     bookmarkId: r.bookmarkId,
     oldTitle: r.oldTitle,
     newTitle: r.newTitle,
+    ...(r.providerId !== undefined ? { providerId: r.providerId } : {}),
+    ...(r.reason !== undefined ? { reason: r.reason } : {}),
   }))
 
   const moveOps: BookmarkOperation[] = []

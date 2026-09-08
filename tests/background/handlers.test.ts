@@ -99,6 +99,8 @@ describe('handle', () => {
         bookmarkId: '100',
         oldTitle: 'GitHub - sst/opencode',
         newTitle: 'opencode (sst)',
+        providerId: 'github',
+        reason: 'titleRuleGithubReason',
       },
     ])
     expect(createClient).not.toHaveBeenCalled()
@@ -887,7 +889,7 @@ describe('analyze 统一 GitHub 书签标题', () => {
     const plan = await analyzePlan(ports, deps, 'additive')
     const renames = plan.operations.flatMap((o) => (o.type === 'rename_bookmark' ? [o] : []))
     expect(renames).toEqual([
-      { type: 'rename_bookmark', bookmarkId: 'g0', oldTitle: '书签 g0', newTitle: 'opencode (sst)' },
+      { type: 'rename_bookmark', bookmarkId: 'g0', oldTitle: '书签 g0', newTitle: 'opencode (sst)', providerId: 'github', reason: 'titleRuleGithubReason' },
     ])
   })
 })

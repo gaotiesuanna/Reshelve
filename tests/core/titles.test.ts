@@ -70,18 +70,55 @@ describe('githubTitle', () => {
 })
 
 describe('planTitleRewrites', () => {
-  it('只为标题确实会变的书签生成改名', () => {
+  it('只为标题确实会变的书签生成改名，并带上 github 的 provider/reason', () => {
     const rewrites = planTitleRewrites([
       item('https://github.com/sst/opencode', 'sst/opencode', 'a'),
-      // 已经是目标格式，不该产生无意义的改名
       item('https://github.com/sst/opencode', 'opencode (sst)', 'b'),
     ])
     expect(rewrites).toEqual([
-      { bookmarkId: 'a', oldTitle: 'sst/opencode', newTitle: 'opencode (sst)' },
+      {
+        bookmarkId: 'a',
+        oldTitle: 'sst/opencode',
+        newTitle: 'opencode (sst)',
+        providerId: 'github',
+        reason: 'titleRuleGithubReason',
+      },
     ])
   })
 
   it('非 GitHub 书签不参与', () => {
     expect(planTitleRewrites([item('https://example.com/x', '随便')])).toEqual([])
+  })
+
+  it('ruleIds 为空时不产生改名', () => {
+    expect(planTitleRewrites([
+      item('https://github.com/sst/opencode', 'sst/opencode', 'a'),
+    ], [])).toEqual([])
+  })
+
+  it('未点名的规则不跑', () => {
+    expect(planTitleRewrites([
+      item('https://github.com/sst/opencode', 'sst/opencode', 'a'),
+    ], ['youtube'])).toEqual([])
+  })
+
+  it('同一书签最多一条，按注册表顺序', () => {
+    const rewrites = planTitleRewrites([
+      item('https://github.com/sst/opencode', 'sst/opencode', 'a'),
+      item('https://github.com/sst/opencode', 'sst/opencode', 'a'),
+    ])
+    expect(rewrites).toHaveLength(1)
+    expect(rewrites[0]?.bookmarkId).toBe('a')
+  })
+
+  it('非法 URL 与空标题不抛', () => {
+    expect(() => planTitleRewrites([
+      item('not a url', 'x', 'bad'),
+      item('chrome://bookmarks', '', 'chrome'),
+      item('https://github.com/sst/opencode', '旧', 'ok'),
+    ])).not.toThrow()
+    expect(planTitleRewrites([
+      item('https://github.com/sst/opencode', '旧', 'ok'),
+    ]).map((r) => r.bookmarkId)).toEqual(['ok'])
   })
 })

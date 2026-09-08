@@ -6,6 +6,8 @@ export interface TitleRewrite {
   bookmarkId: string
   oldTitle: string
   newTitle: string
+  providerId?: string
+  reason?: string
 }
 
 /**
@@ -52,11 +54,85 @@ function pathSuffix(rest: string[]): string | null {
   return rest.join('/')
 }
 
-/** 为范围内的 GitHub 书签生成改名，标题已经是目标格式的跳过。 */
-export function planTitleRewrites(items: BookmarkItem[]): TitleRewrite[] {
-  return items.flatMap((item) => {
+export interface TitleProposal {
+  providerId: string
+  oldTitle: string
+  newTitle: string
+  reason: string
+}
+
+export interface TitleNormalizationRule {
+  id: string
+  category: 'code' | 'content'
+  label: string
+  match(item: BookmarkItem): boolean
+  propose(item: BookmarkItem): TitleProposal | null
+}
+
+export interface TitleRuleGroup {
+  id: string
+  category: 'code' | 'content'
+  label: string
+  ruleIds: readonly string[]
+}
+
+export const githubRule: TitleNormalizationRule = {
+  id: 'github',
+  category: 'code',
+  label: 'titleRuleGithub',
+  match(item) {
+    const url = sanitizeUrl(item.url)
+    return url !== null && url.domain === 'github.com'
+  },
+  propose(item) {
     const newTitle = githubTitle(item)
-    if (newTitle === null || newTitle === item.title) return []
-    return [{ bookmarkId: item.id, oldTitle: item.title, newTitle }]
-  })
+    if (newTitle === null || newTitle === item.title || newTitle === '') return null
+    return {
+      providerId: 'github',
+      oldTitle: item.title,
+      newTitle,
+      reason: 'titleRuleGithubReason',
+    }
+  },
+}
+
+export const TITLE_RULES: TitleNormalizationRule[] = [githubRule]
+
+export const TITLE_RULE_GROUPS: TitleRuleGroup[] = [
+  { id: 'github', category: 'code', label: 'titleRuleGithub', ruleIds: ['github'] },
+]
+
+export const DEFAULT_TITLE_RULE_IDS: readonly string[] = ['github']
+
+export function planTitleRewrites(
+  items: BookmarkItem[],
+  ruleIds: readonly string[] = DEFAULT_TITLE_RULE_IDS,
+): TitleRewrite[] {
+  const selected = TITLE_RULES.filter((rule) => ruleIds.includes(rule.id))
+  const seen = new Set<string>()
+  const out: TitleRewrite[] = []
+  for (const item of items) {
+    if (seen.has(item.id)) continue
+    for (const rule of selected) {
+      let proposal: TitleProposal | null = null
+      try {
+        if (!rule.match(item)) continue
+        proposal = rule.propose(item)
+      } catch {
+        continue
+      }
+      if (proposal === null) continue
+      if (proposal.newTitle === '' || proposal.newTitle === item.title) continue
+      seen.add(item.id)
+      out.push({
+        bookmarkId: item.id,
+        oldTitle: item.title,
+        newTitle: proposal.newTitle,
+        providerId: proposal.providerId,
+        reason: proposal.reason,
+      })
+      break
+    }
+  }
+  return out
 }
