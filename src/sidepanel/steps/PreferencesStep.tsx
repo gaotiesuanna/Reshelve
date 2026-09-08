@@ -1,5 +1,6 @@
 import { useMemo } from 'react'
 import { looseBookmarks, scopeFolderPaths } from '@/core/scan'
+import { planTitleRewrites } from '@/core/titles'
 import { detectMode } from '@/core/mode'
 import { currentLocale, plural, t } from '@/i18n'
 import { isLocalBaseUrl, isModelConfigured } from '@/llm/config'
@@ -47,7 +48,7 @@ function pickableModels(endpoints: Endpoint[]): Array<{ baseUrl: string; model: 
 export function PreferencesStep() {
   const {
     scan, settings, setSettings, analyze, busy, reset, modeOverride, setModeOverride, openSettings,
-    tree, checkedIds,
+    tree, checkedIds, titleOnly, setTitleOnly,
   } = useStore()
   const locale = currentLocale()
   // 与后台是同一个纯函数——但前提是同一份扫描结果：书签在 goScan 之后、这次
@@ -65,6 +66,10 @@ export function PreferencesStep() {
   )
   const loose = useMemo(
     () => (scan === null ? [] : looseBookmarks(scan)),
+    [scan],
+  )
+  const githubRewriteCount = useMemo(
+    () => (scan === null ? 0 : planTitleRewrites(scan.bookmarks).length),
     [scan],
   )
   if (scan === null || decision === null) return null
@@ -93,7 +98,9 @@ export function PreferencesStep() {
             </ul>
           )}
           <div className={`${scopePaths.length > 0 ? 'mt-3 border-t border-index-line pt-3' : ''} text-sm leading-body`}>
-            {judgedMessy ? (
+            {titleOnly ? (
+              <InlineStatus tone="neutral">{t('prefsGithubOnlyScope')}</InlineStatus>
+            ) : judgedMessy ? (
               // 判「一团乱麻」时没有逃生口——这是产品决定（issues/14 §5）：反方向的
               // 误判（该归入现有却推翻）用户在复核页拒不掉，推翻模式下给范围内既有
               // 一级目录改名、加编号前缀，跟接受了几条书签建议无关（见 core/plan.ts
@@ -201,7 +208,25 @@ export function PreferencesStep() {
           就在说范围（「范围内一个目录都没有」），它归在那个标题下没错；但清不清空
           文件夹是一条用户偏好，和范围无关，挂在那个标题底下等于说它是范围的一部分。 */}
       <IndexSection title={t('prefsOptionsTitle')}>
-        <div className={choiceList} data-testid="prefs-clean-option">
+        <div className={choiceList}>
+          <label className={`${choiceRow} hover:bg-index-blue-soft`}>
+            <input
+              type="checkbox"
+              className="h-3.5 w-3.5 shrink-0 accent-index-blue"
+              checked={titleOnly}
+              onChange={(e) => setTitleOnly(e.target.checked)}
+            />
+            <span className="min-w-0 flex-1">{t('prefsGithubOnlyTitle')}</span>
+          </label>
+          <Detail flush defaultOpen label={detailLabel()}>
+            {t('prefsGithubOnlyBody')}
+          </Detail>
+          {titleOnly && (
+            <div className="px-3 py-2 text-xs leading-body text-index-muted">
+              {t('prefsGithubOnlyCount', String(githubRewriteCount))}
+            </div>
+          )}
+          {!titleOnly && <div data-testid="prefs-clean-option">
         {/* 说明从 label 里搬了出来。三件事一起解决：dl 套在 label 里本就是无效 HTML；
             它自带的上下边和卡片的行间线会叠成双线；勾选行回到单行高度之后，复选框
             自然落在文字这一行上——原来那句追加的 items-start 根本没生效，Tailwind
@@ -219,10 +244,11 @@ export function PreferencesStep() {
           <Detail flush defaultOpen label={detailLabel()}>
             {`${t('prefsCleanSummary')} ${t('prefsCleanBody')}`}
           </Detail>
+          </div>}
         </div>
       </IndexSection>
 
-      <IndexSection title={t('prefsModelLabel')}>
+      {!titleOnly && <IndexSection title={t('prefsModelLabel')}>
         {/* 模型状态放在按钮上方：设置藏在齿轮后面，点开始前得看见即将用哪一个；
             没配时也不只靠按钮上那几个字。权限预告仍在两种状态下都摆着。 */}
         {needModel ? (
@@ -252,6 +278,12 @@ export function PreferencesStep() {
           </div>
         )}
       </IndexSection>
+      }
+      {titleOnly && (
+        <IndexSection title={t('prefsGithubOnlySection')}>
+          <InlineStatus tone="neutral">{t('prefsGithubOnlyPreview')}</InlineStatus>
+        </IndexSection>
+      )}
         {/* 权限预告放在按钮上方：申请只发生在点下去的那一刻（chrome.permissions.request()
             要用户手势，设置页是 onChange 即存，放不了），提前说清楚它只要一个域名。
             两种按钮状态下都摆着——它讲的是这条动线接下来会发生什么，不依赖当前是哪个按钮。 */}
@@ -259,11 +291,19 @@ export function PreferencesStep() {
             （见本文件同名用例），藏起来弹窗就成了突袭。改成删掉不属于这一屏的那半句
             ——失效链接检查是本地清理里的功能、另一项权限，讲在这里只是把话拉长。 */}
       {/* px-3 跟分组正文对齐：分组内容缩进 12px，这段不缩的话左边缘比上面每一行都探出去一截 */}
-      <p className="mt-3 px-3 text-xs leading-body text-index-muted">{t('prefsPermissionNotice')}</p>
+      {!titleOnly && <p className="mt-3 px-3 text-xs leading-body text-index-muted">{t('prefsPermissionNotice')}</p>}
       <StickyActionBar>
         <div className="flex gap-2">
           <SecondaryButton onClick={reset}>{t('prefsBack')}</SecondaryButton>
-          {needModel ? (
+          {titleOnly ? (
+            <PrimaryButton
+              className="flex-1"
+              disabled={busy !== null}
+              onClick={() => void analyze()}
+            >
+              {t('prefsGithubOnlyStart')}
+            </PrimaryButton>
+          ) : needModel ? (
             <PrimaryButton className="flex-1" onClick={openSettings}>
               {t('prefsGoConfigure')}
             </PrimaryButton>

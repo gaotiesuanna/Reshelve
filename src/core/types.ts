@@ -165,6 +165,8 @@ export interface OrganizePlan {
   createdAt: number
   scopeRootIds: string[]
   rebuildStructure: boolean
+  /** 本轮只统一 GitHub 书签标题，不涉及目录整理。 */
+  titleOnly?: boolean
   candidates: CategoryCandidate[]
   operations: BookmarkOperation[]
   rows: PlanRow[]

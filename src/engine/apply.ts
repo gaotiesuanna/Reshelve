@@ -245,12 +245,12 @@ export async function applyPlan(
 
   // 只有整批操作都成功才清理——中途失败时结构还没落定，删目录只会添乱
   const removedFolders =
-    options.removeEmptyFolders === true || mergeRootId !== null
+    !plan.titleOnly && (options.removeEmptyFolders === true || mergeRootId !== null)
       ? await removeEmpty(ports, effectiveRootIds, skipped, locale, removableRootIds)
       : []
 
   // 非推翻模式不产生编号，也不该给用户自己的目录补号或重排
-  if (plan.rebuildStructure) {
+  if (!plan.titleOnly && plan.rebuildStructure) {
     await numberBareFolders(
       ports,
       effectiveRootIds,
@@ -259,7 +259,7 @@ export async function applyPlan(
       mergeRootId === null ? new Set() : new Set([mergeRootId]),
     )
   }
-  const sortedFolders = plan.rebuildStructure
+  const sortedFolders = !plan.titleOnly && plan.rebuildStructure
     ? await sortFolders(ports, effectiveRootIds, skipped, locale)
     : 0
 

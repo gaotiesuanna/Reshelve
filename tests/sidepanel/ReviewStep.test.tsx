@@ -61,6 +61,30 @@ describe('ReviewStep', () => {
     expect(useStore.getState().accepted.has('101')).toBe(true)
   })
 
+  it('title-only 方案展示逐条改名并按接受状态应用', async () => {
+    const titlePlan: OrganizePlan = {
+      ...plan,
+      titleOnly: true,
+      operations: [
+        { type: 'rename_bookmark', bookmarkId: '100', oldTitle: '旧标题', newTitle: 'react (facebook)' },
+      ],
+      rows: [],
+      summary: { ...plan.summary, totalBookmarks: 1, movedBookmarks: 0, unchangedBookmarks: 1, renamedBookmarks: 1 },
+    }
+    useStore.setState({ plan: titlePlan, accepted: new Set(['100']) })
+
+    render(<ReviewStep />)
+
+    expect(screen.getByText('旧标题')).toBeTruthy()
+    expect(screen.getByText('react (facebook)')).toBeTruthy()
+    const checkbox = screen.getByRole('checkbox', { name: '接受改名：旧标题' }) as HTMLInputElement
+    expect(checkbox.checked).toBe(true)
+
+    await userEvent.click(checkbox)
+    expect(useStore.getState().accepted).toEqual(new Set())
+    expect((screen.getByRole('button', { name: '应用 0 项修改' }) as HTMLButtonElement).disabled).toBe(true)
+  })
+
   it('全部接受按钮接受所有条目', async () => {
     render(<ReviewStep />)
     await userEvent.click(screen.getByText('全部接受'))

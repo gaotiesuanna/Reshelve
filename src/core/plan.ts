@@ -54,6 +54,10 @@ export interface BuildPlanInput {
   mergeRoot?: NonNullable<OrganizePlan['mergeRoot']>
   /** GitHub 标题统一，与移动无关，由设置开关决定是否传入。 */
   titleRewrites?: TitleRewrite[]
+  /** 标题-only 方案不带分类 items，但仍可保留扫描总数供摘要使用。 */
+  totalBookmarks?: number
+  /** 本轮是否只执行标题改写。 */
+  titleOnly?: boolean
 }
 
 export function buildPlan(input: BuildPlanInput): OrganizePlan {
@@ -162,6 +166,7 @@ export function buildPlan(input: BuildPlanInput): OrganizePlan {
     createdAt: input.createdAt,
     scopeRootIds: input.scopeRootIds,
     rebuildStructure: input.rebuildStructure,
+    titleOnly: input.titleOnly ?? false,
     candidates: input.candidates,
     operations,
     rows,
@@ -174,7 +179,7 @@ export function buildPlan(input: BuildPlanInput): OrganizePlan {
       createdFolders: 0, renamedFolders: 0, renamedBookmarks: 0, lowConfidenceItems: 0,
     },
   }
-  plan.summary = summarize(plan, new Set(rows.map((r) => r.bookmarkId)), input.items.length)
+  plan.summary = summarize(plan, new Set(rows.map((r) => r.bookmarkId)), input.totalBookmarks ?? input.items.length)
   return plan
 }
 
@@ -620,7 +625,8 @@ export function filterAccepted(plan: OrganizePlan, accepted: Set<string>): Bookm
   // after creation but before bookmark moves.
   const folderMoves = plan.operations.filter((o) => o.type === 'move_folder')
   const renames = plan.operations.filter(
-    (o) => o.type === 'rename_folder' || o.type === 'rename_bookmark',
+    (o) => o.type === 'rename_folder' ||
+      (o.type === 'rename_bookmark' && (!plan.titleOnly || accepted.has(o.bookmarkId))),
   )
   return [...keptCreates, ...folderMoves, ...renames, ...moves]
 }
@@ -636,11 +642,10 @@ export function filterAccepted(plan: OrganizePlan, accepted: Set<string>): Bookm
  *    的假建议，「应用」再点一次还会尝试重新移动（对已在目标位置的书签这本身
  *    无害，但会让「应用 N 项」的数字继续把它们算进去）。
  *
- * 2. `move_folder` / `rename_folder` / `rename_bookmark`——这三类操作从不看
- *    accepted（见上面的 filterAccepted），只要点过一次「应用」就已经无条件跑过，
- *    不分是不是这次刚落地的书签牵出来的。留着的话，下一次「应用」会把同一批
- *    目录改名、同一批标题统一再执行一遍——对已经改成目标状态的目录/书签这些
- *    操作是幂等的，但会让「附带说明」虚报本该已经做完的事。
+ * 2. `move_folder` / `rename_folder` / 普通整理里的 `rename_bookmark`——这些操作
+ *    从不看 accepted（见上面的 filterAccepted），只要点过一次「应用」就已经无条件跑过，
+ *    不分是不是这次刚落地的书签牵出来的。title-only 是有意的例外：它没有移动行，
+ *    所以每条标题改名都直接对应 accepted，用户取消勾选后不能再执行那条改名。
  *
  * 3. `tempToReal`（这次真正建出来的目录，来自 ApplyResult）——它们的
  *    create_folder 操作要删掉（再建一次会建出重名的兄弟目录），而 candidates、

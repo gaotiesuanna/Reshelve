@@ -929,6 +929,29 @@
   "prefsOptionsTitle": {
     "message": "Run options"
   },
+  "prefsGithubOnlyTitle": {
+    "message": "Only normalize GitHub bookmark titles"
+  },
+  "prefsGithubOnlyBody": {
+    "message": "Only GitHub bookmarks in the current scope that need a new title are included. No model call, bookmark move, folder change, or empty-folder cleanup is performed; review each rename before applying, and undo remains available."
+  },
+  "prefsGithubOnlyCount": {
+    "message": "$count$ GitHub bookmarks in this scope need a new title.",
+    "placeholders": {
+      "count": {
+        "content": "$1"
+      }
+    }
+  },
+  "prefsGithubOnlyScope": {
+    "message": "This run only normalizes GitHub bookmark titles in the current scope. It does not call a model or change bookmark locations."
+  },
+  "prefsGithubOnlySection": {
+    "message": "GitHub titles"
+  },
+  "prefsGithubOnlyPreview": {
+    "message": "The next step shows the rename list first, so you can accept or reject each item."
+  },
   "prefsCleanSummary": {
     "message": "Deletes folders in scope that hold no bookmarks. Merging several folders is an exception: the source folders are always cleaned up regardless of this switch, and undo still restores them."
   },
@@ -987,6 +1010,9 @@
   },
   "prefsStart": {
     "message": "Start AI analysis"
+  },
+  "prefsGithubOnlyStart": {
+    "message": "Preview GitHub renames"
   },
   "prefsGoConfigure": {
     "message": "Set up the model first"
@@ -1097,6 +1123,55 @@
       },
       "accepted": {
         "content": "$2"
+      }
+    }
+  },
+  "reviewTitleOnlySummaryOne": {
+    "message": "$total$ GitHub title rename planned, $accepted$ selected.",
+    "placeholders": {
+      "total": {
+        "content": "$1"
+      },
+      "accepted": {
+        "content": "$2"
+      }
+    }
+  },
+  "reviewTitleOnlySummaryOther": {
+    "message": "$total$ GitHub title renames planned, $accepted$ selected.",
+    "placeholders": {
+      "total": {
+        "content": "$1"
+      },
+      "accepted": {
+        "content": "$2"
+      }
+    }
+  },
+  "reviewTitleOnlySection": {
+    "message": "GitHub title renames"
+  },
+  "reviewTitleOnlyRenamesOne": {
+    "message": "$count$ GitHub bookmark title will be normalized.",
+    "placeholders": {
+      "count": {
+        "content": "$1"
+      }
+    }
+  },
+  "reviewTitleOnlyRenamesOther": {
+    "message": "$count$ GitHub bookmark titles will be normalized.",
+    "placeholders": {
+      "count": {
+        "content": "$1"
+      }
+    }
+  },
+  "reviewTitleOnlySelect": {
+    "message": "Accept rename: $title$",
+    "placeholders": {
+      "title": {
+        "content": "$1"
       }
     }
   },

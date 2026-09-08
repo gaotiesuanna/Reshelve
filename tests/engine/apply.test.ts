@@ -490,6 +490,37 @@ describe('applyPlan 统一书签标题', () => {
     await undoLast(ports, 'zh_CN')
     expect(await titleOf(ports, '101')).toBe('用户新起的名字')
   })
+
+  it('title-only 只执行被接受的改名，也不会清理空文件夹', async () => {
+    const fake = createFakeBookmarks([
+      { id: '0', title: '', children: [
+        { id: '1', title: '书签栏', children: [
+          { id: '10', title: '收件箱', children: [
+            { id: '100', title: '旧标题', url: 'https://github.com/sst/opencode' },
+            { id: '101', title: '另一个旧标题', url: 'https://github.com/facebook/react' },
+          ] },
+          { id: '11', title: '空文件夹', children: [] },
+        ] },
+      ] },
+    ])
+    const ports = { bookmarks: fake.api, storage: createFakeStorage() }
+    const plan = buildPlan({
+      id: 'p-title-only', createdAt: 1, scopeRootIds: ['1'], rebuildStructure: false,
+      titleOnly: true, totalBookmarks: 2,
+      items: [], candidates: [], classifications: [], newFolders: [],
+      titleRewrites: [
+        { bookmarkId: '100', oldTitle: '旧标题', newTitle: 'opencode (sst)' },
+        { bookmarkId: '101', oldTitle: '另一个旧标题', newTitle: 'react (facebook)' },
+      ],
+    })
+
+    const result = await applyPlan(ports, plan, new Set(['100']), 'zh_CN', { removeEmptyFolders: true })
+
+    expect(result.renamedBookmarkIds).toEqual(['100'])
+    expect(await titleOf(ports, '100')).toBe('opencode (sst)')
+    expect(await titleOf(ports, '101')).toBe('另一个旧标题')
+    expect(fake.structure()).toContain('书签栏/空文件夹')
+  })
 })
 
 const mergeInitial = [

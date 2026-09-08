@@ -929,6 +929,29 @@
   "prefsOptionsTitle": {
     "message": "整理选项"
   },
+  "prefsGithubOnlyTitle": {
+    "message": "仅统一 GitHub 书签标题"
+  },
+  "prefsGithubOnlyBody": {
+    "message": "只处理当前范围内需要改名的 GitHub 书签，不调用模型、不移动书签、不修改文件夹，也不会清理空文件夹；改名可在复核页逐条确认，并可撤销。"
+  },
+  "prefsGithubOnlyCount": {
+    "message": "当前范围有 $count$ 条 GitHub 书签需要改名。",
+    "placeholders": {
+      "count": {
+        "content": "$1"
+      }
+    }
+  },
+  "prefsGithubOnlyScope": {
+    "message": "本轮只统一当前范围内的 GitHub 书签标题，不调用模型，也不改变书签位置。"
+  },
+  "prefsGithubOnlySection": {
+    "message": "GitHub 标题"
+  },
+  "prefsGithubOnlyPreview": {
+    "message": "下一步会先展示标题改名清单，你可以逐条接受或拒绝。"
+  },
   "prefsCleanSummary": {
     "message": "删除范围内不含任何书签的文件夹。合并多个文件夹时例外：源文件夹一律清理，不受本开关约束，撤销同样会还原。"
   },
@@ -987,6 +1010,9 @@
   },
   "prefsStart": {
     "message": "开始 AI 分析"
+  },
+  "prefsGithubOnlyStart": {
+    "message": "预览 GitHub 标题改名"
   },
   "prefsGoConfigure": {
     "message": "先去配置模型"
@@ -1097,6 +1123,55 @@
       },
       "accepted": {
         "content": "$2"
+      }
+    }
+  },
+  "reviewTitleOnlySummaryOne": {
+    "message": "共 $total$ 条 GitHub 标题改名，已选中 $accepted$ 条。",
+    "placeholders": {
+      "total": {
+        "content": "$1"
+      },
+      "accepted": {
+        "content": "$2"
+      }
+    }
+  },
+  "reviewTitleOnlySummaryOther": {
+    "message": "共 $total$ 条 GitHub 标题改名，已选中 $accepted$ 条。",
+    "placeholders": {
+      "total": {
+        "content": "$1"
+      },
+      "accepted": {
+        "content": "$2"
+      }
+    }
+  },
+  "reviewTitleOnlySection": {
+    "message": "GitHub 标题改名"
+  },
+  "reviewTitleOnlyRenamesOne": {
+    "message": "将统一 $count$ 条 GitHub 书签标题。",
+    "placeholders": {
+      "count": {
+        "content": "$1"
+      }
+    }
+  },
+  "reviewTitleOnlyRenamesOther": {
+    "message": "将统一 $count$ 条 GitHub 书签标题。",
+    "placeholders": {
+      "count": {
+        "content": "$1"
+      }
+    }
+  },
+  "reviewTitleOnlySelect": {
+    "message": "接受改名：$title$",
+    "placeholders": {
+      "title": {
+        "content": "$1"
       }
     }
   },

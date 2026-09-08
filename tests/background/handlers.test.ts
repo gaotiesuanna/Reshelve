@@ -71,6 +71,39 @@ describe('handle', () => {
     expect((res as { error: string }).error).toContain('API Key')
   })
 
+  it('title-only 分析不需要模型，只为范围内的 GitHub 书签生成改名操作', async () => {
+    const fake = createFakeBookmarks([
+      { id: '0', title: '', children: [
+        { id: '1', title: '书签栏', children: [
+          { id: '10', title: '项目', children: [
+            { id: '100', title: 'GitHub - sst/opencode', url: 'https://github.com/sst/opencode' },
+            { id: '101', title: '普通书签', url: 'https://example.com' },
+          ] },
+        ] },
+      ] },
+    ])
+    const ports = { bookmarks: fake.api, storage: createFakeStorage() }
+    const createClient = vi.fn(() => { throw new Error('title-only 不应创建模型客户端') })
+
+    const res = await handle(ports, { kind: 'analyze', scopeRootIds: ['1'], titleOnly: true }, {
+      createClient,
+      now: () => 1,
+    })
+
+    expect(res).toMatchObject({ ok: true, kind: 'analyze' })
+    if (!res.ok || res.kind !== 'analyze') return
+    expect(res.plan.titleOnly).toBe(true)
+    expect(res.plan.operations).toEqual([
+      {
+        type: 'rename_bookmark',
+        bookmarkId: '100',
+        oldTitle: 'GitHub - sst/opencode',
+        newTitle: 'opencode (sst)',
+      },
+    ])
+    expect(createClient).not.toHaveBeenCalled()
+  })
+
   it('analyze 在 baseUrl 指向本机时放行空 Key——本机 Ollama 不校验 Key，那道门不该拦他', async () => {
     const { ports, deps } = setup()
     await saveSettings(ports, {

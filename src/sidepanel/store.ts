@@ -335,6 +335,8 @@ interface State {
    * 那时判断的对象已经换了一批书签。
    */
   modeOverride: OrganizeMode | null
+  /** 偏好页本轮只统一 GitHub 标题，不进 Settings。 */
+  titleOnly: boolean
   /** 已选中并解析成功的导入文件。 */
   importFile: { name: string; preview: ImportPreview } | null
   /** 文件级校验没过的原因，与 importFile 互斥。 */
@@ -406,6 +408,7 @@ interface State {
   goScan(): Promise<void>
   setSettings(settings: Settings): Promise<void>
   setModeOverride(mode: OrganizeMode | null): void
+  setTitleOnly(titleOnly: boolean): void
   analyze(): Promise<void>
   retry(): Promise<void>
   renameNode(id: string, title: string): void
@@ -530,6 +533,7 @@ export const useStore = create<State>((set, get) => ({
   logSeq: 0,
   structureEdits: EMPTY_EDITS,
   modeOverride: null,
+  titleOnly: false,
   importFile: null,
   importError: null,
   importDone: null,
@@ -625,7 +629,7 @@ export const useStore = create<State>((set, get) => ({
     if (isStale(get, set, run)) return
     if (!res.ok) return fail(set, res.error, 'scan')
     if (res.kind !== 'scan') return set({ busy: null, busyKind: null })
-    set({ scan: res.scan, step: 'preferences', modeOverride: null, busy: null, busyKind: null })
+    set({ scan: res.scan, step: 'preferences', modeOverride: null, titleOnly: false, busy: null, busyKind: null })
   },
 
   async setSettings(settings) {
@@ -637,13 +641,19 @@ export const useStore = create<State>((set, get) => ({
     set({ modeOverride: mode })
   },
 
+  setTitleOnly(titleOnly) {
+    set({ titleOnly })
+  },
+
   async analyze() {
     const run = get().runSeq
-    const granted = await ensureHostPermission(activeLlm(get().settings).baseUrl)
-    if (isStale(get, set, run)) return
-    if (!granted) {
-      // 重试有意义：ensureHostPermission 会重新弹一次权限请求，不是配置类错误
-      return fail(set, t('errHostPermission'), 'analyze')
+    if (!get().titleOnly) {
+      const granted = await ensureHostPermission(activeLlm(get().settings).baseUrl)
+      if (isStale(get, set, run)) return
+      if (!granted) {
+        // 重试有意义：ensureHostPermission 会重新弹一次权限请求，不是配置类错误
+        return fail(set, t('errHostPermission'), 'analyze')
+      }
     }
     /**
      * 日志不从空的开起，第一行由侧栏自己写。
@@ -665,6 +675,7 @@ export const useStore = create<State>((set, get) => ({
       scopeRootIds: [...get().checkedIds],
       // null 表示没推翻，这时候一个字段都不带，后台自己判
       modeOverride: get().modeOverride ?? undefined,
+      titleOnly: get().titleOnly || undefined,
     }).finally(stopKeepalive)
     if (isStale(get, set, run)) return
     // 主动取消不是错误，日志里已经有记录，不弹红条，也不算失败，不记可重试
@@ -678,7 +689,11 @@ export const useStore = create<State>((set, get) => ({
       // 默认全选：不勾 = 书签留在原来那个散落的位置 = 彻底找不到；进了一个不太准的主题目录，
       // 至少还在逐层摸的范围内。放错比不放更可接受，所以默认接受、让标记去引导修正
       // （见 issues/06-review-at-scale.md「决定 3」）。
-      accepted: new Set(res.plan.rows.map((r) => r.bookmarkId)),
+      accepted: new Set(
+        res.plan.titleOnly
+          ? res.plan.operations.flatMap((operation) => operation.type === 'rename_bookmark' ? [operation.bookmarkId] : [])
+          : res.plan.rows.map((r) => r.bookmarkId),
+      ),
       reclassifyMarked: new Set(),
       structureEdits: EMPTY_EDITS,
       // 走哪条路由后台判定并记在 plan 上，界面不再自己猜——
@@ -758,7 +773,14 @@ export const useStore = create<State>((set, get) => ({
   },
 
   acceptAll() {
-    set({ accepted: new Set((get().plan?.rows ?? []).map((r) => r.bookmarkId)) })
+    const plan = get().plan
+    set({
+      accepted: new Set(
+        plan?.titleOnly
+          ? plan.operations.flatMap((operation) => operation.type === 'rename_bookmark' ? [operation.bookmarkId] : [])
+          : (plan?.rows ?? []).map((r) => r.bookmarkId),
+      ),
+    })
   },
 
   rejectAll() {
@@ -1295,7 +1317,7 @@ export const useStore = create<State>((set, get) => ({
       // 让在途的扫描/分析知道自己已经过期，回来时别再写 store
       runSeq: get().runSeq + 1,
       step: 'scope', scan: null, plan: null, accepted: new Set(), reclassifyMarked: new Set(),
-      structureEdits: EMPTY_EDITS, modeOverride: null,
+      structureEdits: EMPTY_EDITS, modeOverride: null, titleOnly: false,
       applyResult: null, undoResult: null, error: null, retryable: null,
     })
   },

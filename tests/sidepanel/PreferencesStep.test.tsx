@@ -73,8 +73,32 @@ function setup(scan: ScanResult, modeOverride: OrganizeMode | null = null): void
     busy: null,
     // setSettings 会打 send()，必须替身；setModeOverride 只写 state，用真的那个
     setSettings: vi.fn(async (settings) => { useStore.setState({ settings }) }),
+    titleOnly: false,
+    setTitleOnly: vi.fn((titleOnly: boolean) => useStore.setState({ titleOnly })),
   })
 }
+
+describe('PreferencesStep 仅统一 GitHub 标题', () => {
+  it('提供 title-only 选项，选中后不显示模型配置入口并切换开始按钮', async () => {
+    setup(tidyScan)
+    const analyze = vi.fn(async () => {})
+    useStore.setState({ analyze })
+    render(<PreferencesStep />)
+
+    const option = screen.getByRole('checkbox', { name: '仅统一 GitHub 书签标题' }) as HTMLInputElement
+    expect(option.checked).toBe(false)
+    await userEvent.click(option)
+
+    expect(useStore.getState().titleOnly).toBe(true)
+    expect(screen.getAllByText(/不调用模型/).length).toBeGreaterThan(0)
+    expect(screen.queryByText('将使用')).toBeNull()
+    expect(screen.getByRole('button', { name: '预览 GitHub 标题改名' })).toBeTruthy()
+    expect(screen.queryByRole('button', { name: '开始 AI 分析' })).toBeNull()
+
+    await userEvent.click(screen.getByRole('button', { name: '预览 GitHub 标题改名' }))
+    expect(analyze).toHaveBeenCalledTimes(1)
+  })
+})
 
 describe('PreferencesStep 主区与操作', () => {
   it('渲染范围区，返回与「开始 AI 分析」都在', () => {
@@ -339,14 +363,14 @@ describe('PreferencesStep 不再摆配一次就不动的设置', () => {
     expect(screen.queryByText(/API Key 明文保存在本地浏览器存储中/)).toBeNull()
   })
 
-  it('统一 GitHub 标题的开关不在偏好页上——它改的是书签标题，不是这一轮怎么整理', () => {
+  it('偏好页提供仅统一 GitHub 标题的本轮选项，但不重复设置页的长期开关说明', () => {
     render(<PreferencesStep />)
     // 空断言防身：这一页上确实还渲染着别的勾选框，
     // 所以下面那条 null 不是因为查询本身在这一页上什么都查不到
     // （原来拿域名聚合那组的 label 当锚点，它随 issues/38 的 D4 删掉了）
     expect(screen.getAllByRole('checkbox').length).toBeGreaterThan(0)
 
-    expect(screen.queryByLabelText(/统一 GitHub 书签标题/)).toBeNull()
+    expect(screen.getByRole('checkbox', { name: '仅统一 GitHub 书签标题' })).toBeTruthy()
     expect(screen.queryByText(/仓库名 \(作者\)/)).toBeNull()
   })
 })
@@ -615,4 +639,3 @@ describe('偏好页的模型下拉', () => {
     expect(screen.queryByRole('combobox', { name: '将使用' })).toBeNull()
   })
 })
-

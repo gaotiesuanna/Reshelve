@@ -133,6 +133,30 @@ export async function handle(
       }
 
       case 'analyze': {
+        if (request.titleOnly === true) {
+          const tree = await ports.bookmarks.getTree()
+          const scan = scanTree(tree, request.scopeRootIds)
+          const titleRewrites = planTitleRewrites(scan.bookmarks)
+          log('scan', t('logScanDone', String(scan.stats.totalBookmarks), String(scan.stats.totalFolders)))
+          if (titleRewrites.length > 0) {
+            log('classify', t('logTitleRewrites', String(titleRewrites.length)))
+          }
+          const plan = buildPlan({
+            id: `plan-${now()}`,
+            createdAt: now(),
+            scopeRootIds: request.scopeRootIds,
+            rebuildStructure: false,
+            titleOnly: true,
+            totalBookmarks: scan.bookmarks.length,
+            items: [],
+            candidates: [],
+            classifications: [],
+            newFolders: [],
+            titleRewrites,
+          })
+          log('classify', t('logAnalyzeDone', '0'))
+          return { ok: true, kind: 'analyze', plan }
+        }
         // 本机模型服务器不校验 Key，所以这里问的是「模型配好了没有」而不是「有没有 Key」，
         // 与选范围页、偏好页共用同一个谓词——三处各判各的时，本地 Ollama 用户会被卡在
         // 一个界面已经放行、后台仍然拒收的缝里

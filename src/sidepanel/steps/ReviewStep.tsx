@@ -142,6 +142,11 @@ export function ReviewStep() {
     [groups, confidenceFilter],
   )
   if (plan === null || summary === null) return null
+  const titleOnly = plan.titleOnly === true
+  const titleOperations = plan.operations.filter(
+    (operation): operation is Extract<typeof plan.operations[number], { type: 'rename_bookmark' }> =>
+      operation.type === 'rename_bookmark',
+  )
 
   /**
    * 把这一轮的完整方案倒成 JSON，供离线排查整理效果。
@@ -167,18 +172,19 @@ export function ReviewStep() {
   return (
     <div>
       <p className="mb-3 text-sm leading-body text-index-muted">
-        {plural(plan.rows.length, 'reviewSummaryOne', 'reviewSummaryOther', String(plan.rows.length), String(accepted.size))}
+      {titleOnly
+        ? plural(titleOperations.length, 'reviewTitleOnlySummaryOne', 'reviewTitleOnlySummaryOther', String(titleOperations.length), String(accepted.size))
+        : plural(plan.rows.length, 'reviewSummaryOne', 'reviewSummaryOther', String(plan.rows.length), String(accepted.size))}
       </p>
 
       <div data-testid="review-section">
         <IndexSection
-          title={t('reviewSectionTitle')}
-          count={<span className="tabular-nums">{accepted.size} / {plan.rows.length}</span>}
+          title={titleOnly ? t('reviewTitleOnlySection') : t('reviewSectionTitle')}
+          count={<span className="tabular-nums">{accepted.size} / {titleOnly ? titleOperations.length : plan.rows.length}</span>}
         >
 
-      {/* 附带说明——新建/重命名目录、统一书签标题、清空空文件夹——都不是待办，
-          用户对它们做不了任何操作。收进同一块浅底旁注里，比三段各自浮在白底上
-          少两次视线停顿，也和下面那张真正要审的清单拉开了层次。 */}
+      {/* 普通整理里的新建/重命名目录、统一书签标题、清空空文件夹都不是待办，
+          收进同一块浅底旁注里；title-only 则把标题改名展开成下面的逐条清单。 */}
       {(summary.createdFolders > 0 || summary.renamedFolders > 0 || summary.renamedBookmarks > 0 || settings.removeEmptyFolders) && (
         <div className="space-y-1 rounded-index bg-neutral-50 px-3 py-2 text-sm leading-caption text-index-muted">
           {(summary.createdFolders > 0 || summary.renamedFolders > 0) && (
@@ -191,11 +197,13 @@ export function ReviewStep() {
 
           {summary.renamedBookmarks > 0 && (
             <p>
-              {plural(summary.renamedBookmarks, 'reviewRenameBookmarksOne', 'reviewRenameBookmarksOther', String(summary.renamedBookmarks))}
+              {titleOnly
+                ? plural(summary.renamedBookmarks, 'reviewTitleOnlyRenamesOne', 'reviewTitleOnlyRenamesOther', String(summary.renamedBookmarks))
+                : plural(summary.renamedBookmarks, 'reviewRenameBookmarksOne', 'reviewRenameBookmarksOther', String(summary.renamedBookmarks))}
             </p>
           )}
 
-          {settings.removeEmptyFolders && <p>{t('reviewCleanNote')}</p>}
+          {!titleOnly && settings.removeEmptyFolders && <p>{t('reviewCleanNote')}</p>}
         </div>
       )}
 
@@ -211,7 +219,30 @@ export function ReviewStep() {
         </div>
       )}
 
-      {plan.rows.length === 0 && (
+      {titleOnly && titleOperations.length > 0 && (
+        <ul className="mt-3 overflow-hidden rounded-index border border-index-line bg-neutral-50">
+          {titleOperations.map((operation) => (
+            <li key={operation.bookmarkId} className="border-b border-index-line px-2.5 py-2.5 last:border-b-0">
+              <label className="flex min-w-0 cursor-pointer items-start gap-2 text-sm leading-caption">
+                <input
+                  type="checkbox"
+                  aria-label={t('reviewTitleOnlySelect', operation.oldTitle)}
+                  className="mt-0.5 h-3.5 w-3.5 shrink-0 accent-index-ink"
+                  checked={accepted.has(operation.bookmarkId)}
+                  onChange={() => toggleAccepted(operation.bookmarkId)}
+                />
+                <span className="min-w-0 flex-1 break-words">
+                  <span className="font-medium text-index-ink">{operation.oldTitle}</span>
+                  <span className="mx-1 text-index-faint">→</span>
+                  <span className="text-index-muted">{operation.newTitle}</span>
+                </span>
+              </label>
+            </li>
+          ))}
+        </ul>
+      )}
+
+      {!titleOnly && plan.rows.length === 0 && (
         <div className="mt-3">
           <InlineStatus tone="neutral">{t('reviewEmpty')}</InlineStatus>
         </div>
@@ -224,13 +255,20 @@ export function ReviewStep() {
           一路往下滚动着做的，摆在页面顶部意味着标记完得先滚回最上面才点得到，
           在几百条的库里这一路要滚很久（见用户反馈：标完看不到按钮在哪）。
           挪进下面的粘性操作条，跟着页面走，标到哪都够得着。 */}
-      <div className="mt-3 flex flex-wrap items-center gap-1.5">
+      {!titleOnly && <div className="mt-3 flex flex-wrap items-center gap-1.5">
         <SecondaryButton onClick={acceptAll}>{t('reviewAcceptAll')}</SecondaryButton>
         <SecondaryButton onClick={rejectAll}>{t('reviewRejectAll')}</SecondaryButton>
-      </div>
+      </div>}
+
+      {titleOnly && titleOperations.length > 0 && (
+        <div className="mt-3 flex flex-wrap items-center gap-1.5">
+          <SecondaryButton onClick={acceptAll}>{t('reviewAcceptAll')}</SecondaryButton>
+          <SecondaryButton onClick={rejectAll}>{t('reviewRejectAll')}</SecondaryButton>
+        </div>
+      )}
 
       {/* 三选一的置信度筛选：「全部」是恢复完整列表的明确出口。 */}
-      <div className="mt-2 flex">
+      {!titleOnly && <div className="mt-2 flex">
         <div className={filterTrack}>
           <button
             type="button"
@@ -263,7 +301,7 @@ export function ReviewStep() {
             <span className="tabular-nums opacity-60">{lowConfidenceCount}</span>
           </button>
         </div>
-      </div>
+      </div>}
 
       {/* 整份清单收进一张描边卡片里，组与组之间只留一条分隔线：
           原来靠每行自带 border-b 拼出来的横线会一路漏到卡片外面，

@@ -31,6 +31,8 @@ export type Request =
        * （见 issues/14-mode-detection.md §5）。
        */
       modeOverride?: OrganizeMode
+      /** 只生成 GitHub 标题改名方案，不调用模型也不生成移动操作。 */
+      titleOnly?: boolean
     }
   | { kind: 'apply'; plan: OrganizePlan; accepted: string[] }
   | { kind: 'undo' }
