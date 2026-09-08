@@ -191,3 +191,101 @@ export const huggingfaceRule: TitleNormalizationRule = {
     )
   },
 }
+
+function cleanupTitle(title: string, patterns: readonly RegExp[]): string | null {
+  let next = title.trim()
+  const original = next
+  for (const pattern of patterns) next = next.replace(pattern, '').trim()
+  if (next === '' || next === original) return null
+  return next
+}
+
+function hostRule(
+  id: string,
+  category: 'code' | 'content',
+  label: string,
+  reason: string,
+  hosts: (domain: string) => boolean,
+  patterns: readonly RegExp[],
+): TitleNormalizationRule {
+  return {
+    id,
+    category,
+    label,
+    match(item) {
+      const domain = domainOf(item)
+      return domain !== null && hosts(domain)
+    },
+    propose(item) {
+      return proposal({ id, reason }, item, cleanupTitle(item.title, patterns))
+    },
+  }
+}
+
+function isHostOrSubdomain(domain: string, root: string): boolean {
+  return domain === root || domain.endsWith(`.${root}`)
+}
+
+export const youtubeRule = hostRule(
+  'youtube',
+  'content',
+  'titleRuleYoutube',
+  'titleRuleYoutubeReason',
+  (d) => d === 'youtu.be' || isHostOrSubdomain(d, 'youtube.com'),
+  [/^YouTube\s*[-:–—]\s*/i],
+)
+
+export const csdnRule = hostRule(
+  'csdn',
+  'content',
+  'titleRuleCsdn',
+  'titleRuleCsdnReason',
+  (d) => isHostOrSubdomain(d, 'csdn.net'),
+  [/^CSDN博客\s*[-:–—]\s*/, /^CSDN\s*[-:–—]\s*/i],
+)
+
+export const zhihuRule = hostRule(
+  'zhihu',
+  'content',
+  'titleRuleZhihu',
+  'titleRuleZhihuReason',
+  (d) => isHostOrSubdomain(d, 'zhihu.com'),
+  [/^知乎\s*[-:–—]\s*/, /^问题\s*[-:–—]\s*/],
+)
+
+export const juejinRule = hostRule(
+  'juejin',
+  'content',
+  'titleRuleJuejin',
+  'titleRuleJuejinReason',
+  (d) => d === 'juejin.cn' || d === 'juejin.im',
+  [/^掘金\s*[-:–—]\s*/],
+)
+
+export const bilibiliRule = hostRule(
+  'bilibili',
+  'content',
+  'titleRuleBilibili',
+  'titleRuleBilibiliReason',
+  (d) => d === 'b23.tv' || isHostOrSubdomain(d, 'bilibili.com'),
+  [/^哔哩哔哩\s*[-:–—]\s*/, /^bilibili\s*[-:–—]\s*/i],
+)
+
+export const mediumRule = hostRule(
+  'medium',
+  'content',
+  'titleRuleMedium',
+  'titleRuleMediumReason',
+  (d) => isHostOrSubdomain(d, 'medium.com'),
+  [/^Medium\s*[-:–—]\s*/i, /\s*[-|·]\s*Medium$/i],
+)
+
+export const devtoRule = hostRule(
+  'devto',
+  'content',
+  'titleRuleDevto',
+  'titleRuleDevtoReason',
+  (d) => d === 'dev.to',
+  [/^DEV Community\s*[-:–—]\s*/i, /\s*[-|·]\s*DEV Community$/i, /\s*[-|·]\s*DEV\.to$/i],
+)
+

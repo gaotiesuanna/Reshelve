@@ -128,3 +128,71 @@ describe('规则筛选', () => {
     expect(planTitleRewrites(items, ['gitlab']).map((r) => r.bookmarkId)).toEqual(['l'])
   })
 })
+
+describe('内容平台噪音清理', () => {
+  it('YouTube 去掉平台前缀，保留视频标题', () => {
+    expect(planTitleRewrites(
+      [item('https://www.youtube.com/watch?v=abc', 'YouTube - 某个视频', 'y')],
+      ['youtube'],
+    )[0]?.newTitle).toBe('某个视频')
+    expect(planTitleRewrites(
+      [item('https://youtu.be/abc', 'YouTube: 某个视频', 'y2')],
+      ['youtube'],
+    )[0]?.newTitle).toBe('某个视频')
+  })
+
+  it('YouTube 无前缀或清完为空则不处理', () => {
+    expect(planTitleRewrites(
+      [item('https://www.youtube.com/watch?v=abc', '某个视频')],
+      ['youtube'],
+    )).toEqual([])
+    expect(planTitleRewrites(
+      [item('https://www.youtube.com/watch?v=abc', 'YouTube - ')],
+      ['youtube'],
+    )).toEqual([])
+  })
+
+  it('CSDN / 知乎 / 掘金 / Bilibili 去前缀', () => {
+    expect(planTitleRewrites(
+      [item('https://blog.csdn.net/u/p', 'CSDN博客 - 一篇文章')],
+      ['csdn'],
+    )[0]?.newTitle).toBe('一篇文章')
+    expect(planTitleRewrites(
+      [item('https://zhuanlan.zhihu.com/p/1', '知乎 - 一个问题')],
+      ['zhihu'],
+    )[0]?.newTitle).toBe('一个问题')
+    expect(planTitleRewrites(
+      [item('https://juejin.cn/post/1', '掘金 - 一篇')],
+      ['juejin'],
+    )[0]?.newTitle).toBe('一篇')
+    expect(planTitleRewrites(
+      [item('https://www.bilibili.com/video/BV1', '哔哩哔哩 - 一个视频')],
+      ['bilibili'],
+    )[0]?.newTitle).toBe('一个视频')
+  })
+
+  it('Medium / Dev.to 去站点前缀和重复后缀', () => {
+    expect(planTitleRewrites(
+      [item('https://medium.com/@a/p', 'Hello - Medium')],
+      ['medium'],
+    )[0]?.newTitle).toBe('Hello')
+    expect(planTitleRewrites(
+      [item('https://dev.to/a/p', 'Hello - DEV Community')],
+      ['devto'],
+    )[0]?.newTitle).toBe('Hello')
+  })
+
+  it('匹配看 host 不看标题：CSDN 标题里的「知乎 -」不算知乎', () => {
+    expect(planTitleRewrites(
+      [item('https://blog.csdn.net/u/p', '知乎 - 其实是 CSDN')],
+      ['zhihu'],
+    )).toEqual([])
+  })
+
+  it('标题已干净或非目标 host 不处理', () => {
+    expect(planTitleRewrites(
+      [item('https://example.com/x', 'YouTube - 假的')],
+      ['youtube'],
+    )).toEqual([])
+  })
+})

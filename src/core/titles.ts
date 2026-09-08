@@ -1,11 +1,18 @@
 import { sanitizeUrl } from './sanitize'
 import type { BookmarkItem } from './types'
 import {
+  bilibiliRule,
+  csdnRule,
+  devtoRule,
   dockerRule,
   gitlabRule,
   huggingfaceRule,
+  juejinRule,
+  mediumRule,
   npmRule,
   pypiRule,
+  youtubeRule,
+  zhihuRule,
 } from './titleRules'
 
 /** 一次标题改写：改的是书签自己的名字，不影响它的位置。 */
@@ -105,6 +112,7 @@ export const githubRule: TitleNormalizationRule = {
 
 export const TITLE_RULES: TitleNormalizationRule[] = [
   githubRule, gitlabRule, npmRule, pypiRule, dockerRule, huggingfaceRule,
+  youtubeRule, csdnRule, zhihuRule, juejinRule, bilibiliRule, mediumRule, devtoRule,
 ]
 
 export const TITLE_RULE_GROUPS: TitleRuleGroup[] = [
@@ -112,6 +120,12 @@ export const TITLE_RULE_GROUPS: TitleRuleGroup[] = [
   { id: 'gitlab', category: 'code', label: 'titleRuleGitlab', ruleIds: ['gitlab'] },
   { id: 'packages', category: 'code', label: 'titleRulePackages', ruleIds: ['npm', 'pypi', 'docker'] },
   { id: 'huggingface', category: 'code', label: 'titleRuleHuggingface', ruleIds: ['huggingface'] },
+  { id: 'youtube', category: 'content', label: 'titleRuleYoutube', ruleIds: ['youtube'] },
+  { id: 'csdn', category: 'content', label: 'titleRuleCsdn', ruleIds: ['csdn'] },
+  { id: 'zhihu', category: 'content', label: 'titleRuleZhihu', ruleIds: ['zhihu'] },
+  { id: 'juejin', category: 'content', label: 'titleRuleJuejin', ruleIds: ['juejin'] },
+  { id: 'bilibili', category: 'content', label: 'titleRuleBilibili', ruleIds: ['bilibili'] },
+  { id: 'medium', category: 'content', label: 'titleRuleMedium', ruleIds: ['medium', 'devto'] },
 ]
 
 export const DEFAULT_TITLE_RULE_IDS: readonly string[] = ['github']
