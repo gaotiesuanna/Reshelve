@@ -264,38 +264,31 @@ export function PreferencesStep() {
       }
       {titleOnly && (
         <IndexSection title={t('prefsGithubOnlySection')}>
-          {(['code', 'content'] as const).map((category) => (
-            <div key={category} className="mt-2 first:mt-0">
-              <p className="px-3 text-xs font-medium text-index-muted">
-                {t(category === 'code' ? 'titleRuleCategoryCode' : 'titleRuleCategoryContent')}
-              </p>
-              <div className={choiceList}>
-                {TITLE_RULE_GROUPS.filter((group) => group.category === category).map((group) => {
-                  const checked = group.ruleIds.every((id) => titleRuleIds.includes(id))
-                  const count = rewriteCountFor(group.ruleIds)
-                  return (
-                    <label key={group.id} className={`${choiceRow} hover:bg-index-blue-soft`}>
-                      <input
-                        type="checkbox"
-                        className="h-3.5 w-3.5 shrink-0 accent-index-blue"
-                        checked={checked}
-                        onChange={(e) => {
-                          const next = new Set(titleRuleIds)
-                          if (e.target.checked) group.ruleIds.forEach((id) => next.add(id))
-                          else group.ruleIds.forEach((id) => next.delete(id))
-                          setTitleRuleIds([...next])
-                        }}
-                      />
-                      <span className="min-w-0 flex-1">
-                        {t(group.label as MessageKey)}
-                        <span className="ml-1 tabular-nums text-index-faint">{count}</span>
-                      </span>
-                    </label>
-                  )
-                })}
-              </div>
-            </div>
-          ))}
+          <div className={choiceList}>
+            {TITLE_RULE_GROUPS.map((group) => {
+              const checked = group.ruleIds.every((id) => titleRuleIds.includes(id))
+              const count = rewriteCountFor(group.ruleIds)
+              return (
+                <label key={group.id} className={`${choiceRow} hover:bg-index-blue-soft`}>
+                  <input
+                    type="checkbox"
+                    className="h-3.5 w-3.5 shrink-0 accent-index-blue"
+                    checked={checked}
+                    onChange={(e) => {
+                      const next = new Set(titleRuleIds)
+                      if (e.target.checked) group.ruleIds.forEach((id) => next.add(id))
+                      else group.ruleIds.forEach((id) => next.delete(id))
+                      setTitleRuleIds([...next])
+                    }}
+                  />
+                  <span className="min-w-0 flex-1">
+                    {t(group.label as MessageKey)}
+                    <span className="ml-1 tabular-nums text-index-faint">{count}</span>
+                  </span>
+                </label>
+              )
+            })}
+          </div>
           <div className="px-3 py-2 text-xs leading-body text-index-muted">
             {t('prefsGithubOnlyCount', String(rewriteCountFor(titleRuleIds)))}
           </div>
