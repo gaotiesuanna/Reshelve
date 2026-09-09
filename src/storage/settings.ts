@@ -147,6 +147,7 @@ export const PRESETS: Array<{ label: Record<Locale, string>; baseUrl: string; mo
   // baseUrl 只到 /v1：官方文档给的是完整端点 https://opencode.ai/zen/go/v1/chat/completions，
   // 而 client.ts 会自己接上 /chat/completions，照抄文档会拼成两遍。下面有用例钉这条。
   // 模型 id 在这个端点上不带 opencode-go/ 前缀——那个前缀只用于 OpenCode 自己的配置文件。
+  // 请求必须带 x-opencode-session，见 llm/client.ts；缺了网关直接 400。
   { label: { zh_CN: 'OpenCode Go', en: 'OpenCode Go' }, baseUrl: 'https://opencode.ai/zen/go/v1', model: 'deepseek-v4-flash' },
   { label: { zh_CN: '本地 Ollama', en: 'Local Ollama' }, baseUrl: 'http://localhost:11434/v1', model: 'qwen2.5' },
 ]

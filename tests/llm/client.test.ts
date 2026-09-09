@@ -54,11 +54,53 @@ describe('createLlmClient', () => {
     const [url, init] = fetchImpl.mock.calls[0]!
     expect(url).toBe('https://api.example.com/v1/chat/completions')
     expect((init.headers as Record<string, string>).Authorization).toBe('Bearer sk-test')
+    expect((init.headers as Record<string, string>)['x-opencode-session']).toBeUndefined()
+
     const body = JSON.parse(init.body as string)
     expect(body.model).toBe('gpt-x')
     expect(body.response_format.type).toBe('json_schema')
     expect(body.response_format.json_schema.schema).toEqual(schema)
     expect(body.messages[0].content).toBe('hi')
+  })
+
+  // OpenCode Go 没有这个头就 400 MissingSessionID，整轮分类一条都分不出去。
+  // 同一轮分析共用一个 client，session 必须稳定，换一次就打断提示词缓存。
+  it('打 OpenCode Go 时带上稳定的 x-opencode-session', async () => {
+    const fetchImpl = vi.fn(async () => okResponse({ ok: true }))
+    const client = createLlmClient(
+      { baseUrl: 'https://opencode.ai/zen/go/v1', apiKey: 'sk-go', model: 'deepseek-v4-flash' },
+      'zh_CN',
+      fetchImpl as unknown as typeof fetch,
+    )
+    await client.complete('hi', schema)
+    await client.complete('again', schema)
+
+    const first = (fetchImpl.mock.calls[0]![1].headers as Record<string, string>)['x-opencode-session']
+    const second = (fetchImpl.mock.calls[1]![1].headers as Record<string, string>)['x-opencode-session']
+    expect(first).toEqual(expect.any(String))
+    expect(first.length).toBeGreaterThan(0)
+    expect(second).toBe(first)
+  })
+
+  it('OpenCode 子域同样带 session，别的主机不带', async () => {
+    const fetchImpl = vi.fn(async () => okResponse({ ok: true }))
+    const go = createLlmClient(
+      { baseUrl: 'https://proxy.opencode.ai/v1', apiKey: 'sk-go', model: 'm' },
+      'zh_CN',
+      fetchImpl as unknown as typeof fetch,
+    )
+    await go.complete('hi', schema)
+    expect((fetchImpl.mock.calls[0]![1].headers as Record<string, string>)['x-opencode-session'])
+      .toEqual(expect.any(String))
+
+    const other = createLlmClient(
+      { baseUrl: 'https://api.deepseek.com/v1', apiKey: 'sk-x', model: 'm' },
+      'zh_CN',
+      fetchImpl as unknown as typeof fetch,
+    )
+    await other.complete('hi', schema)
+    expect((fetchImpl.mock.calls[1]![1].headers as Record<string, string>)['x-opencode-session'])
+      .toBeUndefined()
   })
 
   it('baseUrl 末尾多余的斜杠被规范化', async () => {

@@ -6,6 +6,20 @@ export interface LlmConfig {
   model: string
 }
 
+/**
+ * OpenCode Go 网关（https://opencode.ai/docs/go/#where-can-i-use-it）要求每轮对话
+ * 带稳定的 `x-opencode-session`，否则直接 400 MissingSessionID，整轮分类作废。
+ * 只认这个主机：别的 OpenAI 兼容端点不认识这个头，多发一个也不该。
+ */
+function isOpenCodeGo(baseUrl: string): boolean {
+  try {
+    const host = new URL(baseUrl).hostname
+    return host === 'opencode.ai' || host.endsWith('.opencode.ai')
+  } catch {
+    return false
+  }
+}
+
 export class LlmError extends Error {
   readonly retryable: boolean
   /**
@@ -148,6 +162,13 @@ export function createLlmClient(
   timeoutMs: number = REQUEST_TIMEOUT_MS,
 ): LlmClient {
   const endpoint = `${config.baseUrl.replace(/\/+$/, '')}/chat/completions`
+  // 同一轮分析共用一个 client，session 跟着 client 走：批次之间才能命中提示词缓存。
+  const sessionId = isOpenCodeGo(config.baseUrl)
+    ? (globalThis.crypto?.randomUUID !== undefined
+      ? globalThis.crypto.randomUUID()
+      : `s${Math.random().toString(36).slice(2)}${Date.now().toString(36)}`)
+    : null
+
   // 一旦探明厂商不支持 json_schema 就记住，后续请求不再浪费一次 400。
   let mode: StructuredMode = 'json_schema'
 
@@ -195,6 +216,7 @@ export function createLlmClient(
         headers: {
           'Content-Type': 'application/json',
           Authorization: `Bearer ${config.apiKey}`,
+          ...(sessionId !== null ? { 'x-opencode-session': sessionId } : {}),
         },
         body: buildBody(prompt, schema, attempt),
       })
