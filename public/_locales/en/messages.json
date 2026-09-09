@@ -1226,6 +1226,12 @@
   "titleRuleHuggingfaceReason": {
     "message": "Build name (owner) from a model or dataset URL; mark datasets."
   },
+  "titleRuleArxiv": {
+    "message": "arXiv"
+  },
+  "titleRuleArxivReason": {
+    "message": "Take the paper id from the URL; keep [id] Title when a real title exists, otherwise id (arXiv)."
+  },
   "titleRuleYoutube": {
     "message": "YouTube"
   },

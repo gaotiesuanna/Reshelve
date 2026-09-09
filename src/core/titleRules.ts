@@ -192,6 +192,81 @@ export const huggingfaceRule: TitleNormalizationRule = {
   },
 }
 
+const ARXIV_VIEWS: Record<string, true> = {
+  abs: true,
+  pdf: true,
+  html: true,
+  'e-print': true,
+  src: true,
+  ps: true,
+  format: true,
+}
+const ARXIV_NEW_ID = /^(\d{4}\.\d{4,5})(?:v\d+)?(?:\.pdf)?$/i
+const ARXIV_OLD_ARCHIVE = /^[a-z]+(?:-[a-z]+)?(?:\.[a-z]{2})?$/i
+const ARXIV_OLD_NUMBER = /^(\d{7})(?:v\d+)?(?:\.pdf)?$/i
+
+function escapeRegExp(value: string): string {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+}
+
+function arxivIdFromSegments(segments: string[]): string | null {
+  if (segments.length < 2) return null
+  const view = segments[0]
+  if (view === undefined || ARXIV_VIEWS[view] !== true) return null
+  const first = segments[1]
+  if (first === undefined) return null
+  const neu = first.match(ARXIV_NEW_ID)
+  if (neu?.[1] !== undefined) return neu[1]
+  const number = segments[2]
+  if (number === undefined || !ARXIV_OLD_ARCHIVE.test(first)) return null
+  const old = number.match(ARXIV_OLD_NUMBER)
+  if (old?.[1] === undefined) return null
+  return `${first}/${old[1]}`
+}
+
+function stripArxivNoise(title: string, id: string): string {
+  let next = title.trim()
+  next = next.replace(/\s*[-|·\u2013\u2014]\s*ar5iv$/i, '').trim()
+  next = next.replace(/\s*[-|·\u2013\u2014]\s*arXiv(?:\.org)?$/i, '').trim()
+  next = next.replace(/^arXiv\.org\s*[-:\u2013\u2014]\s*/i, '').trim()
+  next = next.replace(/^ar5iv\s*[-:\u2013\u2014]\s*/i, '').trim()
+  next = next.replace(/^arXiv:\s*[\w.\-/]+(?:v\d+)?\s*(?:\[[^\]]+\])?\s*/i, '').trim()
+  next = next.replace(/^\[(?:\d{4}\.\d{4,5}|[a-z][\w.\-]*\/\d{7})(?:v\d+)?\]\s*/i, '').trim()
+  next = next.replace(new RegExp(`^${escapeRegExp(id)}(?:v\\d+)?(?:\\.pdf)?(?:\\s+|$)`, 'i'), '').trim()
+  return next
+}
+
+function isGenericArxivTitle(title: string, id: string): boolean {
+  if (title === '' || /^\(?arXiv\)?$/i.test(title) || /^ar5iv$/i.test(title)) return true
+  if (/^arxiv(?:\.org)?$/i.test(title)) return true
+  const compact = title.replace(/\.pdf$/i, '')
+  if (compact.toLowerCase() === id.toLowerCase()) return true
+  return new RegExp(`^${escapeRegExp(id)}v\\d+$`, 'i').test(compact)
+}
+
+function arxivTitle(item: BookmarkItem): string | null {
+  const segments = segmentsOf(item)
+  if (segments === null) return null
+  const id = arxivIdFromSegments(segments)
+  if (id === null) return null
+  const cleaned = stripArxivNoise(item.title, id)
+  if (isGenericArxivTitle(cleaned, id)) return `${id} (arXiv)`
+  return `[${id}] ${cleaned}`
+}
+
+export const arxivRule: TitleNormalizationRule = {
+  id: 'arxiv',
+  category: 'content',
+  label: 'titleRuleArxiv',
+  match(item) {
+    const domain = domainOf(item)
+    return domain !== null && isHostOrSubdomain(domain, 'arxiv.org')
+  },
+  propose(item) {
+    return proposal({ id: 'arxiv', reason: 'titleRuleArxivReason' }, item, arxivTitle(item))
+  },
+}
+
 function cleanupTitle(title: string, patterns: readonly RegExp[]): string | null {
   let next = title.trim()
   const original = next

@@ -1226,6 +1226,12 @@
   "titleRuleHuggingfaceReason": {
     "message": "从 model/dataset URL 生成 name (owner)，数据集带类型标记。"
   },
+  "titleRuleArxiv": {
+    "message": "arXiv"
+  },
+  "titleRuleArxivReason": {
+    "message": "从 URL 取出论文编号；有正文标题时写成 [id] 标题，否则写成 id (arXiv)。"
+  },
   "titleRuleYoutube": {
     "message": "YouTube"
   },

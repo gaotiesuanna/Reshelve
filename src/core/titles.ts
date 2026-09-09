@@ -1,6 +1,7 @@
 import { sanitizeUrl } from './sanitize'
 import type { BookmarkItem } from './types'
 import {
+  arxivRule,
   bilibiliRule,
   csdnRule,
   devtoRule,
@@ -111,7 +112,7 @@ export const githubRule: TitleNormalizationRule = {
 }
 
 export const TITLE_RULES: TitleNormalizationRule[] = [
-  githubRule, gitlabRule, npmRule, pypiRule, dockerRule, huggingfaceRule,
+  githubRule, gitlabRule, npmRule, pypiRule, dockerRule, huggingfaceRule, arxivRule,
   youtubeRule, csdnRule, zhihuRule, juejinRule, bilibiliRule, mediumRule, devtoRule,
 ]
 
@@ -120,6 +121,7 @@ export const TITLE_RULE_GROUPS: TitleRuleGroup[] = [
   { id: 'gitlab', category: 'code', label: 'titleRuleGitlab', ruleIds: ['gitlab'] },
   { id: 'packages', category: 'code', label: 'titleRulePackages', ruleIds: ['npm', 'pypi', 'docker'] },
   { id: 'huggingface', category: 'code', label: 'titleRuleHuggingface', ruleIds: ['huggingface'] },
+  { id: 'arxiv', category: 'content', label: 'titleRuleArxiv', ruleIds: ['arxiv'] },
   { id: 'youtube', category: 'content', label: 'titleRuleYoutube', ruleIds: ['youtube'] },
   { id: 'csdn', category: 'content', label: 'titleRuleCsdn', ruleIds: ['csdn'] },
   { id: 'zhihu', category: 'content', label: 'titleRuleZhihu', ruleIds: ['zhihu'] },

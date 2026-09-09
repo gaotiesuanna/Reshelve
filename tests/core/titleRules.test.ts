@@ -196,3 +196,108 @@ describe('内容平台噪音清理', () => {
     )).toEqual([])
   })
 })
+
+describe('arXiv', () => {
+  it('html 页把论文标题补上编号，丢掉版本号', () => {
+    expect(planTitleRewrites(
+      [item('https://arxiv.org/html/2605.08538v1', 'Human-Inspired Memory Architecture for LLM Agents')],
+      ['arxiv'],
+    )[0]?.newTitle).toBe('[2605.08538] Human-Inspired Memory Architecture for LLM Agents')
+  })
+
+  it('abs 已是 [id] 标题则跳过', () => {
+    expect(planTitleRewrites(
+      [item(
+        'https://arxiv.org/abs/2605.08538',
+        '[2605.08538] Human-Inspired Memory Architecture for LLM Agents',
+      )],
+      ['arxiv'],
+    )).toEqual([])
+  })
+
+  it('abs 标题带版本号时去掉版本', () => {
+    expect(planTitleRewrites(
+      [item(
+        'https://arxiv.org/abs/2605.08538v1',
+        '[2605.08538v1] Human-Inspired Memory Architecture for LLM Agents',
+      )],
+      ['arxiv'],
+    )[0]?.newTitle).toBe('[2605.08538] Human-Inspired Memory Architecture for LLM Agents')
+  })
+
+  it('pdf 文件名压成 id (arXiv)', () => {
+    expect(planTitleRewrites(
+      [item('https://arxiv.org/pdf/2605.08538v1.pdf', '2605.08538v1.pdf')],
+      ['arxiv'],
+    )[0]?.newTitle).toBe('2605.08538 (arXiv)')
+  })
+
+  it('pdf 无扩展名、标题只是编号时同样处理', () => {
+    expect(planTitleRewrites(
+      [item('https://arxiv.org/pdf/2605.08538', '2605.08538')],
+      ['arxiv'],
+    )[0]?.newTitle).toBe('2605.08538 (arXiv)')
+  })
+
+  it('去掉 arXiv / ar5iv 站点噪音后再补编号', () => {
+    expect(planTitleRewrites(
+      [item('https://arxiv.org/html/2605.08538v1', 'A Paper | arXiv')],
+      ['arxiv'],
+    )[0]?.newTitle).toBe('[2605.08538] A Paper')
+    expect(planTitleRewrites(
+      [item('https://ar5iv.labs.arxiv.org/html/2605.08538', 'A Paper - ar5iv')],
+      ['arxiv'],
+    )[0]?.newTitle).toBe('[2605.08538] A Paper')
+    expect(planTitleRewrites(
+      [item('https://arxiv.org/abs/2605.08538', 'arXiv:2605.08538v1 [cs.AI] A Paper')],
+      ['arxiv'],
+    )[0]?.newTitle).toBe('[2605.08538] A Paper')
+  })
+
+  it('www 与 export 子域同样处理', () => {
+    expect(planTitleRewrites(
+      [item('https://www.arxiv.org/html/2605.08538v1/', 'A Paper')],
+      ['arxiv'],
+    )[0]?.newTitle).toBe('[2605.08538] A Paper')
+    expect(planTitleRewrites(
+      [item('https://export.arxiv.org/abs/2605.08538', 'A Paper')],
+      ['arxiv'],
+    )[0]?.newTitle).toBe('[2605.08538] A Paper')
+  })
+
+  it('旧编号 abs/hep-th/9901001', () => {
+    expect(planTitleRewrites(
+      [item('https://arxiv.org/abs/hep-th/9901001', 'Some Old Paper')],
+      ['arxiv'],
+    )[0]?.newTitle).toBe('[hep-th/9901001] Some Old Paper')
+  })
+
+  it('列表页、首页、无编号路径不处理', () => {
+    expect(planTitleRewrites(
+      [item('https://arxiv.org/', 'arXiv.org')],
+      ['arxiv'],
+    )).toEqual([])
+    expect(planTitleRewrites(
+      [item('https://arxiv.org/list/cs.AI/recent', 'cs.AI')],
+      ['arxiv'],
+    )).toEqual([])
+    expect(planTitleRewrites(
+      [item('https://arxiv.org/search/?query=memory', 'Search')],
+      ['arxiv'],
+    )).toEqual([])
+  })
+
+  it('非 arxiv host 不处理', () => {
+    expect(planTitleRewrites(
+      [item('https://openreview.net/forum?id=x', 'A Paper')],
+      ['arxiv'],
+    )).toEqual([])
+  })
+
+  it('已是 id (arXiv) 则跳过', () => {
+    expect(planTitleRewrites(
+      [item('https://arxiv.org/pdf/2605.08538v1.pdf', '2605.08538 (arXiv)')],
+      ['arxiv'],
+    )).toEqual([])
+  })
+})
