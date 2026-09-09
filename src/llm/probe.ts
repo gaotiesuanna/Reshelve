@@ -1,5 +1,5 @@
 import type { Locale } from '@/core/locale'
-import type { LlmClient } from './client'
+import { LlmError, type LlmClient } from './client'
 
 /**
  * 一次连通性自检的失败分类。
@@ -19,6 +19,11 @@ export type TestFailure =
   | 'model'
   /** 接口通了，但这个模型不会按要求的格式作答。 */
   | 'format'
+  /**
+   * 网关明确拒了：缺 session。请求已经到了，不是 network。
+   * 文案不能说「检查代理」，也不能点名某一个供应商——分类看不到 host。
+   */
+  | 'session'
   /** 其余一切：请求没发出去、代理不通、上游挂了、分不清。 */
   | 'network'
 
@@ -57,26 +62,35 @@ function splitStatus(message: string): { status: number; body: string } | null {
 }
 
 /**
- * 把一条错误消息判成一类失败。
- *
+ * 拿到状态码和响应体之后的分类，两种来源汇到这一处：
+ * LlmError 的结构化字段，或 classifyTestFailure 从消息里正则抠出来的那份。
  * 定的规矩是**宁可说笼统，不可说错**：分不清就落 'network'（那一类的文案本来就是
  * 「检查代理、VPN，或有没有别的扩展在拦」，对读的人无害），而说错一类会把人推去
  * 换 Key、改模型名，白费更多时间。
  */
+function classifyHttp(http: { status: number; body: string }): TestFailure {
+  // Key 不对，或这个 Key 没有用这个接口的权限
+  if (http.status === 401 || http.status === 403) return 'auth'
+  // 模型名不对：404 是「没有这个模型」
+  if (http.status === 404) return 'model'
+  // 400 的原因多得很（参数不合法、上下文超长……），只有响应体点名 model 时才敢说
+  // 是模型名。这里必须只看响应体、不看整条消息——英文模板本身就以「Model API」开头，
+  // 拿整条消息去匹配会把每一个英文 400 都说成模型名不对。
+  //
+  // MissingSessionID 更具体，排在 /model/i 前面：body 里两个词都有时，缺 session 才是原因。
+  if (http.status === 400 && /MissingSessionID/i.test(http.body)) return 'session'
+  if (http.status === 400 && /model/i.test(http.body)) return 'model'
+  // 429、5xx 以及其余状态码：上游的事，不是这份配置的错，落笼统那一类
+  return 'network'
+}
+
+/**
+ * 把一条错误消息判成一类失败。规矩同 classifyHttp；非 LlmError、或没拿到 HTTP 响应的
+ * 错误（超时、网络失败、取消）没有结构化字段，分类只能从消息里抠。
+ */
 export function classifyTestFailure(message: string): TestFailure {
   const http = splitStatus(message)
-  if (http !== null) {
-    // Key 不对，或这个 Key 没有用这个接口的权限
-    if (http.status === 401 || http.status === 403) return 'auth'
-    // 模型名不对：404 是「没有这个模型」
-    if (http.status === 404) return 'model'
-    // 400 的原因多得很（参数不合法、上下文超长……），只有响应体点名 model 时才敢说
-    // 是模型名。这里必须只看响应体、不看整条消息——英文模板本身就以「Model API」开头，
-    // 拿整条消息去匹配会把每一个英文 400 都说成模型名不对。
-    if (http.status === 400 && /model/i.test(http.body)) return 'model'
-    // 429、5xx 以及其余状态码：上游的事，不是这份配置的错，落笼统那一类
-    return 'network'
-  }
+  if (http !== null) return classifyHttp(http)
   // 接口通了、拿到响应了，但内容不是能用的结构化输出（client.ts 抛的这两条）
   if (/不是合法 JSON|did not return valid JSON|没有 content 字段|has no content field/i.test(message)) {
     return 'format'
@@ -134,12 +148,16 @@ export async function probeModel(
   try {
     payload = await createClient().complete(probePrompt(locale), PROBE_SCHEMA)
   } catch (error) {
-    // LlmError 只有 message 和 retryable，没有状态码字段，所以分类只能读消息。
+    // LlmError 从 client.ts 带来了结构化 status/body（拿到 HTTP 响应的失败才有），
+    // 分类优先读它；读不到（非 LlmError、超时、网络失败、取消）才退回从消息里抠。
     // 取 message 而不是 String(error)：后者会带上「LlmError: 」前缀，那是给开发者看的。
     const raw = error instanceof Error ? error.message : String(error)
     const safe = stripSecret(raw, apiKey)
     // 分类读的是剥过的那份：Key 本身也可能长得像状态码或关键词
-    return { ok: false, error: safe, reason: classifyTestFailure(safe) }
+    const reason = error instanceof LlmError && error.status !== undefined
+      ? classifyHttp({ status: error.status, body: stripSecret(error.body ?? '', apiKey) })
+      : classifyTestFailure(safe)
+    return { ok: false, error: safe, reason }
   }
   if (!isProbeShape(payload)) {
     const detail = JSON.stringify(payload) ?? String(payload)

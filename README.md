@@ -53,6 +53,10 @@ Reshelve has no server. You point it at your own endpoint:
   proxy, …)
 - Ollama or LM Studio on your own machine — data never leaves your computer
 
+One caveat: OpenCode Go is a gateway aimed at coding-agent traffic, so bookmark
+classification over it is best-effort. If connection tests keep failing, switch to
+a model vendor's direct endpoint (Zhipu, Kimi, ...).
+
 Every API key you enter is stored locally in `chrome.storage`, and each is only ever sent
 to the endpoint it belongs to. Deleting an endpoint in Settings deletes its key with it.
 

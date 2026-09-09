@@ -822,6 +822,9 @@
   "settingsPresetHint": {
     "message": "挑一个服务商，或者自己填"
   },
+  "settingsEndpointOpencodeNote": {
+    "message": "OpenCode Go 面向 coding-agent 流量，用它做书签分类是 best-effort 支持。测试连接反复失败时，建议改用模型厂商（智谱、Kimi 等）的直连接口。"
+  },
   "settingsEndpointCustomHint": {
     "message": "自己填地址和 Key"
   },
@@ -895,6 +898,9 @@
   },
   "settingsTestFailNetwork": {
     "message": "请求没能发出去。检查代理或 VPN，也看看有没有别的扩展在拦截。"
+  },
+  "settingsTestFailSession": {
+    "message": "请求到了网关但被拒（缺会话标识），不是网络不通。再测一次；反复出现就改用模型厂商的直连接口。"
   },
   "settingsTestFailPermission": {
     "message": "还没拿到访问这个域名的权限。再点一次「测试连接」并允许。"

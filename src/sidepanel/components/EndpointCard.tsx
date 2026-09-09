@@ -18,6 +18,7 @@ function describeFailure(reason: ModelTestReason | undefined): string {
     case 'auth': return t('settingsTestFailAuth')
     case 'model': return t('settingsTestFailModel')
     case 'format': return t('settingsTestFailFormat')
+    case 'session': return t('settingsTestFailSession')
     case 'network': return t('settingsTestFailNetwork')
     default: return t('settingsTestFailUnknown')
   }
@@ -48,6 +49,7 @@ export function domainOf(baseUrl: string): string {
     return baseUrl
   }
 }
+
 
 const btn =
   'inline-flex min-h-8 cursor-pointer items-center justify-center gap-1.5 whitespace-nowrap rounded-md border border-neutral-200 bg-white px-2.5 text-base leading-body text-neutral-700 transition-colors duration-150 hover:bg-neutral-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-neutral-400 focus-visible:ring-offset-1 disabled:cursor-not-allowed disabled:opacity-40'
@@ -182,6 +184,15 @@ export function EndpointCard({
   const showSelect = adding && (catalog.state === 'loading' || pickable.length > 0)
   const showInput = adding && !showSelect
 
+  // OpenCode Go 的主机判定，跟 llm/client.ts 里 isOpenCodeGo 是同一条规则——
+  // 那边不导出（它只管要不要带 session 头），这边只用来决定要不要摆那句
+  // best-effort 说明。地址还没成形（新端点、打到一半）时不摆。
+  let openCodeHost = false
+  try {
+    const host = new URL(endpoint.baseUrl).hostname
+    openCodeHost = host === 'opencode.ai' || host.endsWith('.opencode.ai')
+  } catch { /* 地址还没成形时不摆说明 */ }
+
 
 
   return (
@@ -215,6 +226,14 @@ export function EndpointCard({
           </IconAction>
         </div>
       </div>
+
+      {/* 点 OpenCode Go 预设进来的端点，一进草稿态就能看到这句定位说明；
+          收起后它还在——测试连接反复失败时，用户找的正是这个解释。 */}
+      {openCodeHost && (
+        <p className="text-sm leading-relaxed text-neutral-500">
+          {t('settingsEndpointOpencodeNote')}
+        </p>
+      )}
 
       {editing && (
         <div className="space-y-2">

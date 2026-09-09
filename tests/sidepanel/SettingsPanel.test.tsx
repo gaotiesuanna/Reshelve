@@ -315,11 +315,12 @@ describe('SettingsPanel 测试连接', () => {
     expect(testModelCalls()).toBe(0)
   })
 
-  /** 四类失败各说各的话。文案说错一类，会把人推去换 Key、改模型名，白费更多时间。 */
+  /** 五类失败各说各的话。文案说错一类，会把人推去换 Key、改模型名，白费更多时间。 */
   const CASES: Array<{ reason: TestFailure; key: Parameters<typeof t>[0]; error: string }> = [
     { reason: 'auth', key: 'settingsTestFailAuth', error: '模型接口返回 401: invalid_api_key' },
     { reason: 'model', key: 'settingsTestFailModel', error: '模型接口返回 404: model not found' },
     { reason: 'format', key: 'settingsTestFailFormat', error: '模型返回的不是合法 JSON' },
+    { reason: 'session', key: 'settingsTestFailSession', error: 'Model API returned 400: MissingSessionID' },
     { reason: 'network', key: 'settingsTestFailNetwork', error: 'Failed to fetch' },
   ]
 

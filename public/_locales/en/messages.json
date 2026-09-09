@@ -822,6 +822,9 @@
   "settingsPresetHint": {
     "message": "Pick a provider, or fill it in yourself"
   },
+  "settingsEndpointOpencodeNote": {
+    "message": "OpenCode Go is aimed at coding-agent traffic; bookmark classification over it is best-effort. If connection tests keep failing, switch to a model vendor's direct endpoint (Zhipu, Kimi, ...)."
+  },
   "settingsEndpointCustomHint": {
     "message": "Fill in the base URL and key"
   },
@@ -895,6 +898,9 @@
   },
   "settingsTestFailNetwork": {
     "message": "The request never got through. Check your proxy or VPN, and whether another extension is blocking it."
+  },
+  "settingsTestFailSession": {
+    "message": "The request reached the gateway but was rejected (missing session). Not a network failure. Test again; if it keeps happening, use the model vendor's own endpoint."
   },
   "settingsTestFailPermission": {
     "message": "Reshelve does not have permission to reach this domain yet. Click Test connection again and allow it."

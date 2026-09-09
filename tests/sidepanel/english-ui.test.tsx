@@ -397,7 +397,7 @@ describe('英文界面渲染守卫：设置页', () => {
   /**
    * 「测试连接」的每一句结论都要单独在英文界面下渲染一次。
    *
-   * 它们平时一句都不在 DOM 里——上面那条只覆盖 idle 态，一句中文文案漏进这五类里
+   * 它们平时一句都不在 DOM 里——上面那条只覆盖 idle 态，一句中文文案漏进这些失败类里
    * 谁也发现不了。reason 为 undefined 的兜底也要过一遍：那是后台没给分类时唯一会
    * 显示出来的话。
    *
@@ -418,6 +418,7 @@ describe('英文界面渲染守卫：设置页', () => {
       { state: 'fail', reason: 'auth', error: 'Model API returned 401: invalid_api_key' },
       { state: 'fail', reason: 'model', error: 'Model API returned 404: model not found' },
       { state: 'fail', reason: 'format', error: 'The model did not return valid JSON' },
+      { state: 'fail', reason: 'session', error: 'Model API returned 400: MissingSessionID' },
       { state: 'fail', reason: 'network', error: 'Failed to fetch' },
       { state: 'fail', reason: 'permission' },
       { state: 'fail', error: 'The browser suspended the background.' },

@@ -3283,8 +3283,8 @@ describe('test_model 当场验一次模型配置', () => {
   }
 
   /** 造一个「客户端抛错」的假客户端。消息照 llm/client.ts 的模板拼，形状要真。 */
-  function throwing(message: string): LlmClient {
-    return { complete: vi.fn().mockRejectedValue(new LlmError(message, false)) }
+  function throwing(message: string, http?: { status: number; body: string }): LlmClient {
+    return { complete: vi.fn().mockRejectedValue(new LlmError(message, false, false, false, http)) }
   }
 
   it('客户端按 schema 作答时报成功，并带上耗时', async () => {
@@ -3337,6 +3337,34 @@ describe('test_model 当场验一次模型配置', () => {
     const { ports, deps } = setupTest(throwing('模型接口返回 400: {"error":{"param":"model","message":"invalid model name"}}'))
     const res = await handle(ports, DEFAULT_TEST_REQ, deps)
     expect(res).toMatchObject({ ok: false, reason: 'model' })
+  })
+
+  it('400 MissingSessionID 报 session，不是 network', async () => {
+    const { ports, deps } = setupTest(throwing(
+      'Model API returned 400: {"type":"error","error":{"type":"MissingSessionID","message":"Request is missing x-opencode-session"}}',
+    ))
+    const res = await handle(ports, DEFAULT_TEST_REQ, deps)
+    expect(res).toMatchObject({ ok: false, reason: 'session' })
+  })
+
+  it('400 body 同时含 MissingSessionID 和 model 时仍报 session', async () => {
+    const { ports, deps } = setupTest(throwing(
+      '模型接口返回 400: {"error":{"type":"MissingSessionID","message":"model request missing session"}}',
+    ))
+    const res = await handle(ports, DEFAULT_TEST_REQ, deps)
+    expect(res).toMatchObject({ ok: false, reason: 'session' })
+  })
+
+  it('LlmError 带 status/body 时分类读结构化字段，消息对不上模板也一样', async () => {
+    // 真客户端在 HTTP 失败时两个字段都会填（见 client.ts）。这条消息故意拼不成
+    // 「…返回 400: …」的形状——正则抠不出状态码时本来只能落 network，
+    // 结构化字段在就必须以它为准。
+    const { ports, deps } = setupTest(throwing('网关拒了这次请求', {
+      status: 400,
+      body: '{"error":{"type":"MissingSessionID"}}',
+    }))
+    const res = await handle(ports, DEFAULT_TEST_REQ, deps)
+    expect(res).toMatchObject({ ok: false, reason: 'session' })
   })
 
   it('英文语境下的 400 不因为模板里那个 Model 字样被误判成模型名不对', async () => {

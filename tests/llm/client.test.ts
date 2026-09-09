@@ -103,6 +103,88 @@ describe('createLlmClient', () => {
       .toBeUndefined()
   })
 
+  it('OpenCode 400 MissingSessionID 原样再问一次就过，不降级 response_format', async () => {
+    const missing = new Response(
+      JSON.stringify({
+        type: 'error',
+        error: { type: 'MissingSessionID', message: 'Request is missing x-opencode-session' },
+      }),
+      { status: 400 },
+    )
+    const fetchImpl = vi.fn()
+      .mockResolvedValueOnce(missing)
+      .mockResolvedValueOnce(okResponse({ ok: true }))
+    const client = createLlmClient(
+      { baseUrl: 'https://opencode.ai/zen/go/v1', apiKey: 'sk-go', model: 'glm-5.2' },
+      'zh_CN',
+      fetchImpl as unknown as typeof fetch,
+    )
+
+    expect(await client.complete('hi', schema)).toEqual({ ok: true })
+    expect(fetchImpl).toHaveBeenCalledTimes(2)
+    const first = JSON.parse(fetchImpl.mock.calls[0]![1].body as string)
+    const second = JSON.parse(fetchImpl.mock.calls[1]![1].body as string)
+    expect(first.response_format.type).toBe('json_schema')
+    expect(second.response_format.type).toBe('json_schema')
+    const firstSession = (fetchImpl.mock.calls[0]![1].headers as Record<string, string>)['x-opencode-session']
+    const secondSession = (fetchImpl.mock.calls[1]![1].headers as Record<string, string>)['x-opencode-session']
+    expect(firstSession).toEqual(expect.any(String))
+    expect(secondSession).toBe(firstSession)
+  })
+
+  /**
+   * 双 miss 判定为系统性缺头，外层 tags/classify 再问同样必败。
+   * 标 retryable:true 会把 complete 内 2 次放大到最多 6 次，只是白烧钱。
+   */
+  it('MissingSessionID 连着两次仍失败时标不可重试，不再放大到分析层', async () => {
+    const missing = () => new Response(
+      JSON.stringify({ error: { type: 'MissingSessionID' } }),
+      { status: 400 },
+    )
+    const fetchImpl = vi.fn().mockImplementation(async () => missing())
+    const client = createLlmClient(
+      { baseUrl: 'https://opencode.ai/zen/go/v1', apiKey: 'sk-go', model: 'kimi-k3' },
+      'zh_CN',
+      fetchImpl as unknown as typeof fetch,
+    )
+
+    const error = await client.complete('hi', schema).catch((e: unknown) => e)
+    // retryable 语义不变；status/body 是 probe 分类要读的结构化字段，message 正则只是兜底
+    expect(error).toMatchObject({ retryable: false, status: 400 })
+    expect((error as LlmError).body).toContain('MissingSessionID')
+    expect(fetchImpl).toHaveBeenCalledTimes(2)
+  })
+
+  it('非 OpenCode 主机的 400 即使 body 含 MissingSessionID 也不重试', async () => {
+    const fetchImpl = vi.fn().mockResolvedValue(
+      new Response(JSON.stringify({ error: { type: 'MissingSessionID' } }), { status: 400 }),
+    )
+    const client = createLlmClient(config, 'zh_CN', fetchImpl as unknown as typeof fetch)
+
+    await expect(client.complete('hi', schema)).rejects.toMatchObject({ retryable: false })
+    expect(fetchImpl).toHaveBeenCalledTimes(1)
+  })
+
+  it('第二次 MissingSessionID 即使 body 带 response_format 也不降级', async () => {
+    const missing = () => new Response(
+      JSON.stringify({
+        error: { type: 'MissingSessionID', message: 'unsupported response_format without session' },
+      }),
+      { status: 400 },
+    )
+    const fetchImpl = vi.fn().mockImplementation(async () => missing())
+    const client = createLlmClient(
+      { baseUrl: 'https://opencode.ai/zen/go/v1', apiKey: 'sk-go', model: 'glm-5.2' },
+      'zh_CN',
+      fetchImpl as unknown as typeof fetch,
+    )
+
+    await expect(client.complete('hi', schema)).rejects.toMatchObject({ retryable: false })
+    expect(fetchImpl).toHaveBeenCalledTimes(2)
+    expect(JSON.parse(fetchImpl.mock.calls[0]![1].body as string).response_format.type).toBe('json_schema')
+    expect(JSON.parse(fetchImpl.mock.calls[1]![1].body as string).response_format.type).toBe('json_schema')
+  })
+
   it('baseUrl 末尾多余的斜杠被规范化', async () => {
     const fetchImpl = vi.fn().mockResolvedValue(okResponse({ ok: true }))
     const client = createLlmClient({ ...config, baseUrl: 'https://api.example.com/v1/' }, 'zh_CN', fetchImpl as unknown as typeof fetch)
@@ -201,7 +283,10 @@ describe('json_schema 不受支持时自动降级为 json_object', () => {
     )
     const client = createLlmClient(config, 'zh_CN', fetchImpl as unknown as typeof fetch)
 
-    await expect(client.complete('hi', schema)).rejects.toMatchObject({ retryable: false })
+    // 普通 400 同样带结构化 status/body，不只 OpenCode 的 MissingSession 分支
+    const error = await client.complete('hi', schema).catch((e: unknown) => e)
+    expect(error).toMatchObject({ retryable: false, status: 400 })
+    expect((error as LlmError).body).toContain('model not found')
     expect(fetchImpl).toHaveBeenCalledTimes(1)
   })
 

@@ -37,12 +37,29 @@ export class LlmError extends Error {
    * retryable: true：拆不了的时候（已经是一条、或已经拆过一层）还是要重试。
    */
   readonly timedOut: boolean
-  constructor(message: string, retryable: boolean, truncated = false, timedOut = false) {
+  /**
+   * 这次失败对应的 HTTP 状态码，以及剥 secret 前的响应体原文。
+   *
+   * 只有「模型接口返回 $status: $body」这一类错误才填——那是唯一拿到了 HTTP 响应的
+   * 失败；超时、取消、网络失败、截断、非法 JSON 都没有响应，字段为空。
+   * probe.ts 的分类优先读这两个字段，读不到才退回从 message 里抠（见 classifyTestFailure）。
+   */
+  readonly status?: number
+  readonly body?: string
+  constructor(
+    message: string,
+    retryable: boolean,
+    truncated = false,
+    timedOut = false,
+    http?: { status: number; body: string },
+  ) {
     super(message)
     this.name = 'LlmError'
     this.retryable = retryable
     this.truncated = truncated
     this.timedOut = timedOut
+    this.status = http?.status
+    this.body = http?.body
   }
 }
 
@@ -272,12 +289,34 @@ export function createLlmClient(
       // 若按共享值往下推，别的请求刚推过的一步会被重复消耗，
       // 后发的请求会误以为已经无级可降而直接失败。
       let attempt = mode
+      // OpenCode Go 会 400 MissingSessionID。头我们已经带了；偶发时原样再问一次。
+      // 第二次仍缺则当系统性缺头：tags/classify 外层再问同样必败，只会把 2 次放大到 6 次。
+      // 分析层看到 retryable:false 会跳过该批（书签未分类），整轮继续，不是整轮中止。
+      let sessionMisses = 0
 
       for (;;) {
         const response = await post(prompt, schema, attempt, signal)
 
         if (!response.ok) {
           const body = await response.text()
+          const missingSession = sessionId !== null
+            && response.status === 400
+            && /MissingSessionID/i.test(body)
+          if (missingSession && sessionMisses < 1) {
+            sessionMisses += 1
+            continue
+          }
+          if (missingSession) {
+            throw new LlmError(
+              locale === 'zh_CN'
+                ? `模型接口返回 ${response.status}: ${body}`
+                : `Model API returned ${response.status}: ${body}`,
+              false,
+              false,
+              false,
+              { status: response.status, body },
+            )
+          }
           const next = MODES[MODES.indexOf(attempt) + 1]
           if (isUnsupportedResponseFormat(response.status, body) && next !== undefined) {
             // 只进开发者控制台，不必双语。
@@ -295,6 +334,9 @@ export function createLlmClient(
               ? `模型接口返回 ${response.status}: ${body}`
               : `Model API returned ${response.status}: ${body}`,
             retryable,
+            false,
+            false,
+            { status: response.status, body },
           )
         }
 

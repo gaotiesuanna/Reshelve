@@ -41,6 +41,8 @@ Reshelve 没有服务器。你把它指向你自己的接口：
 - 任何兼容 OpenAI 的服务（DeepSeek、Moonshot、智谱、OpenCode Go、自建代理……）
 - 本机上的 Ollama 或 LM Studio——数据不会离开你的电脑
 
+其中 OpenCode Go 是面向 coding-agent 流量的网关，用它做书签分类是 best-effort 支持。如果测试连接反复失败，建议改用模型厂商（智谱、Kimi 等）的直连接口。
+
 你填的每一把 API Key 都保存在本地的 `chrome.storage` 里，各自只会发往它对应的那个接口；在设置页删掉一个端点，那把 Key 一并消失。
 
 ## 隐私，说具体的
