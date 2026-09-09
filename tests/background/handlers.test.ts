@@ -3327,6 +3327,15 @@ describe('test_model 当场验一次模型配置', () => {
     expect(res).toMatchObject({ ok: false, reason: 'auth' })
   })
 
+  it('403 RegionError 报 region，不报 auth：同一把 Key 别的模型能用', async () => {
+    // OpenCode Go：deepseek-v4-flash 在部分区域要单独开通。说成 Key 不对会让人去重新生成。
+    const { ports, deps } = setupTest(throwing(
+      '模型接口返回 403: {"type":"error","error":{"type":"RegionError","message":"该模型的最新版本仅在中国提供托管服务"}}',
+    ))
+    const res = await handle(ports, DEFAULT_TEST_REQ, deps)
+    expect(res).toMatchObject({ ok: false, reason: 'region' })
+  })
+
   it('404 报 model：模型名不对', async () => {
     const { ports, deps } = setupTest(throwing('模型接口返回 404: {"error":"The model `gpt-9` does not exist"}'))
     const res = await handle(ports, DEFAULT_TEST_REQ, deps)
@@ -3401,10 +3410,11 @@ describe('test_model 当场验一次模型配置', () => {
     expect(res).toMatchObject({ ok: false, reason: 'network' })
   })
 
-  it('500 报 network，不因为响应体里出现 unauthorized 就改口说 Key 不对', async () => {
+  it('500 报 upstream，不因为响应体里出现 unauthorized 就改口说 Key 不对', async () => {
+    // 请求已经到了。落 network 会说成「请求没发出去」，那是说错。
     const { ports, deps } = setupTest(throwing('模型接口返回 500: {"error":"upstream unauthorized"}'))
     const res = await handle(ports, DEFAULT_TEST_REQ, deps)
-    expect(res).toMatchObject({ ok: false, reason: 'network' })
+    expect(res).toMatchObject({ ok: false, reason: 'upstream' })
   })
 
   it('客户端抛「返回的不是合法 JSON」时报 format：接口通了但模型不会按格式答', async () => {

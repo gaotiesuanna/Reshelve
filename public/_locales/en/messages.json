@@ -902,6 +902,12 @@
   "settingsTestFailSession": {
     "message": "The request reached the gateway but was rejected (missing session). Not a network failure. Test again; if it keeps happening, use the model vendor's own endpoint."
   },
+  "settingsTestFailUpstream": {
+    "message": "The provider failed or rate-limited the request. Try again in a moment, or pick another model on this endpoint."
+  },
+  "settingsTestFailRegion": {
+    "message": "This model is not available in your region, or needs to be enabled in the provider console. The API key is fine."
+  },
   "settingsTestFailPermission": {
     "message": "Reshelve does not have permission to reach this domain yet. Click Test connection again and allow it."
   },

@@ -902,6 +902,12 @@
   "settingsTestFailSession": {
     "message": "请求到了网关但被拒（缺会话标识），不是网络不通。再测一次；反复出现就改用模型厂商的直连接口。"
   },
+  "settingsTestFailUpstream": {
+    "message": "供应商返回了错误或在限流。过一会儿再试，或换这个端点上的另一个模型。"
+  },
+  "settingsTestFailRegion": {
+    "message": "这个模型在当前区域不可用，或需要在供应商控制台单独开通。不是 Key 写错。"
+  },
   "settingsTestFailPermission": {
     "message": "还没拿到访问这个域名的权限。再点一次「测试连接」并允许。"
   },

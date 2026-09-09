@@ -13,8 +13,14 @@ import { LlmError, type LlmClient } from './client'
  * 那是浏览器的事，这一层零浏览器依赖，答不了。由调用方在失败之后复查权限覆盖。
  */
 export type TestFailure =
-  /** Key 不对或已失效（401/403）。 */
+  /** Key 不对或已失效（401，或普通 403）。 */
   | 'auth'
+  /**
+   * 403 且点名 RegionError：这个模型在当前区域不可用，或要单独开通。
+   * 同一把 Key 别的模型能用，说成 Key 不对会让人去重新生成。
+   * 文案不能点名某一个供应商——分类看不到 host。
+   */
+  | 'region'
   /** 模型名不对（404，或 400 且响应体点名 model）。 */
   | 'model'
   /** 接口通了，但这个模型不会按要求的格式作答。 */
@@ -24,7 +30,12 @@ export type TestFailure =
    * 文案不能说「检查代理」，也不能点名某一个供应商——分类看不到 host。
    */
   | 'session'
-  /** 其余一切：请求没发出去、代理不通、上游挂了、分不清。 */
+  /**
+   * 429 / 5xx：请求已经到了，是上游限流或挂了。
+   * 落 network 会说成「请求没发出去」，那是说错。
+   */
+  | 'upstream'
+  /** 请求没发出去、代理不通、分不清。5xx 不在这里。 */
   | 'network'
 
 /**
@@ -64,13 +75,17 @@ function splitStatus(message: string): { status: number; body: string } | null {
 /**
  * 拿到状态码和响应体之后的分类，两种来源汇到这一处：
  * LlmError 的结构化字段，或 classifyTestFailure 从消息里正则抠出来的那份。
- * 定的规矩是**宁可说笼统，不可说错**：分不清就落 'network'（那一类的文案本来就是
- * 「检查代理、VPN，或有没有别的扩展在拦」，对读的人无害），而说错一类会把人推去
+ * 定的规矩是**宁可说笼统，不可说错**：分不清就落 'network'（那一类的文案是
+ * 「检查代理、VPN」，只适用于请求没发出去的情况），而说错一类会把人推去
  * 换 Key、改模型名，白费更多时间。
  */
 function classifyHttp(http: { status: number; body: string }): TestFailure {
-  // Key 不对，或这个 Key 没有用这个接口的权限
-  if (http.status === 401 || http.status === 403) return 'auth'
+  // Key 不对
+  if (http.status === 401) return 'auth'
+  // RegionError 排在普通 403 前面：区域/开通限制不是 Key 写错。
+  if (http.status === 403 && /RegionError/i.test(http.body)) return 'region'
+  // 这个 Key 没有用这个接口的权限
+  if (http.status === 403) return 'auth'
   // 模型名不对：404 是「没有这个模型」
   if (http.status === 404) return 'model'
   // 400 的原因多得很（参数不合法、上下文超长……），只有响应体点名 model 时才敢说
@@ -82,7 +97,8 @@ function classifyHttp(http: { status: number; body: string }): TestFailure {
   if (http.status === 400 && /MissingSessionID/i.test(http.body)) return 'session'
   if (http.status === 400 && /temperature/i.test(http.body)) return 'network'
   if (http.status === 400 && /model/i.test(http.body)) return 'model'
-  // 429、5xx 以及其余状态码：上游的事，不是这份配置的错，落笼统那一类
+  // 429、5xx：请求已经到了。不是 network。
+  if (http.status === 429 || http.status >= 500) return 'upstream'
   return 'network'
 }
 

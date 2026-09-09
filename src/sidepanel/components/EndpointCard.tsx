@@ -16,9 +16,11 @@ function describeFailure(reason: ModelTestReason | undefined): string {
   switch (reason) {
     case 'permission': return t('settingsTestFailPermission')
     case 'auth': return t('settingsTestFailAuth')
+    case 'region': return t('settingsTestFailRegion')
     case 'model': return t('settingsTestFailModel')
     case 'format': return t('settingsTestFailFormat')
     case 'session': return t('settingsTestFailSession')
+    case 'upstream': return t('settingsTestFailUpstream')
     case 'network': return t('settingsTestFailNetwork')
     default: return t('settingsTestFailUnknown')
   }
