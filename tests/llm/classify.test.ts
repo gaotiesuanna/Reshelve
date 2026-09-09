@@ -785,6 +785,105 @@ describe('分类批次被截断时拆开重问', () => {
   })
 })
 
+describe('分类批次超时时拆开重问', () => {
+  const timeoutError = (): Error =>
+    Object.assign(new Error('timeout'), { retryable: true, timedOut: true })
+  const serverError = (): Error => Object.assign(new Error('500'), { retryable: true })
+
+  function idsIn(prompt: string): string[] {
+    return [...prompt.matchAll(/"bookmark_id": "([^"]+)"/g)].map((m) => m[1]!)
+  }
+
+  const four = ['1', '2', '3', '4'].map((id) => item(id, `https://some-blog.dev/${id}`))
+
+  function answer(ids: string[]): unknown {
+    return {
+      results: ids.map((id) => ({
+        bookmark_id: id,
+        target_category_id: '10',
+        confidence: 0.9,
+        reason: 'r' + id,
+      })),
+    }
+  }
+
+  it('超时且一批多于一条时立刻拆成两半，不把同一批再问两次', async () => {
+    const complete = vi.fn().mockImplementation((prompt: string) => {
+      const ids = idsIn(prompt)
+      if (ids.length === 4) return Promise.reject(timeoutError())
+      return Promise.resolve(answer(ids))
+    })
+    const results = await classify({
+      items: four, candidates, client: { complete }, cache: new Map(),
+    })
+    expect(results.map((r) => r.bookmarkId)).toEqual(['1', '2', '3', '4'])
+    expect(results.map((r) => r.reason)).toEqual(['r1', 'r2', 'r3', 'r4'])
+    // 整批 1 次 + 两半各 1 次：能拆时超时不走 MAX_RETRIES
+    expect(complete).toHaveBeenCalledTimes(3)
+  })
+
+  it('超时拆开后仍失败的那一半只丢那一半', async () => {
+    const complete = vi.fn().mockImplementation((prompt: string) => {
+      const ids = idsIn(prompt)
+      if (ids.length === 4) return Promise.reject(timeoutError())
+      if (ids.includes('3')) return Promise.reject(Object.assign(new Error('bad key'), { retryable: false }))
+      return Promise.resolve(answer(ids))
+    })
+    const results = await classify({
+      items: four, candidates, client: { complete }, cache: new Map(),
+    })
+    expect(results.map((r) => r.source)).toEqual(['llm', 'llm', 'none', 'none'])
+  })
+
+  it('超时拆批只做一层：半批再超时就重试后放弃，不二分到单条', async () => {
+    const complete = vi.fn().mockRejectedValue(timeoutError())
+    const results = await classify({
+      items: four, candidates, client: { complete }, cache: new Map(),
+    })
+    expect(results.every((r) => r.source === 'none')).toBe(true)
+    // 整批 1 次（拆）+ 两半各 3 次（timeoutSplit 关掉，走满重试）= 7
+    expect(complete).toHaveBeenCalledTimes(7)
+  })
+
+  it('一条的超时仍按可重试错误重试，不拆', async () => {
+    const complete = vi.fn().mockRejectedValue(timeoutError())
+    await classify({
+      items: [item('1', 'https://some-blog.dev/x')],
+      candidates, client: { complete }, cache: new Map(),
+    })
+    expect(complete).toHaveBeenCalledTimes(3)
+  })
+
+  it('普通 5xx 不拆批——拆是给超时和截断的', async () => {
+    const complete = vi.fn().mockRejectedValue(serverError())
+    await classify({
+      items: four, candidates, client: { complete }, cache: new Map(),
+    })
+    expect(complete).toHaveBeenCalledTimes(3)
+  })
+
+  it('超时拆批日志说请求超时，不说截断', async () => {
+    const logs: Array<{ message: string; level: string }> = []
+    const complete = vi.fn().mockImplementation((prompt: string) => {
+      const ids = idsIn(prompt)
+      if (ids.length === 4) return Promise.reject(timeoutError())
+      return Promise.resolve(answer(ids))
+    })
+    await classify({
+      items: four,
+      candidates,
+      client: { complete },
+      cache: new Map(),
+      onLog: (message, level) => logs.push({ message, level }),
+    })
+    const split = logs.filter((l) => l.message.includes('请求超时'))
+    expect(split).toHaveLength(1)
+    expect(split[0]!.level).toBe('warn')
+    expect(split[0]!.message).not.toContain('截断')
+  })
+})
+
+
 describe('分类取消之后立刻收手', () => {
   const truncatedError = (): Error =>
     Object.assign(new Error('truncated'), { retryable: false, truncated: true })

@@ -171,10 +171,15 @@ function fromCache(
 }
 
 interface BatchHooks {
-  /** 这一批因输出被截断而拆开时调一次，参数是被拆的条数。 */
-  onSplit?: (size: number) => void
+  /** 这一批因输出被截断或超时而拆开时调一次。 */
+  onSplit?: (size: number, cause: 'truncated' | 'timeout') => void
   /** 每次「再发一个请求」之前问一次。日志由调用方记——runBatch 手里没有批次序号。 */
   isCancelled?: () => boolean
+  /**
+   * 超时拆批只做一层。半批再超时就走普通重试后认栽——否则死端点会把 25 条
+   * 二分到单条，每条再吃满 MAX_RETRIES × 120s。
+   */
+  timeoutSplit?: boolean
 }
 
 async function runBatch(
@@ -190,6 +195,7 @@ async function runBatch(
   // catch 把它覆盖成真实错误信息，这个初始值实际不会被用户看到，不必双语。
   let lastError = '未知错误'
   let truncated = false
+  let timedOut = false
 
   for (let attempt = 0; attempt <= MAX_RETRIES; attempt++) {
     try {
@@ -221,11 +227,18 @@ async function runBatch(
     } catch (error) {
       lastError = String(error)
       truncated = (error as { truncated?: boolean }).truncated === true
+      timedOut = (error as { timedOut?: boolean }).timedOut === true
       // 只进开发者控制台，不进侧栏日志，不必双语。
       console.error('[Reshelve] 分类请求失败：', error)
       // 取消之后一个新请求都不再发：那三次注定失败，用户却要眼看着「正在取消」
       // 多等三个请求加 1.5 秒的退避。
       if (hooks.isCancelled?.() === true) break
+      // 截断或（可拆的）超时：原样再问同一批没有意义，跳出重试去拆。
+      // 一条的超时、已经拆过一层的超时，仍走下面的可重试退避。
+      const willSplit = batch.length > 1 && (
+        truncated || (timedOut && hooks.timeoutSplit !== false)
+      )
+      if (willSplit) break
       const retryable = (error as { retryable?: boolean }).retryable === true
       if (!retryable) break
       if (attempt < MAX_RETRIES) {
@@ -233,17 +246,19 @@ async function runBatch(
       }
     }
   }
-  // 输出被截断（client.ts 的 LlmError.truncated）：原样再问只会在同一个字上再断
-  // 一次，所以不走上面的重试，改成拆成两半分别问。两半各自返回与自己逐位对齐的
-  // 结果，顺序拼回去，「返回值与 batch 一一对应」这条契约不变（调用方按下标把
-  // results[i] 配给 batch[i]）；拆完仍失败的那一半照常降级为未分类，丢的只有它。
-  if (hooks.isCancelled?.() !== true && truncated && batch.length > 1) {
-    hooks.onSplit?.(batch.length)
+  // 输出被截断或整批超时：原样再问只会再失败一次，改成拆成两半分别问。
+  // 两半各自返回与自己逐位对齐的结果，顺序拼回去，「返回值与 batch 一一对应」
+  // 这条契约不变；拆完仍失败的那一半照常降级为未分类，丢的只有它。
+  // 超时只拆一层（childHooks.timeoutSplit = false），避免死端点上二分到单条。
+  const splitTimeout = timedOut && batch.length > 1 && hooks.timeoutSplit !== false
+  if (hooks.isCancelled?.() !== true && batch.length > 1 && (truncated || splitTimeout)) {
+    hooks.onSplit?.(batch.length, splitTimeout ? 'timeout' : 'truncated')
+    const childHooks = splitTimeout ? { ...hooks, timeoutSplit: false } : hooks
     const mid = Math.ceil(batch.length / 2)
     // 顺序问而不是并发：外层已经有 concurrency 个 worker 在跑，
-    // 一批刚被截断说明这条线正吃力，没必要再往上叠一倍请求。
-    const head = await runBatch(batch.slice(0, mid), candidates, client, locale, includeTopicRule, hooks)
-    const tail = await runBatch(batch.slice(mid), candidates, client, locale, includeTopicRule, hooks)
+    // 一批刚被截断/超时说明这条线正吃力，没必要再往上叠一倍请求。
+    const head = await runBatch(batch.slice(0, mid), candidates, client, locale, includeTopicRule, childHooks)
+    const tail = await runBatch(batch.slice(mid), candidates, client, locale, includeTopicRule, childHooks)
     return [...head, ...tail]
   }
   return batch.map((item) => unclassified(item, fallbackReason(locale, 'failed', lastError), lastError))
@@ -352,10 +367,10 @@ export async function classifyBookmarks(input: ClassifyInput): Promise<Classific
       const size = batch.reduce((sum, rep) => sum + groupOf(rep).length, 0)
       const startedAt = Date.now()
       const results = await runBatch(batch, candidates, client, locale, includeTopicRule, {
-        onSplit: (size) =>
+        onSplit: (size, cause) =>
           input.onLog?.(
             logBatchSplit(
-              locale, locale === 'zh_CN' ? '分类批次' : 'Classify batch', index, batches.length, size,
+              locale, locale === 'zh_CN' ? '分类批次' : 'Classify batch', index, batches.length, size, cause,
             ),
             'warn',
           ),

@@ -109,6 +109,15 @@ describe('截断拆批的两条日志', () => {
   it('拆批不是失败：文案里不能说这批书签被排除', () => {
     expect(logBatchSplit('zh_CN', 'x', 0, 12, 25)).not.toContain('不参与目录设计')
   })
+
+  it('超时拆批与截断拆批文案分得开', () => {
+    expect(logBatchSplit('zh_CN', 'x', 0, 12, 25, 'timeout')).toContain('请求超时')
+    expect(logBatchSplit('zh_CN', 'x', 0, 12, 25, 'timeout')).not.toContain('截断')
+    expect(logBatchSplit('en', 'x', 0, 12, 25, 'timeout')).toContain('timed out')
+    expect(logBatchSplit('en', 'x', 0, 12, 25, 'timeout')).not.toContain('truncated')
+    expect(/[一-鿿]/.test(logBatchSplit('en', 'x', 0, 12, 25, 'timeout'))).toBe(false)
+    expect(logBatchSplit('zh_CN', 'x', 0, 12, 25, 'timeout')).not.toContain('不参与目录设计')
+  })
 })
 
 describe('整批失败的日志', () => {

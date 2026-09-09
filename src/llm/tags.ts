@@ -69,7 +69,7 @@ function buildPrompt(locale: Locale, items: BookmarkItem[]): string {
  */
 const MAX_RETRIES = 2
 
-function flagged(error: unknown, key: 'retryable' | 'truncated'): boolean {
+function flagged(error: unknown, key: 'retryable' | 'truncated' | 'timedOut'): boolean {
   return (error as Record<string, unknown> | null)?.[key] === true
 }
 
@@ -107,16 +107,19 @@ async function runExtraction(
   /**
    * 问一批，返回 bookmark_id → primary_topic；这一批彻底没救时抛出最后一个错误。
    *
-   * 两种失败分开收场：
+   * 三种失败分开收场：
    * - 可重试（429 / 5xx / 网络）——退避后原样再问，最多 MAX_RETRIES 次；
    * - 截断（client.ts 的 LlmError.truncated）——不重试，原样再问只会在同一个字上
    *   再断一次，改成对半拆开分别问。拆完仍失败的那一半只丢那一半，同批的另一半
    *   已经拿到手了，没有理由陪葬。
+   * - 超时（LlmError.timedOut）且一批多于一条——同一批再问三次只会再死三次，
+   *   同样拆开。只拆一层：半批再超时走普通重试后认栽，避免死端点上二分到单条。
    */
   async function ask(
     batch: BookmarkItem[],
     index: number,
     tally: { attempts: number },
+    timeoutSplit = true,
   ): Promise<Map<string, string>> {
     let lastError: unknown
     for (let attempt = 0; attempt <= MAX_RETRIES; attempt++) {
@@ -133,14 +136,23 @@ async function runExtraction(
         // 取消之后一个新请求都不再发。少了这一句，用户点完取消要眼看着「正在取消」
         // 再等三个请求加 1.5 秒退避才结束，而那三次注定全部失败。
         if (options.isCancelled?.() === true) break
+        const willSplit = batch.length > 1 && (
+          flagged(error, 'truncated') || (flagged(error, 'timedOut') && timeoutSplit)
+        )
+        if (willSplit) break
         if (!flagged(error, 'retryable')) break
         if (attempt < MAX_RETRIES) {
           await new Promise((resolve) => setTimeout(resolve, 2 ** attempt * 500))
         }
       }
     }
-    if (options.isCancelled?.() !== true && flagged(lastError, 'truncated') && batch.length > 1) {
-      return split(batch, index, lastError, tally)
+    if (options.isCancelled?.() !== true && batch.length > 1) {
+      if (flagged(lastError, 'truncated')) {
+        return split(batch, index, lastError, tally, 'truncated', true)
+      }
+      if (timeoutSplit && flagged(lastError, 'timedOut')) {
+        return split(batch, index, lastError, tally, 'timeout', false)
+      }
     }
     throw lastError
   }
@@ -150,18 +162,20 @@ async function runExtraction(
     index: number,
     cause: unknown,
     tally: { attempts: number },
+    splitCause: 'truncated' | 'timeout',
+    childTimeoutSplit: boolean,
   ): Promise<Map<string, string>> {
-    options.onLog?.(logBatchSplit(locale, label, index, batches.length, batch.length), 'warn')
+    options.onLog?.(logBatchSplit(locale, label, index, batches.length, batch.length, splitCause), 'warn')
     const mid = Math.ceil(batch.length / 2)
     const merged = new Map<string, string>()
     const failures: Array<{ size: number; detail: string }> = []
     // 顺序问而不是并发：外层已经有 concurrency 个 worker 在跑，
-    // 一批刚被截断说明这条线正吃力，没必要再往上叠一倍请求。
+    // 一批刚被截断/超时说明这条线正吃力，没必要再往上叠一倍请求。
     for (const half of [batch.slice(0, mid), batch.slice(mid)]) {
       // 拆到一半用户点了取消：把原错误交回去，剩下那半不再问
       if (options.isCancelled?.() === true) throw cause
       try {
-        for (const [id, topic] of await ask(half, index, tally)) merged.set(id, topic)
+        for (const [id, topic] of await ask(half, index, tally, childTimeoutSplit)) merged.set(id, topic)
       } catch (error) {
         failures.push({ size: half.length, detail: String(error) })
       }

@@ -95,17 +95,22 @@ export function logBatchFailed(
 }
 
 /**
- * 输出被截断，这一批拆开重问。
+ * 输出被截断或整批超时，这一批拆开重问。
  *
  * 不能沿用 logBatchFailed：那条说的是「这批书签不参与目录设计」，而这里一条都还没丢，
  * 只是问法换小了。把「多少条被拆」写出来，递归拆到第二层、第三层时读日志才分得清层级。
+ * 超时与截断文案必须分得开：两者触发条件不同，混成一句会让人以为模型把输出写断了。
  */
 export function logBatchSplit(
   locale: Locale, label: string, index: number, total: number, size: number,
+  cause: 'truncated' | 'timeout' = 'truncated',
 ): string {
-  return locale === 'zh_CN'
-    ? `${label} ${index + 1}/${total} 输出被截断，${size} 条拆成两半重问`
-    : `${label} ${index + 1}/${total} output was truncated; splitting ${size} items in half and retrying`
+  if (locale === 'zh_CN') {
+    const why = cause === 'timeout' ? '请求超时' : '输出被截断'
+    return `${label} ${index + 1}/${total} ${why}，${size} 条拆成两半重问`
+  }
+  const why = cause === 'timeout' ? 'timed out' : 'output was truncated'
+  return `${label} ${index + 1}/${total} ${why}; splitting ${size} items in half and retrying`
 }
 
 /** 拆开之后仍然失败的那一半——丢的只有这几条，同批的另一半已经拿到了。 */

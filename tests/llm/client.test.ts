@@ -24,7 +24,7 @@ describe('createLlmClient', () => {
     const client = createLlmClient(config, 'zh_CN', fetchImpl as unknown as typeof fetch, undefined, 20)
 
     await expect(client.complete('hi', schema)).rejects.toThrow(LlmError)
-    await expect(client.complete('hi', schema)).rejects.toMatchObject({ retryable: true })
+    await expect(client.complete('hi', schema)).rejects.toMatchObject({ retryable: true, timedOut: true })
   })
 
   it('超时的文案与「用户取消」分得开——两者的收场方式正相反', async () => {

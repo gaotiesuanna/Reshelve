@@ -25,7 +25,7 @@ import { checkLinks } from '@/engine/linkCheck'
 import { loadSnapshot } from '@/engine/snapshot'
 import { undoLast } from '@/engine/undo'
 import { createLlmClient, type LlmClient, type LlmConfig } from '@/llm/client'
-import { isModelConfigured } from '@/llm/config'
+import { isModelConfigured, llmConcurrency } from '@/llm/config'
 import { listRemoteModels } from '@/llm/models'
 import { probeModel } from '@/llm/probe'
 import { classifyBookmarks } from '@/llm/classify'
@@ -167,6 +167,7 @@ export async function handle(
         if (!isModelConfigured(llm)) {
           return { ok: false, error: t('errNoApiKey') }
         }
+        const concurrency = llmConcurrency(llm.baseUrl)
         const tree = await ports.bookmarks.getTree()
         const scan = scanTree(tree, request.scopeRootIds)
         // findScopeRoots 按书签树顺序返回，确定性；
@@ -283,6 +284,7 @@ export async function handle(
             onProgress: progress('tags'),
             onLog: (message, level) => log('tags', message, level),
             isCancelled,
+            concurrency,
           })
           if (isCancelled()) return CANCELLED
           // 分批抽标签的模型看不到全局，同义碎片只能在这里归并
@@ -418,6 +420,7 @@ export async function handle(
           client,
           cache,
           batchSize: deps.batchSize,
+          concurrency,
           onProgress: progress('classify'),
           onLog: (message, level) => log('classify', message, level),
           isCancelled,
@@ -576,6 +579,7 @@ export async function handle(
               candidates: rehomeCandidates,
               client, cache,
               batchSize: deps.batchSize,
+              concurrency,
               onLog: (message, level) => log('classify', message, level),
               isCancelled,
               locale,
@@ -705,6 +709,7 @@ export async function handle(
                 const fresh = await extractTags(items, client, locale, {
                   onLog: (message, level) => log('classify', message, level),
                   isCancelled,
+                  concurrency,
                 })
                 if (isCancelled()) return CANCELLED
                 const freshById = new Map(fresh.map((tag) => [tag.bookmarkId, tag]))
@@ -899,6 +904,7 @@ export async function handle(
         if (!isModelConfigured(llm)) {
           return { ok: false, error: t('errNoApiKey') }
         }
+        const concurrency = llmConcurrency(llm.baseUrl)
         // 重新扫一遍而不是信侧栏传来的 plan 里那份旧数据：书签的 parentId/index/
         // currentPath 得是这一刻的真实值，classifyBookmarks 要拿它们拼提示词。
         // plan 本身仍然以侧栏传来的为准——那是这次要贴回去的底子，重新分析一份
@@ -953,6 +959,7 @@ export async function handle(
           client,
           cache,
           batchSize: deps.batchSize,
+          concurrency,
           onProgress: progress('classify'),
           onLog: (message, level) => log('classify', message, level),
           isCancelled,

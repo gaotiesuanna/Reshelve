@@ -21,6 +21,17 @@ export function isLocalBaseUrl(baseUrl: string): boolean {
 }
 
 /**
+ * 分类 / 抽标签一次派几路。
+ *
+ * 本机模型（Ollama、LM Studio）一次只能吃一个请求。默认 4 路并发会让后发的
+ * 批次在 120s 闹钟下排队饿死——实测 56 条里两个 25 条的批次整批超时、只有
+ * 6 条的小批活下来，侧栏报「50 个书签分类失败」。
+ */
+export function llmConcurrency(baseUrl: string): number {
+  return isLocalBaseUrl(baseUrl) ? 1 : 4
+}
+
+/**
  * 模型配好了没有——界面上「要不要提示去配置」和后台「要不要直接拒掉这次分析」问的
  * 是同一个问题，所以是同一个谓词，三处调用点共用（选范围页、偏好页、后台 analyze）。
  *

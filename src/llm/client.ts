@@ -29,11 +29,20 @@ export class LlmError extends Error {
    * 截断原样再问只会再截断一次，得把这一批拆小了问（见 llm/tags.ts 的 ask）。
    */
   readonly truncated: boolean
-  constructor(message: string, retryable: boolean, truncated = false) {
+  /**
+   * 请求在超时闹钟内没有收到响应。
+   *
+   * 一批 25 条在慢模型上经常整批跑过 120s，同一批再问三次只会再死三次。
+   * 调用方该把这一批拆小（见 llm/classify.ts 的 runBatch）。仍然标
+   * retryable: true：拆不了的时候（已经是一条、或已经拆过一层）还是要重试。
+   */
+  readonly timedOut: boolean
+  constructor(message: string, retryable: boolean, truncated = false, timedOut = false) {
     super(message)
     this.name = 'LlmError'
     this.retryable = retryable
     this.truncated = truncated
+    this.timedOut = timedOut
   }
 }
 
@@ -236,6 +245,8 @@ export function createLlmClient(
           locale === 'zh_CN'
             ? `请求超时：${Math.round(timeoutMs / 1000)} 秒内没有收到响应`
             : `Request timed out: no response within ${Math.round(timeoutMs / 1000)}s`,
+          true,
+          false,
           true,
         )
       }

@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { isLocalBaseUrl, isModelConfigured } from '@/llm/config'
+import { isLocalBaseUrl, isModelConfigured, llmConcurrency } from '@/llm/config'
 import { DEFAULT_SETTINGS, PRESETS, activeLlm } from '@/storage/settings'
 
 describe('isLocalBaseUrl', () => {
@@ -24,6 +24,14 @@ describe('isLocalBaseUrl', () => {
   it('地址还没填成形时是 false——那时确实还不算配好', () => {
     expect(isLocalBaseUrl('')).toBe(false)
     expect(isLocalBaseUrl('localhost:11434')).toBe(false)
+  })
+})
+
+describe('llmConcurrency', () => {
+  it('本机一次一路，远程四路', () => {
+    expect(llmConcurrency('http://localhost:11434/v1')).toBe(1)
+    expect(llmConcurrency('http://127.0.0.1:1234/v1')).toBe(1)
+    expect(llmConcurrency('https://api.openai.com/v1')).toBe(4)
   })
 })
 

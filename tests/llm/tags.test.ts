@@ -196,6 +196,43 @@ describe('extractTags 的失败收场', () => {
     expect(logs.filter((l) => l.message.includes('拆开后仍有'))).toHaveLength(0)
     expect(logs.filter((l) => l.message.includes('不参与目录设计'))).toHaveLength(1)
   })
+
+  it('超时且一批多于一条时立刻拆成两半，不把同一批再问两次', async () => {
+    const timeoutError = (): Error =>
+      Object.assign(new Error('timeout'), { retryable: true, timedOut: true })
+    const complete = vi.fn().mockImplementation((prompt: string) => {
+      const ids = idsIn(prompt)
+      if (ids.length === 4) return Promise.reject(timeoutError())
+      return Promise.resolve({ results: ids.map((id) => ({ bookmark_id: id, primary_topic: 'T' + id })) })
+    })
+    const results = await extractTags(four, { complete })
+    expect(results.map((r) => r.primaryTopic)).toEqual(['T1', 'T2', 'T3', 'T4'])
+    expect(complete).toHaveBeenCalledTimes(3)
+  })
+
+  it('超时拆批只做一层：半批再超时就重试后放弃', async () => {
+    const timeoutError = (): Error =>
+      Object.assign(new Error('timeout'), { retryable: true, timedOut: true })
+    const complete = vi.fn().mockRejectedValue(timeoutError())
+    const results = await extractTags(four, { complete })
+    expect(results.every((r) => r.primaryTopic === NO_TOPIC)).toBe(true)
+    // 整批 1 次（拆）+ 两半各 3 次 = 7
+    expect(complete).toHaveBeenCalledTimes(7)
+  })
+
+  it('超时拆批日志说请求超时，不说截断', async () => {
+    const timeoutError = (): Error =>
+      Object.assign(new Error('timeout'), { retryable: true, timedOut: true })
+    const logs: Array<{ message: string; level: string }> = []
+    const complete = vi.fn().mockImplementation((prompt: string) => {
+      const ids = idsIn(prompt)
+      if (ids.length === 4) return Promise.reject(timeoutError())
+      return Promise.resolve({ results: ids.map((id) => ({ bookmark_id: id, primary_topic: 'T' + id })) })
+    })
+    await extractTags(four, { complete }, { onLog: (message, level) => logs.push({ message, level }) })
+    expect(logs.some((l) => l.level === 'warn' && l.message.includes('请求超时'))).toBe(true)
+    expect(logs.some((l) => l.message.includes('输出被截断'))).toBe(false)
+  })
 })
 
 describe('取消之后立刻收手', () => {
