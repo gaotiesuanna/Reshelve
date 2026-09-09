@@ -135,6 +135,43 @@ describe('本地模型服务器', () => {
   })
 })
 
+/**
+ * Chrome 对每一次 permissions.request() 单独弹一窗。EndpointCard 进编辑拉名单
+ * 会申请一次，弹窗抢走 Key 焦点后又 onBlur 再申请一次——两次 request 叠着，
+ * 用户看到同一个域名弹两遍。合并在途申请之后，第二次必须接到第一次那次 request 上。
+ */
+describe('并发申请', () => {
+  it('同一 origin 上叠着的两次只调用一次 request', async () => {
+    let finish: (granted: boolean) => void = () => {}
+    const shown = new Promise<void>((resolve) => {
+      request.mockImplementation(({ origins }: { origins: string[] }) => {
+        asked.push(origins)
+        resolve()
+        return new Promise<boolean>((grant) => { finish = grant })
+      })
+    })
+
+    const first = ensureHostPermission('https://opencode.ai/zen/go/v1')
+    const second = ensureHostPermission('https://opencode.ai/zen/go/v1')
+    await shown
+
+    expect(request).toHaveBeenCalledTimes(1)
+    finish(true)
+    expect(await first).toBe(true)
+    expect(await second).toBe(true)
+    expect(request).toHaveBeenCalledTimes(1)
+  })
+
+  it('拒了之后再申请会再弹——重试必须还能走到 request', async () => {
+    contains.mockResolvedValue(false)
+    request.mockResolvedValue(false)
+
+    expect(await ensureHostPermission('https://opencode.ai/zen/go/v1')).toBe(false)
+    expect(await ensureHostPermission('https://opencode.ai/zen/go/v1')).toBe(false)
+    expect(request).toHaveBeenCalledTimes(2)
+  })
+})
+
 describe('「访问所有网站」是另一条路', () => {
   it('申请的是两条通配模式，与端点那条互不相干', async () => {
     await ensureAllHostsPermission()
