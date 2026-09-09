@@ -149,6 +149,8 @@ export const PRESETS: Array<{ label: Record<Locale, string>; baseUrl: string; mo
   // 模型 id 在这个端点上不带 opencode-go/ 前缀——那个前缀只用于 OpenCode 自己的配置文件。
   // 请求必须带 x-opencode-session，见 llm/client.ts；缺了网关直接 400。
   { label: { zh_CN: 'OpenCode Go', en: 'OpenCode Go' }, baseUrl: 'https://opencode.ai/zen/go/v1', model: 'deepseek-v4-flash' },
+  // OpenRouter 是 OpenAI 兼容网关。模型 id 带组织前缀，光写 gpt-4o-mini 对不上。
+  { label: { zh_CN: 'OpenRouter', en: 'OpenRouter' }, baseUrl: 'https://openrouter.ai/api/v1', model: 'openai/gpt-4o-mini' },
   { label: { zh_CN: '本地 Ollama', en: 'Local Ollama' }, baseUrl: 'http://localhost:11434/v1', model: 'qwen2.5' },
 ]
 

@@ -49,7 +49,7 @@ exactly as before.
 Reshelve has no server. You point it at your own endpoint:
 
 - The official OpenAI API
-- Any OpenAI-compatible service (DeepSeek, Moonshot, Zhipu, OpenCode Go, a self-hosted
+- Any OpenAI-compatible service (DeepSeek, Moonshot, Zhipu, OpenCode Go, OpenRouter, a self-hosted
   proxy, …)
 - Ollama or LM Studio on your own machine — data never leaves your computer
 

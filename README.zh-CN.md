@@ -38,7 +38,7 @@ Reshelve 整理的是你**原生的 Chrome 书签**，而不是另起炉灶的�
 Reshelve 没有服务器。你把它指向你自己的接口：
 
 - OpenAI 官方 API
-- 任何兼容 OpenAI 的服务（DeepSeek、Moonshot、智谱、OpenCode Go、自建代理……）
+- 任何兼容 OpenAI 的服务（DeepSeek、Moonshot、智谱、OpenCode Go、OpenRouter、自建代理……）
 - 本机上的 Ollama 或 LM Studio——数据不会离开你的电脑
 
 其中 OpenCode Go 是面向 coding-agent 流量的网关，用它做书签分类是 best-effort 支持。如果测试连接反复失败，建议改用模型厂商（智谱、Kimi 等）的直连接口。
