@@ -313,6 +313,55 @@ describe('json_schema 不受支持时自动降级为 json_object', () => {
   })
 })
 
+describe('厂商锁死 temperature 时改为 1 重试', () => {
+  function temperatureLocked() {
+    return new Response(
+      JSON.stringify({
+        error: {
+          message: 'invalid temperature: only 1 is allowed for this model',
+          type: 'invalid_request_error',
+        },
+      }),
+      { status: 400 },
+    )
+  }
+
+  it('遇到 temperature 被拒的 400 时改成 1 重试并成功返回', async () => {
+    const fetchImpl = vi.fn()
+      .mockResolvedValueOnce(temperatureLocked())
+      .mockResolvedValueOnce(okResponse({ ok: true }))
+    const client = createLlmClient(config, 'zh_CN', fetchImpl as unknown as typeof fetch)
+
+    expect(await client.complete('hi', schema)).toEqual({ ok: true })
+    expect(fetchImpl).toHaveBeenCalledTimes(2)
+    expect(JSON.parse(fetchImpl.mock.calls[0]![1].body as string).temperature).toBe(0)
+    expect(JSON.parse(fetchImpl.mock.calls[1]![1].body as string).temperature).toBe(1)
+  })
+
+  it('降级是粘性的：同一个 client 的后续请求直接用 1，不再浪费一次 400', async () => {
+    const fetchImpl = vi.fn()
+      .mockResolvedValueOnce(temperatureLocked())
+      .mockImplementation(async () => okResponse({ ok: true }))
+    const client = createLlmClient(config, 'zh_CN', fetchImpl as unknown as typeof fetch)
+
+    await client.complete('第一次', schema)
+    await client.complete('第二次', schema)
+
+    expect(fetchImpl).toHaveBeenCalledTimes(3)
+    expect(JSON.parse(fetchImpl.mock.calls[2]![1].body as string).temperature).toBe(1)
+  })
+
+  it('已经是 1 仍被拒时不循环', async () => {
+    const fetchImpl = vi.fn().mockImplementation(async () => temperatureLocked())
+    const client = createLlmClient(config, 'zh_CN', fetchImpl as unknown as typeof fetch)
+
+    const error = await client.complete('hi', schema).catch((e: unknown) => e)
+    expect(error).toMatchObject({ retryable: false, status: 400 })
+    expect((error as LlmError).body).toContain('temperature')
+    expect(fetchImpl).toHaveBeenCalledTimes(2)
+  })
+})
+
 describe('extractJson', () => {
   it('原样返回裸 JSON', () => {
     expect(extractJson('{"a":1}')).toBe('{"a":1}')

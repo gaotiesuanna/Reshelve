@@ -197,11 +197,14 @@ export function createLlmClient(
 
   // 一旦探明厂商不支持 json_schema 就记住，后续请求不再浪费一次 400。
   let mode: StructuredMode = 'json_schema'
+  // 先按 0 发（分类要稳）。Moonshot kimi-k3 等推理模型锁死 temperature=1，
+  // 传 0 直接 400；被拒再改 1，并记住，后续不再浪费一次 400。
+  let temperature = 0
 
   function buildBody(prompt: string, schema: object, attempt: StructuredMode): string {
     const body: Record<string, unknown> = {
       model: config.model,
-      temperature: 0,
+      temperature,
       messages: [
         { role: 'user', content: attempt === 'json_schema' ? prompt : withSchemaInPrompt(prompt, schema, locale) },
       ],
@@ -316,6 +319,13 @@ export function createLlmClient(
               false,
               { status: response.status, body },
             )
+          }
+          // temperature 排在 response_format 前面：这是请求参数被拒，不是结构化输出的事。
+          // 已经是 1 还被拒就原样抛，不循环。
+          if (response.status === 400 && /temperature/i.test(body) && temperature !== 1) {
+            console.warn('[Reshelve] 厂商不接受 temperature=0，改为 1 重试')
+            temperature = 1
+            continue
           }
           const next = MODES[MODES.indexOf(attempt) + 1]
           if (isUnsupportedResponseFormat(response.status, body) && next !== undefined) {

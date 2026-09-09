@@ -78,7 +78,9 @@ function classifyHttp(http: { status: number; body: string }): TestFailure {
   // 拿整条消息去匹配会把每一个英文 400 都说成模型名不对。
   //
   // MissingSessionID 更具体，排在 /model/i 前面：body 里两个词都有时，缺 session 才是原因。
+  // 「only 1 is allowed for this model」点的是 temperature，「this model」不是模型名写错。
   if (http.status === 400 && /MissingSessionID/i.test(http.body)) return 'session'
+  if (http.status === 400 && /temperature/i.test(http.body)) return 'network'
   if (http.status === 400 && /model/i.test(http.body)) return 'model'
   // 429、5xx 以及其余状态码：上游的事，不是这份配置的错，落笼统那一类
   return 'network'

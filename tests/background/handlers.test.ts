@@ -3378,6 +3378,17 @@ describe('test_model 当场验一次模型配置', () => {
     expect((res as { error: string }).error).toContain('temperature')
   })
 
+  it('400 的 temperature 错误即使 body 带 this model 也不报模型名不对', async () => {
+    // Moonshot kimi-k3：`invalid temperature: only 1 is allowed for this model`。
+    // /model/i 会命中「this model」，把人推去改模型名——那是说错，不是说笼统。
+    const { ports, deps } = setupTest(throwing(
+      '模型接口返回 400: {"error":{"message":"invalid temperature: only 1 is allowed for this model","type":"invalid_request_error"}}',
+    ))
+    const res = await handle(ports, DEFAULT_TEST_REQ, deps)
+    expect(res).toMatchObject({ ok: false, reason: 'network' })
+    expect((res as { error: string }).error).toContain('temperature')
+  })
+
   it('英文语境下的 404 同样报 model', async () => {
     const { ports, deps } = setupTest(throwing('Model API returned 404: {"error":"model not found"}'))
     const res = await handle(ports, DEFAULT_TEST_REQ, deps)
