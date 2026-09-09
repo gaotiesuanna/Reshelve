@@ -4,7 +4,7 @@ import { currentLocale, t } from '@/i18n'
 import { isModelConfigured } from '@/llm/config'
 import { useStore } from '../store'
 import { EndpointCard, domainOf } from './EndpointCard'
-import { CloseIcon, PlusIcon } from './icons'
+import { CloseIcon, GithubIcon, PlusIcon } from './icons'
 import { PRESETS, endpointKey } from '@/storage/settings'
 import type { Endpoint, Settings } from '@/storage/settings'
 import { REPO_HANDLE, REPO_URL, extensionVersion } from '../lib/about'
@@ -259,21 +259,21 @@ export function SettingsPanel() {
 
       {/* 关于：版本号 + 仓库地址。地址同时是商店审核动线的一部分——
           「隐私权」页的主机权限文案里就附了指向 permissions.ts 的链接。 */}
-      <section className="space-y-1 border-t border-neutral-200 pt-5">
+      <section className="space-y-2 border-t border-neutral-200 pt-5">
         <h3 className="text-base leading-body font-medium">{t('settingsAboutTitle')}</h3>
         <p className="text-sm leading-relaxed text-neutral-500">
           {version === '' ? null : <><span>{t('settingsAboutVersion', version)}</span>{' · '}</>}
           {t('settingsAboutSource')}
-          {' '}
-          <a
-            href={REPO_URL}
-            target="_blank"
-            rel="noreferrer"
-            className="rounded-sm text-neutral-600 underline underline-offset-2 transition-colors duration-150 hover:text-neutral-900 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-neutral-400 motion-reduce:transition-none"
-          >
-            {REPO_HANDLE}
-          </a>
         </p>
+        <a
+          href={REPO_URL}
+          target="_blank"
+          rel="noreferrer"
+          className="inline-flex items-center gap-1.5 rounded-md border border-neutral-300 px-2.5 py-1 text-sm font-medium text-neutral-700 transition-colors duration-150 hover:border-neutral-400 hover:bg-neutral-100 hover:text-neutral-900 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-neutral-400 motion-reduce:transition-none"
+        >
+          <GithubIcon className="h-4 w-4" />
+          {REPO_HANDLE}
+        </a>
       </section>
     </div>
   )
