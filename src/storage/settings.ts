@@ -3,6 +3,7 @@ import { clampTopDomainCount, DEFAULT_TOP_DOMAINS } from '@/core/domains'
 import type { CachedClassification } from '@/core/types'
 import type { Locale, UiLocale } from '@/core/locale'
 import type { LlmConfig } from '@/llm/client'
+import { isModelConfigured } from '@/llm/config'
 
 // 前缀停在 tidymark 不是漏改：1.1.0 之前扩展叫 TidyMark，这两个键里存着已装用户的
 // 模型端点、API Key 和偏好。改前缀等于换了一把钥匙去开同一个抽屉——读不到旧值，用户
@@ -130,6 +131,26 @@ export function activeLlm(settings: Settings): LlmConfig {
   if (endpoint === null) return fallback
   if (!endpoint.models.includes(settings.active.model)) return fallback
   return { baseUrl: endpoint.baseUrl, apiKey: endpoint.apiKey, model: settings.active.model }
+}
+
+/**
+ * active 指空（或指向一条没配完的端点）、而配置里已经出现了能用的「端点 × 模型」时，
+ * 自动落到第一个能用的组合。
+ *
+ * 「当前用哪个模型」不该以「在设置页点过一次黑点」为前提：偏好页的下拉列的是全部
+ * 配好的组合，配置好了就该立即可选；黑点从此只是「当前项」的指示器。只在写入设置
+ * 的那几处调用（SettingsPanel 的 replaceEndpoint / applyPreset）——读侧 activeLlm
+ * 的兜底语义不动，它的六个消费方依旧靠「不一致就退回空 Key」判「还没配置」。
+ */
+export function ensureActive(settings: Settings): Settings {
+  if (isModelConfigured(activeLlm(settings))) return settings
+  for (const endpoint of settings.endpoints) {
+    const model = endpoint.models[0]
+    if (model === undefined) continue
+    if (!isModelConfigured({ baseUrl: endpoint.baseUrl, apiKey: endpoint.apiKey, model })) continue
+    return { ...settings, active: { baseUrl: endpoint.baseUrl, model } }
+  }
+  return settings
 }
 
 /**

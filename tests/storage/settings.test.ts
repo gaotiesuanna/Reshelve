@@ -1,7 +1,8 @@
 import { describe, it, expect } from 'vitest'
 import {
   SETTINGS_KEY, loadSettings, saveSettings, loadCache, saveCache, DEFAULT_SETTINGS,
-  MAX_CACHE_ENTRIES, PRESETS, DEFAULT_MODEL, endpointKey, activeLlm, type Endpoint, type Settings,
+  MAX_CACHE_ENTRIES, PRESETS, DEFAULT_MODEL, endpointKey, activeLlm, ensureActive,
+  type Endpoint, type Settings,
 } from '@/storage/settings'
 import { isLocalBaseUrl, isModelConfigured } from '@/llm/config'
 import { createFakeStorage } from '../fakes/fake-storage'
@@ -461,6 +462,68 @@ describe('activeLlm', () => {
   it('兜底的 baseUrl 不是本机地址', () => {
     const llm = activeLlm(withEndpoints([], { baseUrl: '', model: '' }))
     expect(isLocalBaseUrl(llm.baseUrl)).toBe(false)
+  })
+})
+
+describe('ensureActive', () => {
+  const base = {
+    removeEmptyFolders: true, domainGroups: [], rewriteGithubTitles: false,
+    onlyLooseInAdditive: false,
+    uiLocale: 'auto' as const,
+    topDomainCount: 15,
+  }
+  const withEndpoints = (
+    endpoints: Endpoint[], active: { baseUrl: string; model: string },
+  ): Settings => ({ ...base, endpoints, active })
+
+  // 用户已经选过，配置又没坏——自动兜底绝不能盖掉人的选择
+  it('active 已经指向配好的组合时原样不动', () => {
+    const settings = withEndpoints(
+      [{ baseUrl: 'https://x/v1', apiKey: 'sk-x', models: ['a', 'b'] }],
+      { baseUrl: 'https://x/v1', model: 'b' },
+    )
+    expect(ensureActive(settings)).toBe(settings)
+  })
+
+  // 核心诉求：配置好了就行，不该再要求去设置页点一次黑点
+  it('active 空着、存在配好的端点时，落到第一个配好组合的第一个模型', () => {
+    const settings = withEndpoints(
+      [
+        { baseUrl: 'https://empty/v1', apiKey: '', models: ['m'] },
+        { baseUrl: 'https://x/v1', apiKey: 'sk-x', models: ['a', 'b'] },
+      ],
+      { baseUrl: '', model: '' },
+    )
+    expect(ensureActive(settings).active).toEqual({ baseUrl: 'https://x/v1', model: 'a' })
+  })
+
+  it('active 指的端点没填 Key、另一条配好了时，换到配好的那条', () => {
+    const settings = withEndpoints(
+      [
+        { baseUrl: 'https://nokey/v1', apiKey: '', models: ['m'] },
+        { baseUrl: 'https://x/v1', apiKey: 'sk-x', models: ['a'] },
+      ],
+      { baseUrl: 'https://nokey/v1', model: 'm' },
+    )
+    expect(ensureActive(settings).active).toEqual({ baseUrl: 'https://x/v1', model: 'a' })
+  })
+
+  it('一条端点都没配好时 active 不动', () => {
+    const settings = withEndpoints(
+      [{ baseUrl: 'https://x/v1', apiKey: '', models: ['a'] }],
+      { baseUrl: '', model: '' },
+    )
+    expect(ensureActive(settings)).toBe(settings)
+  })
+
+  // README 明确支持本机 Ollama：空 Key 的本机端点算配好了（isModelConfigured 放行）
+  it('本机端点空 Key 也算配好，照样能落', () => {
+    const settings = withEndpoints(
+      [{ baseUrl: 'http://localhost:11434/v1', apiKey: '', models: ['qwen2.5'] }],
+      { baseUrl: '', model: '' },
+    )
+    expect(ensureActive(settings).active)
+      .toEqual({ baseUrl: 'http://localhost:11434/v1', model: 'qwen2.5' })
   })
 })
 

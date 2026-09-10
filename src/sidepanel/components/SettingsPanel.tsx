@@ -5,7 +5,7 @@ import { isModelConfigured } from '@/llm/config'
 import { useStore } from '../store'
 import { EndpointCard, domainOf } from './EndpointCard'
 import { CloseIcon, PlusIcon } from './icons'
-import { PRESETS, endpointKey } from '@/storage/settings'
+import { PRESETS, endpointKey, ensureActive } from '@/storage/settings'
 import type { Endpoint, Settings } from '@/storage/settings'
 
 function replaceEndpoint(settings: Settings, index: number, next: Endpoint): Settings {
@@ -110,7 +110,7 @@ export function SettingsPanel() {
    * 等于把「还差一步」藏进了一个看不出还差一步的界面。
    */
   const pickPreset = (preset: (typeof PRESETS)[number]): void => {
-    void setSettings(applyPreset(settings, preset))
+    void setSettings(ensureActive(applyPreset(settings, preset)))
     setJustAdded({ key: endpointKey(preset.baseUrl), seq: (justAdded?.seq ?? 0) + 1 })
     setPicking(false)
   }
@@ -137,7 +137,7 @@ export function SettingsPanel() {
                   : null
               }
               initialEditing={endpoint.baseUrl === '' || fresh}
-              onChange={(next) => void setSettings(replaceEndpoint(settings, index, next))}
+              onChange={(next) => void setSettings(ensureActive(replaceEndpoint(settings, index, next)))}
               onDelete={() => void setSettings(removeEndpoint(settings, index))}
               onPick={(model) => void setSettings({
                 ...settings, active: { baseUrl: endpoint.baseUrl, model },

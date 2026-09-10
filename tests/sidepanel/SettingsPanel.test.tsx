@@ -168,6 +168,36 @@ describe('SettingsPanel 模型配置', () => {
     expect(added.models).toEqual(['qwen2.5'])
   })
 
+  // 配好了就该能用：active 不该要求人去点一次黑点才有值——点本地预设进来就是
+  // 完整的一套配置，active 自动落到它，偏好页的下拉立刻就能用
+  it('点本机预设后 active 自动落过去，不用再点黑点', async () => {
+    render(<SettingsPanel />)
+    await userEvent.click(screen.getByRole('button', { name: '加一个端点' }))
+    fireEvent.click(screen.getByRole('button', { name: /^本地 Ollama/ }))
+    expect(useStore.getState().settings.active)
+      .toEqual({ baseUrl: 'http://localhost:11434/v1', model: 'qwen2.5' })
+  })
+
+  // 同一条自动兜底走 onChange 这条接线：给配好 Key 的端点加上第一个模型，
+  // active 就该自己长出来
+  it('给配好的端点加上第一个模型，active 自动落过去', async () => {
+    useStore.setState({
+      settings: {
+        ...DEFAULT_SETTINGS,
+        endpoints: [{ baseUrl: 'https://x/v1', apiKey: 'sk-x', models: [] }],
+        active: { baseUrl: '', model: '' },
+      },
+    })
+    render(<SettingsPanel />)
+    await userEvent.click(screen.getByRole('button', { name: t('settingsEndpointEdit') }))
+    await userEvent.click(screen.getByRole('button', { name: t('settingsModelAdd') }))
+    const input = screen.getByPlaceholderText(t('settingsModelAdd'))
+    fireEvent.change(input, { target: { value: 'glm-5.2' } })
+    fireEvent.keyDown(input, { key: 'Enter' })
+    expect(useStore.getState().settings.active)
+      .toEqual({ baseUrl: 'https://x/v1', model: 'glm-5.2' })
+  })
+
   // Key 已经填好的端点上再点一次同一个预设，模型名该并进去——那条端点当下就能用
   it('Key 填好的端点上点预设，模型名照并不误', async () => {
     const filled: Endpoint = {
