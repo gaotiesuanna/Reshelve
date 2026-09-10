@@ -239,12 +239,17 @@ describe('Shell 换成完整标签页', () => {
     expect(screen.getByRole('button', { name: '在完整标签页中打开' })).toBeDefined()
   })
 
-  it('点击把当前模式带给后台，由后台开标签页并关掉侧栏', async () => {
-    useStore.setState({ mode: 'dashboard' })
+  it('点击把当前模式、步骤和勾选带给后台，由后台开标签页并关掉侧栏', async () => {
+    useStore.setState({ mode: 'organize', step: 'preferences', checkedIds: new Set(['1', '10']) })
     render(<Shell organizeContent={<div>步骤内容</div>}>{null}</Shell>)
     await userEvent.click(screen.getByRole('button', { name: '在完整标签页中打开' }))
     expect(sendMessage).toHaveBeenCalledWith(
-      expect.objectContaining({ kind: 'open_app_tab', mode: 'dashboard' }),
+      expect.objectContaining({
+        kind: 'open_app_tab',
+        mode: 'organize',
+        step: 'preferences',
+        checkedIds: ['1', '10'],
+      }),
     )
   })
 

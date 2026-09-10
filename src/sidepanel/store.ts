@@ -848,9 +848,16 @@ export const useStore = create<State>((set, get) => ({
     // 接回的方式与广播同一条路（adoptRunningTask / adoptFinishedTask）。
     const taskRes = await send({ kind: 'get_task' })
     const record = taskRes.ok && taskRes.kind === 'get_task' ? (taskRes.record ?? null) : null
-    if (record === null) return
-    if (record.status === 'running' || record.status === 'cancelling') get().adoptRunningTask(record)
-    else void get().adoptFinishedTask(record)
+    if (record !== null) {
+      if (record.status === 'running' || record.status === 'cancelling') get().adoptRunningTask(record)
+      else await get().adoptFinishedTask(record)
+    }
+    // 「换成完整标签页」只带得动 URL 上的 step / 勾选，扫描结果在侧栏内存里。
+    // 停在偏好页却没有 scan 时补一次：PreferencesStep 没扫描结果会整页 return null。
+    const { step, scan, checkedIds } = get()
+    if (step !== 'preferences' || scan !== null || checkedIds.size === 0) return
+    const scanRes = await send({ kind: 'scan', scopeRootIds: [...checkedIds] })
+    if (scanRes.ok && scanRes.kind === 'scan') set({ scan: scanRes.scan })
   },
 
   toggle(id) {

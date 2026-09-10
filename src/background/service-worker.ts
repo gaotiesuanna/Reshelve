@@ -133,9 +133,11 @@ chrome.runtime.onMessage.addListener((message: PanelRequest, _sender, sendRespon
   if (message.kind === 'open_app_tab') {
     const url = new URL(chrome.runtime.getURL('src/sidepanel/index.html'))
     // view=tab 给标签页形态一个能被自己读到的标记（按钮因此收起），
-    // mode 让新页面落在侧栏正停在的那个模式上，「换过去」而不是「重新打开」。
+    // mode / step / ids 让新页面落在侧栏正停在的位置上，「换过去」而不是「重新打开」。
     url.searchParams.set('view', 'tab')
     url.searchParams.set('mode', message.mode)
+    url.searchParams.set('step', message.step)
+    if (message.checkedIds.length > 0) url.searchParams.set('ids', message.checkedIds.join(','))
     void (async () => {
       await chrome.tabs.create({ url: url.toString() })
       // 侧栏没有 close API，关它的唯一办法是禁用再立刻启用。

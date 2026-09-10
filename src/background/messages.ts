@@ -126,11 +126,12 @@ export type Response =
  * - open_app_tab 把侧栏换成完整标签页：侧栏没有 close API，唯一关法是
  *   sidePanel.enabled 先关后开，而面板一关侧栏页面就被卸载——让侧栏自己做，
  *   「再启用」那一步永远轮不到执行，扩展图标从此点了没反应。
- *   mode 只作透传（写进标签页 URL），所以是裸 string，合法性由侧栏那边校验。
+ *   mode / step / checkedIds 只作透传（写进标签页 URL），所以是裸 string，
+ *   合法性由侧栏那边校验。
  */
 export type ControlRequest =
   | { kind: 'get_task' }
   | { kind: 'clear_task' }
-  | { kind: 'open_app_tab'; mode: string }
+  | { kind: 'open_app_tab'; mode: string; step: string; checkedIds: string[] }
 
 export type PanelRequest = Request | ControlRequest

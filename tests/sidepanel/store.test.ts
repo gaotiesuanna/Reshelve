@@ -1272,6 +1272,36 @@ describe('后台任务的接回', () => {
       expect([...state.accepted]).toEqual(plan.rows.map((r) => r.bookmarkId))
     })
 
+    it('带着偏好步骤和勾选进来：补一次扫描，不停在范围页', async () => {
+      const scan = {
+        bookmarks: [],
+        folders: [],
+        stats: {
+          totalBookmarks: 0, totalFolders: 0, emptyFolders: 0,
+          untitledBookmarks: 0, duplicateUrlGroups: 0, maxDepth: 0, duplicateFolderGroups: 0,
+        },
+      }
+      useStore.setState({ step: 'preferences', checkedIds: new Set(['1']), scan: null })
+      vi.mocked(send).mockImplementation((req: { kind: string }) => {
+        if (req.kind === 'scan') return Promise.resolve({ ok: true, kind: 'scan', scan }) as never
+        if (req.kind === 'get_task') return Promise.resolve({ ok: true, kind: 'get_task', record: null }) as never
+        if (req.kind === 'get_tree') return Promise.resolve({ ok: true, kind: 'get_tree', tree: [] }) as never
+        if (req.kind === 'get_settings') {
+          return Promise.resolve({ ok: true, kind: 'get_settings', settings: DEFAULT_SETTINGS }) as never
+        }
+        if (req.kind === 'get_undo_state') {
+          return Promise.resolve({ ok: true, kind: 'get_undo_state', available: false, createdAt: null }) as never
+        }
+        return Promise.resolve({ ok: true }) as never
+      })
+
+      await useStore.getState().init()
+
+      const state = useStore.getState()
+      expect(state.step).toBe('preferences')
+      expect(state.scan).toEqual(scan)
+    })
+
     it('有一轮被回收中断的 analyze：红条解释、analyze 可重试（有缓存，重试快）', async () => {
       stubInit(taskRecord({ status: 'interrupted', error: '后台没了', finishedAt: 2 }))
 

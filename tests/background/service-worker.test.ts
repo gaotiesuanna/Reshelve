@@ -456,20 +456,32 @@ describe('收尾落盘', () => {
  * 顺序是这条功能的命根——先禁用再启用，缺了后者扩展图标从此点了没反应。
  */
 describe('换成完整标签页', () => {
-  it('开带 view/mode 参数的标签页，并先禁用再启用侧栏把它关上', async () => {
-    const response = await sendAsync({ kind: 'open_app_tab', mode: 'dashboard' })
+  it('开带 view/mode/step/ids 参数的标签页，并先禁用再启用侧栏把它关上', async () => {
+    const response = await sendAsync({
+      kind: 'open_app_tab',
+      mode: 'organize',
+      step: 'preferences',
+      checkedIds: ['1', '10'],
+    })
 
     expect(response).toEqual({ ok: true, kind: 'open_app_tab' })
     expect(openedUrls).toHaveLength(1)
     const url = new URL(openedUrls[0]!)
     expect(url.searchParams.get('view')).toBe('tab')
-    expect(url.searchParams.get('mode')).toBe('dashboard')
+    expect(url.searchParams.get('mode')).toBe('organize')
+    expect(url.searchParams.get('step')).toBe('preferences')
+    expect(url.searchParams.get('ids')).toBe('1,10')
     expect(panelToggles).toEqual([false, true])
   })
 
   it('不占独占槽：分析跑着的时候也能换', async () => {
     send({ kind: 'analyze', scopeRootIds: ['1'] })
-    const response = await sendAsync({ kind: 'open_app_tab', mode: 'organize' })
+    const response = await sendAsync({
+      kind: 'open_app_tab',
+      mode: 'organize',
+      step: 'preferences',
+      checkedIds: ['1'],
+    })
     expect(response).toEqual({ ok: true, kind: 'open_app_tab' })
   })
 })

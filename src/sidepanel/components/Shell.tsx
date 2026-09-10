@@ -45,6 +45,7 @@ export function Shell({ children, organizeContent }: { children: ReactNode; orga
     openSettings,
     closeSettings,
     cleanupScan,
+    checkedIds,
   } = useStore()
   return (
     <div className="flex h-full flex-col bg-white text-neutral-800">
@@ -96,7 +97,7 @@ export function Shell({ children, organizeContent }: { children: ReactNode; orga
               // 已经在完整标签页里就不给这颗按钮——再点只会多开一个一模一样的标签。
               {...(isTabView()
                 ? {}
-                : { openInTabLabel: t('openInTabLabel'), onOpenInTab: () => void openAppInTab(mode) })}
+                : { openInTabLabel: t('openInTabLabel'), onOpenInTab: () => void openAppInTab({ mode, step, checkedIds: [...checkedIds] }) })}
               onSelect={setMode}
               onOpenSettings={openSettings}
             />
