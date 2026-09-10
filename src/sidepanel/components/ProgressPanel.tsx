@@ -22,6 +22,16 @@ export function ProgressPanel({ busy, progress, logs, onCancel }: Props) {
   const autoExpanded = useRef(false)
   const bottom = useRef<HTMLDivElement>(null)
 
+  const wasBusy = useRef(false)
+  // 开跑自动展开一次：点了「开始」的人要看到的就是它在干什么。只在 null→非空
+  // 这个沿上触发——运行途中用户手动折起来，后来的日志不再把它顶开。
+  // 挂载时 busy 已非空（重开侧栏接回正在跑的任务）同样算开跑。
+  useEffect(() => {
+    const running = busy !== null
+    if (running && !wasBusy.current) setExpanded(true)
+    wasBusy.current = running
+  }, [busy])
+
   const hasError = logs.some((line) => line.level === 'error')
   // 出错时自动展开一次，之后仍尊重用户的手动折叠
   useEffect(() => {

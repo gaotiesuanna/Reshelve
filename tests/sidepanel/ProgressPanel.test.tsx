@@ -27,14 +27,44 @@ describe('ProgressPanel', () => {
     expect(screen.getByText('分类 320/923')).toBeDefined()
   })
 
-  it('默认折叠，只显示最新一行日志', () => {
+  it('开跑时自动展开：busy 从 null 变成非空，全部日志直接可见', () => {
+    const { rerender } = render(<ProgressPanel busy={null} progress={null} logs={[]} />)
+    rerender(<ProgressPanel busy="正在分析…" progress={null} logs={logs} />)
+    expect(screen.getByText(/标签批次 1\/2/)).toBeDefined()
+    expect(screen.getByText('运行日志（2 条）')).toBeDefined()
+  })
+
+  // 重开侧栏接回一轮正在跑的任务时 busy 一开始就是非空，同样算「开跑」
+  it('接回正在跑的任务（挂载时 busy 已非空）也自动展开', () => {
     render(<ProgressPanel busy="正在分析…" progress={null} logs={logs} />)
+    expect(screen.getByText(/标签批次 1\/2/)).toBeDefined()
+  })
+
+  // 自动展开只负责「顶开」那一次；用户在运行途中折起来，后来的日志不再顶开它
+  it('运行中手动折叠后，新日志不再把它顶开', async () => {
+    const { rerender } = render(<ProgressPanel busy="正在分析…" progress={null} logs={logs} />)
+    await userEvent.click(screen.getByRole('button', { name: '收起运行日志' }))
+    expect(screen.queryByText(/标签批次 1\/2/)).toBeNull()
+    rerender(
+      <ProgressPanel
+        busy="正在分析…"
+        progress={null}
+        logs={[...logs, { id: 3, phase: 'classify', level: 'info', message: '分类批次 2/2：23 条' }]}
+      />,
+    )
+    expect(screen.queryByText(/标签批次 1\/2/)).toBeNull()
+  })
+
+  // 跑完留下的日志保持折叠的一行视图：跑完了，没人需要一屏历史
+  it('空闲时的残留日志默认折叠，只显示最新一行', () => {
+    render(<ProgressPanel busy={null} progress={null} logs={logs} />)
     expect(screen.getByText('分类批次 1/2：25 条，成功 25 条')).toBeDefined()
     expect(screen.queryByText('标签批次 1/2：25 条')).toBeNull()
   })
 
-  it('展开后显示全部日志', async () => {
-    render(<ProgressPanel busy="正在分析…" progress={null} logs={logs} />)
+  // 自动展开只管开跑那一下；空闲残留的日志仍是折叠的一行视图，手动展开照样可用
+  it('空闲残留日志手动展开后显示全部日志', async () => {
+    render(<ProgressPanel busy={null} progress={null} logs={logs} />)
     await userEvent.click(screen.getByRole('button', { name: '展开运行日志' }))
     expect(screen.getByText(/标签批次 1\/2/)).toBeDefined()
     expect(screen.getByText('运行日志（2 条）')).toBeDefined()
