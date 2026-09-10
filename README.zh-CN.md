@@ -7,24 +7,24 @@
 [English](README.md) | 简体中文
 
 <p align="center">
-  <img src="docs/posters/reshelve-organize.webp" alt="Reshelve 把散乱的书签整理成清晰有序的书架。" width="100%">
+  <img src="readme/posters/reshelve-organize.webp" alt="Reshelve 把散乱的书签整理成清晰有序的书架。" width="100%">
 </p>
 
 Reshelve 整理的是你**原生的 Chrome 书签**，而不是另起炉灶的一套东西。整理完成后，书签栏还是那个书签栏，跨设备同步也和以前一样正常工作。
 
 <p align="center">
-  <img src="docs/screenshots/zh/1-scope.png" alt="范围由你圈定。没勾选的文件夹既不会被读取，也不会被改动。" width="880">
+  <img src="readme/screenshots/zh/1-scope.png" alt="范围由你圈定。没勾选的文件夹既不会被读取，也不会被改动。" width="880">
 </p>
 
 <p align="center">
-  <img src="docs/screenshots/zh/2-preview.png" alt="逐条审查，逐条拒绝。每条移动都会列出原来在哪、要去哪、为什么。" width="880">
+  <img src="readme/screenshots/zh/2-preview.png" alt="逐条审查，逐条拒绝。每条移动都会列出原来在哪、要去哪、为什么。" width="880">
 </p>
 
 
 ## 说了算的是你，不是 AI
 
 <p align="center">
-  <img src="docs/posters/reshelve-control.webp" alt="每条书签移动都可以预览、确认或撤销。" width="100%">
+  <img src="readme/posters/reshelve-control.webp" alt="每条书签移动都可以预览、确认或撤销。" width="100%">
 </p>
 
 - **范围由你划定。** 勾选你想整理的文件夹。没勾选的文件夹既不会被读取，也不会被改动——不会有书签从里面搬走，也不会有书签搬进去。
@@ -69,15 +69,15 @@ Reshelve 没有服务器。你把它指向你自己的接口：
 - **统计**按域名排行你的收藏来源。按访问次数排行是可选的，而且只有你按下那个按钮时才会申请浏览记录权限。
 
 <p align="center">
-  <img src="docs/screenshots/zh/3-cleanup.png" alt="清理不用模型。去重、空文件夹、失效链接、长期未打开的书签。" width="880">
+  <img src="readme/screenshots/zh/3-cleanup.png" alt="清理不用模型。去重、空文件夹、失效链接、长期未打开的书签。" width="880">
 </p>
 
 <p align="center">
-  <img src="docs/screenshots/zh/4-stale.png" alt="找回你存了就忘的书签。按上次打开时间分桶，不读浏览记录。" width="880">
+  <img src="readme/screenshots/zh/4-stale.png" alt="找回你存了就忘的书签。按上次打开时间分桶，不读浏览记录。" width="880">
 </p>
 
 <p align="center">
-  <img src="docs/screenshots/zh/5-stats.png" alt="书签到底来自哪里。也可以按访问次数排行。" width="880">
+  <img src="readme/screenshots/zh/5-stats.png" alt="书签到底来自哪里。也可以按访问次数排行。" width="880">
 </p>
 
 

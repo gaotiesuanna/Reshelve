@@ -7,7 +7,7 @@ Reorganize your Chrome bookmarks with AI — every change is previewed, confirme
 English | [简体中文](README.zh-CN.md)
 
 <p align="center">
-  <img src="docs/posters/reshelve-organize.webp" alt="Reshelve turns scattered bookmarks into an organized library." width="100%">
+  <img src="readme/posters/reshelve-organize.webp" alt="Reshelve turns scattered bookmarks into an organized library." width="100%">
 </p>
 
 Reshelve reorganizes your **native Chrome bookmarks**, not some separate system. When it's
@@ -15,18 +15,18 @@ done, your bookmarks bar is still your bookmarks bar, and sync across your devic
 exactly as before.
 
 <p align="center">
-  <img src="docs/screenshots/en/1-scope.png" alt="You pick the scope. Unchecked folders are never read and never modified." width="880">
+  <img src="readme/screenshots/en/1-scope.png" alt="You pick the scope. Unchecked folders are never read and never modified." width="880">
 </p>
 
 <p align="center">
-  <img src="docs/screenshots/en/2-preview.png" alt="Review every move. Cancel any of them individually, or by confidence." width="880">
+  <img src="readme/screenshots/en/2-preview.png" alt="Review every move. Cancel any of them individually, or by confidence." width="880">
 </p>
 
 
 ## You're in control, not the AI
 
 <p align="center">
-  <img src="docs/posters/reshelve-control.webp" alt="Preview, confirm, or undo every proposed bookmark move." width="100%">
+  <img src="readme/posters/reshelve-control.webp" alt="Preview, confirm, or undo every proposed bookmark move." width="100%">
 </p>
 
 - **You choose the scope.** Check the folders you want reorganized. Unchecked folders are
@@ -98,15 +98,15 @@ Full policy: [Privacy Policy / 隐私权政策](https://gist.github.com/gaotiesu
   asks for history permission only if you press that button.
 
 <p align="center">
-  <img src="docs/screenshots/en/3-cleanup.png" alt="No model needed. Duplicates, empty folders, dead links, and bookmarks you stopped opening." width="880">
+  <img src="readme/screenshots/en/3-cleanup.png" alt="No model needed. Duplicates, empty folders, dead links, and bookmarks you stopped opening." width="880">
 </p>
 
 <p align="center">
-  <img src="docs/screenshots/en/4-stale.png" alt="Find what you saved and forgot. Bucketed by last-opened time, no browsing history." width="880">
+  <img src="readme/screenshots/en/4-stale.png" alt="Find what you saved and forgot. Bucketed by last-opened time, no browsing history." width="880">
 </p>
 
 <p align="center">
-  <img src="docs/screenshots/en/5-stats.png" alt="See where your bookmarks come from. Optionally ranked by how often you visit." width="880">
+  <img src="readme/screenshots/en/5-stats.png" alt="See where your bookmarks come from. Optionally ranked by how often you visit." width="880">
 </p>
 
 
