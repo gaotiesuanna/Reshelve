@@ -119,10 +119,29 @@ export function SettingsPanel() {
 
   return (
     <div className="space-y-6">
-      {/* 模型配置摆最前：新用户来设置页就是为了它。
-          标题已经在 Shell 头部和返回同一行，这里不再写一遍。
+      {/* 关于：版本号 + 仓库地址，摆最上面——沉底得滚到底才看得见，等于没有。
+          地址同时是商店审核动线的一部分——「隐私权」页的主机权限文案里就附了
+          指向 permissions.ts 的链接。 */}
+      <section className="space-y-2">
+        <h3 className="text-base leading-body font-medium">{t('settingsAboutTitle')}</h3>
+        <p className="text-sm leading-relaxed text-neutral-500">
+          {version === '' ? null : <><span>{t('settingsAboutVersion', version)}</span>{' · '}</>}
+          {t('settingsAboutSource')}
+        </p>
+        <a
+          href={REPO_URL}
+          target="_blank"
+          rel="noreferrer"
+          className="inline-flex items-center gap-1.5 rounded-md border border-neutral-300 px-2.5 py-1 text-sm font-medium text-neutral-700 transition-colors duration-150 hover:border-neutral-400 hover:bg-neutral-100 hover:text-neutral-900 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-neutral-400 motion-reduce:transition-none"
+        >
+          <GithubIcon className="h-4 w-4" />
+          {REPO_HANDLE}
+        </a>
+      </section>
+
+      {/* 标题已经在 Shell 头部和返回同一行，这里不再写一遍。
           外框去掉：端点卡自己有边，再套一层就是框套框。 */}
-      <section className="space-y-3">
+      <section className="space-y-3 border-t border-neutral-200 pt-5">
         <h3 className="text-base leading-body font-medium">{t('settingsModelTitle')}</h3>
 
 
@@ -255,25 +274,6 @@ export function SettingsPanel() {
             </span>
           </span>
         </label>
-      </section>
-
-      {/* 关于：版本号 + 仓库地址。地址同时是商店审核动线的一部分——
-          「隐私权」页的主机权限文案里就附了指向 permissions.ts 的链接。 */}
-      <section className="space-y-2 border-t border-neutral-200 pt-5">
-        <h3 className="text-base leading-body font-medium">{t('settingsAboutTitle')}</h3>
-        <p className="text-sm leading-relaxed text-neutral-500">
-          {version === '' ? null : <><span>{t('settingsAboutVersion', version)}</span>{' · '}</>}
-          {t('settingsAboutSource')}
-        </p>
-        <a
-          href={REPO_URL}
-          target="_blank"
-          rel="noreferrer"
-          className="inline-flex items-center gap-1.5 rounded-md border border-neutral-300 px-2.5 py-1 text-sm font-medium text-neutral-700 transition-colors duration-150 hover:border-neutral-400 hover:bg-neutral-100 hover:text-neutral-900 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-neutral-400 motion-reduce:transition-none"
-        >
-          <GithubIcon className="h-4 w-4" />
-          {REPO_HANDLE}
-        </a>
       </section>
     </div>
   )
