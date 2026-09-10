@@ -260,6 +260,21 @@ describe('Shell 换成完整标签页', () => {
     // 导航其余部分照常：按钮只是收起，不是整条索引栏让位
     expect(screen.getByRole('tab', { name: 'AI 整理' })).toBeDefined()
   })
+
+  // 完整标签页动不动一千五六百像素宽，内容铺满没法看：收进居中的限宽列，
+  // 两侧露出页面背景。侧栏本就三四百像素，不需要这根管子
+  it('标签页形态把内容收进居中限宽列，侧栏形态不收', () => {
+    const { unmount } = render(<Shell organizeContent={<div>步骤内容</div>}>{null}</Shell>)
+    expect(screen.queryByTestId('tab-view-column')).toBeNull()
+    unmount()
+
+    window.history.pushState({}, '', '/?view=tab')
+    render(<Shell organizeContent={<div>步骤内容</div>}>{null}</Shell>)
+    const column = screen.getByTestId('tab-view-column')
+    expect(column.className).toContain('max-w-')
+    expect(column.className).toContain('mx-auto')
+    window.history.pushState({}, '', '/')
+  })
 })
 
 /**
