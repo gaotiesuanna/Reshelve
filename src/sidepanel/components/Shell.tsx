@@ -2,7 +2,8 @@ import type { ReactNode } from 'react'
 import { t } from '@/i18n'
 import { useStore, type AppMode, type Step } from '../store'
 import { isTabView, openAppInTab } from '../lib/openInTab'
-import { AlertIcon, ChevronLeftIcon } from './icons'
+import { REPO_URL } from '../lib/about'
+import { AlertIcon, ChevronLeftIcon, GithubIcon } from './icons'
 import { IndexNavigation, type IndexNavigationItem } from './IndexNavigation'
 import { ProgressPanel } from './ProgressPanel'
 import { SettingsPanel } from './SettingsPanel'
@@ -73,6 +74,18 @@ export function Shell({ children, organizeContent }: { children: ReactNode; orga
               </button>
               <span aria-hidden className="h-4 border-l border-index-line" />
               <h2 className="text-sm leading-body font-semibold text-index-ink">{t('settingsTitle')}</h2>
+              {/* 仓库入口就这一个图标，贴在设置标题行的右端——
+                  曾经是一整块「关于」区，用户反馈一个可点图标就够。 */}
+              <a
+                href={REPO_URL}
+                target="_blank"
+                rel="noreferrer"
+                aria-label={t('settingsAboutSource')}
+                title={t('settingsAboutSource')}
+                className="ml-auto inline-flex h-8 w-8 items-center justify-center rounded-md text-index-muted transition-colors duration-150 hover:text-index-ink focus-visible:outline focus-visible:outline-2 focus-visible:outline-index-blue motion-reduce:transition-none"
+              >
+                <GithubIcon className="h-4 w-4" />
+              </a>
             </div>
           ) : (
             <IndexNavigation

@@ -7,9 +7,9 @@ import { REPO_URL } from '@/sidepanel/lib/about'
 const manifest = manifestConfig as { homepage_url?: string; version: string }
 
 describe('manifest.config', () => {
-  // 仓库地址此刻散落在三处：manifest 的 homepage_url、设置页「关于」区、docs/publishing.md
-  // 的审核文案。改名时若漏掉一处，chrome://extensions 的「访问网站」会指向 404。
-  it('homepage_url 与设置页「关于」区用的是同一个仓库地址', () => {
+  // 仓库地址此刻散落在三处：manifest 的 homepage_url、设置页头部的 GitHub 图标、
+  // docs/publishing.md 的审核文案。改名时若漏掉一处，chrome://extensions 的「访问网站」会指向 404。
+  it('homepage_url 与设置页头部 GitHub 图标用的是同一个仓库地址', () => {
     expect(manifest.homepage_url).toBe(REPO_URL)
   })
 })

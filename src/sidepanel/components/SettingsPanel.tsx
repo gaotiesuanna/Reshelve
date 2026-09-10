@@ -4,10 +4,9 @@ import { currentLocale, t } from '@/i18n'
 import { isModelConfigured } from '@/llm/config'
 import { useStore } from '../store'
 import { EndpointCard, domainOf } from './EndpointCard'
-import { CloseIcon, GithubIcon, PlusIcon } from './icons'
+import { CloseIcon, PlusIcon } from './icons'
 import { PRESETS, endpointKey } from '@/storage/settings'
 import type { Endpoint, Settings } from '@/storage/settings'
-import { REPO_HANDLE, REPO_URL, extensionVersion } from '../lib/about'
 
 function replaceEndpoint(settings: Settings, index: number, next: Endpoint): Settings {
   const endpoints = settings.endpoints.map((e, i) => (i === index ? next : e))
@@ -87,7 +86,6 @@ const presetCard = [
 export function SettingsPanel() {
   const { settings, setSettings, resetModelTest } = useStore()
   const locale = currentLocale()
-  const version = extensionVersion()
   const [picking, setPicking] = useState(false)
   // 刚加进来的那条端点：seq 只是个换 key 的由头，让那张卡重新挂载、于是一进来就是草稿态。
   // 光记 key 不够——同一个预设连点两次时 key 没变，卡片不会重挂，第二次就没反应了。
@@ -119,29 +117,10 @@ export function SettingsPanel() {
 
   return (
     <div className="space-y-6">
-      {/* 关于：版本号 + 仓库地址，摆最上面——沉底得滚到底才看得见，等于没有。
-          地址同时是商店审核动线的一部分——「隐私权」页的主机权限文案里就附了
-          指向 permissions.ts 的链接。 */}
-      <section className="space-y-2">
-        <h3 className="text-base leading-body font-medium">{t('settingsAboutTitle')}</h3>
-        <p className="text-sm leading-relaxed text-neutral-500">
-          {version === '' ? null : <><span>{t('settingsAboutVersion', version)}</span>{' · '}</>}
-          {t('settingsAboutSource')}
-        </p>
-        <a
-          href={REPO_URL}
-          target="_blank"
-          rel="noreferrer"
-          className="inline-flex items-center gap-1.5 rounded-md border border-neutral-300 px-2.5 py-1 text-sm font-medium text-neutral-700 transition-colors duration-150 hover:border-neutral-400 hover:bg-neutral-100 hover:text-neutral-900 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-neutral-400 motion-reduce:transition-none"
-        >
-          <GithubIcon className="h-4 w-4" />
-          {REPO_HANDLE}
-        </a>
-      </section>
-
-      {/* 标题已经在 Shell 头部和返回同一行，这里不再写一遍。
+      {/* 模型配置摆最前：新用户来设置页就是为了它。
+          标题已经在 Shell 头部和返回同一行，这里不再写一遍。
           外框去掉：端点卡自己有边，再套一层就是框套框。 */}
-      <section className="space-y-3 border-t border-neutral-200 pt-5">
+      <section className="space-y-3">
         <h3 className="text-base leading-body font-medium">{t('settingsModelTitle')}</h3>
 
 

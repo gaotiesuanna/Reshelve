@@ -14,7 +14,6 @@ vi.mock('@/sidepanel/lib/send', () => ({ send: vi.fn() }))
 
 const chromeGlobal = globalThis as unknown as { chrome: Record<string, unknown> }
 const originalPermissions = chromeGlobal.chrome.permissions
-const originalRuntime = chromeGlobal.chrome.runtime
 
 beforeEach(() => {
   vi.mocked(send).mockReset()
@@ -23,8 +22,6 @@ beforeEach(() => {
     contains: vi.fn(() => Promise.resolve(true)),
     request: vi.fn(() => Promise.resolve(true)),
   }
-  // 「关于」区的版本号取自运行时 manifest；jsdom 里没有，桩一个
-  chromeGlobal.chrome.runtime = { getManifest: () => ({ version: '9.9.9' }) }
   useStore.setState({
     settingsOpen: true,
     settings: { ...DEFAULT_SETTINGS },
@@ -34,7 +31,6 @@ beforeEach(() => {
 
 afterEach(() => {
   chromeGlobal.chrome.permissions = originalPermissions
-  chromeGlobal.chrome.runtime = originalRuntime
 })
 
 /** 一份「配好了」的模型：非本机域名，走得到申请权限那一步。 */
@@ -54,18 +50,17 @@ const CONFIGURED = {
  *
  * 光扫 h3 和数字框不够——同一个文件里就摆着反例：「统一 GitHub 标题」那块 section
  * 既没有 h3 也没有 input[type=number]，一个复选框形态的分类参数照这个样子加回来，
- * 两条断言都抓不住。所以还要数 section：这一页应当恰好四块，多一块就是有东西回来了。
+ * 两条断言都抓不住。所以还要数 section：这一页应当恰好三块，多一块就是有东西回来了。
  */
 describe('SettingsPanel 分类参数', () => {
-  it('设置页恰好四块、有标题的只剩模型配置/语言/关于——分类参数整段撤走了', () => {
+  it('设置页恰好三块、有标题的只剩模型配置/语言——分类参数整段撤走了', () => {
     useStore.setState({ settings: { ...DEFAULT_SETTINGS } })
     const { container } = render(<SettingsPanel />)
-    // 恰好四块：模型配置、语言、统一 GitHub 标题、关于。数它是为了挡住「没有 h3、也没有
+    // 恰好三块：模型配置、语言、统一 GitHub 标题。数它是为了挡住「没有 h3、也没有
     // 数字框」的形态——比如一个光杆复选框，那正是被撤掉的 enforceMinFolderSize 的样子
-    expect(container.querySelectorAll('section')).toHaveLength(4)
+    expect(container.querySelectorAll('section')).toHaveLength(3)
     const headings = [...container.querySelectorAll('h3')].map((h) => h.textContent)
-    // 「关于」在第一：版本号和仓库地址沉底得滚到底才看得见，用户明确要求放最上面
-    expect(headings).toEqual([t('settingsAboutTitle'), t('settingsModelTitle'), t('settingsLangTitle')])
+    expect(headings).toEqual([t('settingsModelTitle'), t('settingsLangTitle')])
   })
 
   it('设置页里一个数字旋钮都没有——这几个数字用户无从判断，一律由书签量推导', () => {
@@ -195,28 +190,6 @@ describe('SettingsPanel 模型配置', () => {
   })
 })
 
-describe('SettingsPanel 关于', () => {
-  it('显示仓库地址，链接指向对应的 https 地址', () => {
-    render(<SettingsPanel />)
-    const link = screen.getByRole('link', { name: 'github.com/gaotiesuanna/Reshelve' })
-    expect(link).toHaveProperty('href', 'https://github.com/gaotiesuanna/Reshelve')
-    // 新标签页打开，且断掉 opener 引用
-    expect(link).toHaveProperty('target', '_blank')
-    expect(link.getAttribute('rel')).toContain('noreferrer')
-  })
-
-  it('显示运行时 manifest 里的版本号', () => {
-    render(<SettingsPanel />)
-    expect(screen.getByText(t('settingsAboutVersion', '9.9.9'))).toBeTruthy()
-  })
-
-  it('拿不到运行时版本号时，只是不显示版本那一截，仓库地址照旧', () => {
-    chromeGlobal.chrome.runtime = {}
-    render(<SettingsPanel />)
-    expect(screen.queryByText(t('settingsAboutVersion', '9.9.9'))).toBeNull()
-    expect(screen.getByRole('link', { name: 'github.com/gaotiesuanna/Reshelve' })).toBeTruthy()
-  })
-})
 
 describe('SettingsPanel 统一 GitHub 标题', () => {
   it('摆出开关，勾了写进 settings.rewriteGithubTitles', () => {

@@ -62,6 +62,19 @@ describe('Shell 设置入口', () => {
     await userEvent.click(screen.getByRole('button', { name: '设置' }))
     expect(useStore.getState().busy).toBe('正在分析…')
   })
+
+  // 仓库入口只剩设置标题行右端这一个图标——整块「关于」区是用户要求撤掉的，
+  // 别让它回流：设置页正文里不该再出现第二个仓库链接
+  it('设置标题行右端有 GitHub 图标链接，指向仓库、新标签页打开', async () => {
+    render(<Shell organizeContent={<div>步骤内容</div>}>{null}</Shell>)
+    await userEvent.click(screen.getByRole('button', { name: '设置' }))
+    const banner = screen.getByRole('banner')
+    const link = within(banner).getByRole('link', { name: '源代码' })
+    expect(link).toHaveProperty('href', 'https://github.com/gaotiesuanna/Reshelve')
+    expect(link).toHaveProperty('target', '_blank')
+    expect(link.getAttribute('rel')).toContain('noreferrer')
+    expect(screen.getAllByRole('link', { name: '源代码' })).toHaveLength(1)
+  })
 })
 
 /**
