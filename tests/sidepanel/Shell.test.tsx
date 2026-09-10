@@ -207,6 +207,44 @@ describe('Shell 模式切换', () => {
 })
 
 /**
+ * 侧栏一直挤着右侧页面，齿轮左边的这颗按钮是逃出口：把同一个界面
+ * 换成完整标签页。已经是标签页形态时它必须收起——再点只会多开一份。
+ */
+describe('Shell 换成完整标签页', () => {
+  const sendMessage = vi.fn((_message: unknown) => Promise.resolve({ ok: true, kind: 'open_app_tab' }))
+
+  beforeEach(() => {
+    sendMessage.mockClear()
+    window.history.pushState({}, '', '/')
+    // jsdom 环境没有 chrome 类型；setup 已把 i18n 桩挂上，这里只补 runtime.sendMessage。
+    const globals = globalThis as unknown as { chrome: Record<string, unknown> }
+    globals.chrome.runtime = { sendMessage }
+  })
+
+  it('侧栏形态下齿轮左边有「在完整标签页中打开」', () => {
+    render(<Shell organizeContent={<div>步骤内容</div>}>{null}</Shell>)
+    expect(screen.getByRole('button', { name: '在完整标签页中打开' })).toBeDefined()
+  })
+
+  it('点击把当前模式带给后台，由后台开标签页并关掉侧栏', async () => {
+    useStore.setState({ mode: 'dashboard' })
+    render(<Shell organizeContent={<div>步骤内容</div>}>{null}</Shell>)
+    await userEvent.click(screen.getByRole('button', { name: '在完整标签页中打开' }))
+    expect(sendMessage).toHaveBeenCalledWith(
+      expect.objectContaining({ kind: 'open_app_tab', mode: 'dashboard' }),
+    )
+  })
+
+  it('标签页形态（view=tab）下按钮收起', () => {
+    window.history.pushState({}, '', '/?view=tab&mode=dashboard')
+    render(<Shell organizeContent={<div>步骤内容</div>}>{null}</Shell>)
+    expect(screen.queryByRole('button', { name: '在完整标签页中打开' })).toBeNull()
+    // 导航其余部分照常：按钮只是收起，不是整条索引栏让位
+    expect(screen.getByRole('tab', { name: 'AI 整理' })).toBeDefined()
+  })
+})
+
+/**
  * ProgressPanel 挂在 Shell 里是为了整理流程和「清理扫描还没回来」那一小段。
  * 扫描已经完成的那句「2 组重复」属于本地清理的「重复收藏」格，切到看板还挂在
  * 页底，等于看板在替清理页说话。

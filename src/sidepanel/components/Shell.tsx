@@ -1,6 +1,7 @@
 import type { ReactNode } from 'react'
 import { t } from '@/i18n'
 import { useStore, type AppMode, type Step } from '../store'
+import { isTabView, openAppInTab } from '../lib/openInTab'
 import { AlertIcon, ChevronLeftIcon } from './icons'
 import { IndexNavigation, type IndexNavigationItem } from './IndexNavigation'
 import { ProgressPanel } from './ProgressPanel'
@@ -79,6 +80,10 @@ export function Shell({ children, organizeContent }: { children: ReactNode; orga
               activeKey={mode}
               disabled={busy !== null}
               settingsLabel={t('settingsGearLabel')}
+              // 已经在完整标签页里就不给这颗按钮——再点只会多开一个一模一样的标签。
+              {...(isTabView()
+                ? {}
+                : { openInTabLabel: t('openInTabLabel'), onOpenInTab: () => void openAppInTab(mode) })}
               onSelect={setMode}
               onOpenSettings={openSettings}
             />

@@ -2,6 +2,7 @@ import { createRoot } from 'react-dom/client'
 import { currentLocale, resolveLocale, setLocale } from '@/i18n'
 import { DEFAULT_SETTINGS } from '@/storage/settings'
 import App from './App'
+import { modeFromLocation } from './lib/openInTab'
 import { useStore } from './store'
 import { applyDocumentLang } from './lib/documentLang'
 import { send } from './lib/send'
@@ -21,6 +22,10 @@ void (async () => {
   // store 的 locale 初值是模块求值那一刻的语言，也就是还没 setLocale 前的 'en'。
   // 不在这里对齐，init() 末尾那次 syncLocale 会把 key 从 'en' 改成真实语言，
   // 于是每个非英文用户一开侧栏就白白重挂载一次整棵树。
-  useStore.setState({ locale: currentLocale() })
+  // 「换成完整标签页」会把侧栏停在的模式写进 URL（见 background 的 open_app_tab），
+  // 在这里捡起来，标签页落在同一个模式上而不是退回默认的 AI 整理。
+  // init() 不碰 mode，这个初值活得下来。
+  const mode = modeFromLocation()
+  useStore.setState({ locale: currentLocale(), ...(mode === null ? {} : { mode }) })
   createRoot(document.getElementById('root')!).render(<App />)
 })()

@@ -171,6 +171,9 @@
   "settingsGearLabel": {
     "message": "设置"
   },
+  "openInTabLabel": {
+    "message": "在完整标签页中打开"
+  },
   "settingsTitle": {
     "message": "设置"
   },

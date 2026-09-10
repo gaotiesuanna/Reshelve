@@ -171,6 +171,9 @@
   "settingsGearLabel": {
     "message": "Settings"
   },
+  "openInTabLabel": {
+    "message": "Open in a full tab"
+  },
   "settingsTitle": {
     "message": "Settings"
   },

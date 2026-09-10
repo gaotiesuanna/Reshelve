@@ -1,4 +1,4 @@
-import { SettingsIcon } from './icons'
+import { OpenInTabIcon, SettingsIcon } from './icons'
 
 export type IndexNavigationItem<K extends string> = {
   key: K
@@ -11,15 +11,20 @@ export function IndexNavigation<K extends string>({
   activeKey,
   disabled = false,
   settingsLabel,
+  openInTabLabel,
   onSelect,
   onOpenSettings,
+  onOpenInTab,
 }: {
   items: readonly IndexNavigationItem<K>[]
   activeKey: K
   disabled?: boolean
   settingsLabel: string
+  /** 不给就不渲染：完整标签页形态里这颗按钮没有存在意义。 */
+  openInTabLabel?: string
   onSelect: (key: K) => void
   onOpenSettings: () => void
+  onOpenInTab?: () => void
 }): React.JSX.Element {
   return (
     <div className="flex min-w-0 items-stretch border-b border-index-line">
@@ -51,6 +56,19 @@ export function IndexNavigation<K extends string>({
           )
         })}
       </div>
+      {/* 侧栏一直挤着右侧页面，给一个逃出口：换成完整标签页。
+          贴在齿轮左边而不是混进 tab 里——它是「这个窗口的形态」，不是第五条功能路线。 */}
+      {openInTabLabel !== undefined && onOpenInTab !== undefined && (
+        <button
+          type="button"
+          className="flex h-10 w-10 shrink-0 items-center justify-center text-index-muted transition-colors duration-150 hover:text-index-ink focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-[-2px] focus-visible:outline-index-blue motion-reduce:transition-none"
+          aria-label={openInTabLabel}
+          title={openInTabLabel}
+          onClick={onOpenInTab}
+        >
+          <OpenInTabIcon className="h-4 w-4" />
+        </button>
+      )}
       <button
         type="button"
         className="flex h-10 w-10 shrink-0 items-center justify-center text-index-muted transition-colors duration-150 hover:text-index-ink focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-[-2px] focus-visible:outline-index-blue motion-reduce:transition-none"

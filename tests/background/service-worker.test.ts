@@ -62,18 +62,43 @@ function send(message: IncomingMessage): Response | null {
   return response
 }
 
+/** 发一条异步回响应的消息（open_app_tab 走这条）。 */
+function sendAsync(message: IncomingMessage): Promise<Response> {
+  // tsconfig 的 lib 停在 ES2022，Promise.withResolvers 没有类型——沿用 executor 写法
+  return new Promise((resolve) => { onMessage(message, {}, resolve) })
+}
+
+/** open_app_tab 的现场：开了哪个 URL、侧栏开关被拨了哪几下。 */
+let openedUrls: string[]
+let panelToggles: boolean[]
+
 beforeEach(async () => {
   calls = []
+  openedUrls = []
+  panelToggles = []
   handle.mockClear()
   vi.resetModules()
 
   const chromeStub = {
     runtime: {
+      getURL: (path: string) => `chrome-extension://test/${path}`,
       onConnect: { addListener: (fn: (port: FakePort) => void) => { onConnect = fn } },
       onMessage: { addListener: (fn: typeof onMessage) => { onMessage = fn } },
       onInstalled: { addListener: () => {} },
     },
-    sidePanel: { setPanelBehavior: () => Promise.resolve() },
+    sidePanel: {
+      setPanelBehavior: () => Promise.resolve(),
+      setOptions: (options: { enabled: boolean }) => {
+        panelToggles.push(options.enabled)
+        return Promise.resolve()
+      },
+    },
+    tabs: {
+      create: (options: { url: string }) => {
+        openedUrls.push(options.url)
+        return Promise.resolve()
+      },
+    },
     storage: { local: { get: () => Promise.resolve({}), set: () => Promise.resolve() } },
   }
   ;(globalThis as unknown as { chrome: unknown }).chrome = chromeStub
@@ -317,5 +342,28 @@ describe('侧栏关闭', () => {
 
     expect(aDeps.signal?.aborted).toBe(false)
     expect(a.received).toEqual([])
+  })
+})
+
+/**
+ * 「换成完整标签页」在后台代办的整条链路：开标签、关侧栏、再启用。
+ * 顺序是这条功能的命根——先禁用再启用，缺了后者扩展图标从此点了没反应。
+ */
+describe('换成完整标签页', () => {
+  it('开带 view/mode 参数的标签页，并先禁用再启用侧栏把它关上', async () => {
+    const response = await sendAsync({ kind: 'open_app_tab', mode: 'dashboard', clientId: 'win-a' })
+
+    expect(response).toEqual({ ok: true, kind: 'open_app_tab' })
+    expect(openedUrls).toHaveLength(1)
+    const url = new URL(openedUrls[0]!)
+    expect(url.searchParams.get('view')).toBe('tab')
+    expect(url.searchParams.get('mode')).toBe('dashboard')
+    expect(panelToggles).toEqual([false, true])
+  })
+
+  it('不占独占槽：分析跑着的时候也能换', async () => {
+    send({ kind: 'analyze', scopeRootIds: ['1'], clientId: 'win-a' })
+    const response = await sendAsync({ kind: 'open_app_tab', mode: 'organize', clientId: 'win-a' })
+    expect(response).toEqual({ ok: true, kind: 'open_app_tab' })
   })
 })

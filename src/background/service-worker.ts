@@ -4,7 +4,7 @@ import { createChromePorts } from './chrome-ports'
 import { clientIdFromPortName, type ProgressEvent } from './events'
 import { handle } from './handlers'
 import { ANONYMOUS_CLIENT, createSessions } from './sessions'
-import type { IncomingMessage, Request } from './messages'
+import type { HandledRequest, IncomingMessage, Request } from './messages'
 
 // 启动打点：MV3 的 service worker 会被浏览器回收。
 // 若分析过程中这行日志再次出现，说明 worker 被杀过，在途请求会以
@@ -47,7 +47,7 @@ const sessions = createSessions()
  * 没进来的都是只读或瞬时的（get_tree、scan、cleanup_scan、test_model、list_models…），
  * 并发跑没有互相破坏的余地，挡住它们只会让另一个窗口连书签树都读不了。
  */
-const EXCLUSIVE: ReadonlySet<Request['kind']> = new Set([
+const EXCLUSIVE: ReadonlySet<HandledRequest['kind']> = new Set([
   'analyze', 'check_links', 'apply', 'undo', 'import', 'apply_cleanup', 'apply_aggregate', 'reclassify',
 ])
 
@@ -58,7 +58,7 @@ const EXCLUSIVE: ReadonlySet<Request['kind']> = new Set([
  * isCancelled、不收 signal，界面也不给它们取消按钮。把它们一并当成可取消，
  * 换来的是「点了取消 → 日志说正在取消 → 它照样跑完」这种骗人的三连。
  */
-const CANCELLABLE: ReadonlySet<Request['kind']> = new Set(['analyze', 'check_links', 'reclassify'])
+const CANCELLABLE: ReadonlySet<HandledRequest['kind']> = new Set(['analyze', 'check_links', 'reclassify'])
 
 chrome.runtime.onConnect.addListener((port) => {
   const clientId = clientIdFromPortName(port.name)
@@ -86,6 +86,24 @@ chrome.runtime.onMessage.addListener((message: IncomingMessage, _sender, sendRes
     }
     sendResponse({ ok: true, kind: 'cancel' })
     return false
+  }
+
+  if (request.kind === 'open_app_tab') {
+    const url = new URL(chrome.runtime.getURL('src/sidepanel/index.html'))
+    // view=tab 给标签页形态一个能被自己读到的标记（按钮因此收起），
+    // mode 让新页面落在侧栏正停在的那个模式上，「换过去」而不是「重新打开」。
+    url.searchParams.set('view', 'tab')
+    url.searchParams.set('mode', request.mode)
+    void (async () => {
+      await chrome.tabs.create({ url: url.toString() })
+      // 侧栏没有 close API，关它的唯一办法是禁用再立刻启用。
+      // 代价是全局的：别的窗口开着的侧栏也会一起被关掉——可接受，
+      // 反过来的方案（让侧栏自己做）是图标从此失效，严重得多。
+      await chrome.sidePanel.setOptions({ enabled: false })
+      await chrome.sidePanel.setOptions({ enabled: true })
+      sendResponse({ ok: true, kind: 'open_app_tab' })
+    })().catch((error: unknown) => sendResponse({ ok: false, error: String(error) }))
+    return true
   }
 
   const exclusive = EXCLUSIVE.has(request.kind)

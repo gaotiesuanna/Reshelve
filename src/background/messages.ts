@@ -18,7 +18,7 @@ import type { StaleScanResult } from '@/core/stale'
  */
 export type { TestFailure }
 
-export type Request =
+export type HandledRequest =
   | { kind: 'get_tree' }
   | { kind: 'scan'; scopeRootIds: string[] }
   | {
@@ -78,6 +78,20 @@ export type Request =
   | { kind: 'reclassify'; plan: OrganizePlan; bookmarkIds: string[] }
 
 /**
+ * 侧栏能发的全部请求。open_app_tab 由 service worker 直接代办
+ * （开标签页、关侧栏都要 chrome API，handlers 那层够不着也不该够着），
+ * 所以它不进 HandledRequest——handle() 的 switch 保持穷尽。
+ */
+export type Request = HandledRequest
+  /**
+   * 侧栏换成完整标签页。必须走后台：侧栏没有 close API，唯一的关法是
+   * sidePanel.enabled 先关后开，而面板一关侧栏页面就被卸载——
+   * 让侧栏自己做，「再启用」那一步永远轮不到执行，扩展图标从此点了没反应。
+   * mode 只作透传（写进标签页 URL），所以是裸 string，合法性由侧栏那边校验。
+   */
+  | { kind: 'open_app_tab'; mode: string }
+
+/**
  * 侧栏发过来的原始消息：请求本体，外加发信那个侧栏的身份。
  *
  * clientId 刻意**不进 Request**：它是传输层的事（后台要分清进度推给哪个窗口、
@@ -109,6 +123,7 @@ export type Response =
   | { ok: true; kind: 'apply_aggregate'; result: AggregateResult }
   | { ok: true; kind: 'check_links'; results: LinkResult[] }
   | { ok: true; kind: 'reclassify'; plan: OrganizePlan }
+  | { ok: true; kind: 'open_app_tab' }
   /**
    * cancelled 为 true 表示用户主动取消，不是出错。
    * reason 只有 test_model 会带：失败时说清是哪一类，别的请求没有这个分类。
