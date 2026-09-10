@@ -7,7 +7,7 @@ export default defineManifest({
   // 商店基本只按名字排，所以 extName 是「品牌词 + 品类词」的长名。但 Chrome 侧栏顶栏和
   // 扩展列表放不下它，会截断成一截没头没尾的字符串——那些窄处读 short_name。
   short_name: '__MSG_extShortName__',
-  version: '1.1.1',
+  version: '1.2.1',
   description: '__MSG_extDescription__',
   // 仓库地址。chrome://extensions 的详情页据此显示「访问网站」；商店详情页的
   // Website 链接则以开发者后台「商品详情」里单填的那个为准，两处填成同一个。

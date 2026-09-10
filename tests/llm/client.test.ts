@@ -66,7 +66,7 @@ describe('createLlmClient', () => {
   // OpenCode Go 没有这个头就 400 MissingSessionID，整轮分类一条都分不出去。
   // 同一轮分析共用一个 client，session 必须稳定，换一次就打断提示词缓存。
   it('打 OpenCode Go 时带上稳定的 x-opencode-session', async () => {
-    const fetchImpl = vi.fn(async () => okResponse({ ok: true }))
+    const fetchImpl = vi.fn().mockImplementation(async () => okResponse({ ok: true }))
     const client = createLlmClient(
       { baseUrl: 'https://opencode.ai/zen/go/v1', apiKey: 'sk-go', model: 'deepseek-v4-flash' },
       'zh_CN',
@@ -78,12 +78,12 @@ describe('createLlmClient', () => {
     const first = (fetchImpl.mock.calls[0]![1].headers as Record<string, string>)['x-opencode-session']
     const second = (fetchImpl.mock.calls[1]![1].headers as Record<string, string>)['x-opencode-session']
     expect(first).toEqual(expect.any(String))
-    expect(first.length).toBeGreaterThan(0)
+    expect(first?.length).toBeGreaterThan(0)
     expect(second).toBe(first)
   })
 
   it('OpenCode 子域同样带 session，别的主机不带', async () => {
-    const fetchImpl = vi.fn(async () => okResponse({ ok: true }))
+    const fetchImpl = vi.fn().mockImplementation(async () => okResponse({ ok: true }))
     const go = createLlmClient(
       { baseUrl: 'https://proxy.opencode.ai/v1', apiKey: 'sk-go', model: 'm' },
       'zh_CN',
