@@ -7,8 +7,40 @@ import { segmentActive, segmentButton, segmentTrack } from '../components/button
 import { StickyActionBar } from '../components/IndexControls'
 import { DownloadIcon, UploadIcon } from '../components/icons'
 import { collectAllFolderIds, useStore } from '../store'
+import type { BookmarkNode } from '@/core/ports'
+import type { MoveBookmarksInput } from '@/engine/moveBookmarks'
 
 type TransferPanel = 'export' | 'import'
+type MovePanelMode = 'existing' | 'new'
+
+interface FolderOption {
+  node: BookmarkNode
+  depth: number
+}
+
+function folderOptions(nodes: BookmarkNode[]): FolderOption[] {
+  const options: FolderOption[] = []
+  function visit(node: BookmarkNode, depth: number): void {
+    if (node.url !== undefined) return
+    options.push({ node, depth })
+    for (const child of node.children ?? []) visit(child, depth + 1)
+  }
+  for (const node of topLevelNodes(nodes)) visit(node, 0)
+  return options
+}
+
+function selectedIdsInTree(nodes: BookmarkNode[], selected: Set<string>): string[] {
+  const ids: string[] = []
+  function visit(node: BookmarkNode): void {
+    if (node.url !== undefined) {
+      if (selected.has(node.id)) ids.push(node.id)
+      return
+    }
+    for (const child of node.children ?? []) visit(child)
+  }
+  for (const node of nodes) visit(node)
+  return ids
+}
 
 function initialTransfer(): TransferPanel {
   const { importFile, importError, importDone } = useStore.getState()
@@ -16,7 +48,7 @@ function initialTransfer(): TransferPanel {
 }
 
 export function TransferStep() {
-  const { tree, checkedIds, toggle, busy } = useStore()
+  const { tree, checkedIds, toggle, moveSelection, toggleBookmarkSelection, busy } = useStore()
   const [transfer, setTransfer] = useState<TransferPanel>(initialTransfer)
   const [expanded, setExpanded] = useState<Set<string> | null>(null)
   const [searchQuery, setSearchQuery] = useState('')
@@ -94,6 +126,8 @@ export function TransferStep() {
             nodes={visibleNodes}
             checkedIds={checkedIds}
             onToggle={toggle}
+            selectedBookmarkIds={moveSelection}
+            onToggleBookmark={toggleBookmarkSelection}
             expandedIds={visibleExpandedIds}
             onToggleExpand={toggleExpand}
             showBookmarks={searchActive}
@@ -107,6 +141,7 @@ export function TransferStep() {
           切换条和选项组直接铺在 sticky 栏里，不再套一层灰底卡片——那层 padding
           会把「导出 / 导入」撑得比真按钮还壮。 */}
       <StickyActionBar>
+        {moveSelection.size > 0 && <MoveBookmarksPanel tree={tree} busy={busy} />}
         <div className={segmentTrack} role="group">
           <button
             type="button"
@@ -135,6 +170,108 @@ export function TransferStep() {
           {transfer === 'export' ? <ExportPanel /> : <ImportPanel />}
         </div>
       </StickyActionBar>
+    </div>
+  )
+}
+
+function MoveBookmarksPanel({ tree, busy }: { tree: BookmarkNode[]; busy: string | null }) {
+  const moveBookmarks = useStore((state) => state.moveBookmarks)
+  const [mode, setMode] = useState<MovePanelMode>('existing')
+  const [existingFolderId, setExistingFolderId] = useState('')
+  const [newFolderParentId, setNewFolderParentId] = useState('')
+  const [newFolderTitle, setNewFolderTitle] = useState('')
+  const options = useMemo(() => folderOptions(tree), [tree])
+  const fallbackFolderId = options[0]?.node.id ?? ''
+  const targetFolderId = existingFolderId
+  const parentFolderId = newFolderParentId || fallbackFolderId
+  const selectedCount = useStore((state) => state.moveSelection.size)
+  const canSubmit = busy === null
+    && selectedCount > 0
+    && (mode === 'existing' ? targetFolderId !== '' : newFolderTitle.trim() !== '' && parentFolderId !== '')
+
+  function submit(): void {
+    if (!canSubmit) return
+    const destination: MoveBookmarksInput['destination'] = mode === 'existing'
+      ? { kind: 'existing', folderId: targetFolderId }
+      : { kind: 'new', parentId: parentFolderId, title: newFolderTitle }
+    const bookmarkIds = selectedIdsInTree(tree, useStore.getState().moveSelection)
+    void moveBookmarks({ bookmarkIds, destination })
+  }
+
+  return (
+    <div className="mb-3 space-y-2 rounded-index border border-index-line bg-index-blue-soft p-3">
+      <div className="flex items-center justify-between gap-2">
+        <p className="text-sm leading-caption font-semibold text-index-ink">{t('moveSelectedBookmarks')}</p>
+        <span className="text-xs leading-caption text-index-muted">{t('moveCount', String(selectedCount))}</span>
+      </div>
+      <div className={segmentTrack} role="group" aria-label={t('moveDestinationLabel')}>
+        <button
+          type="button"
+          className={`${segmentButton} ${mode === 'existing' ? segmentActive : ''}`}
+          aria-pressed={mode === 'existing'}
+          onClick={() => setMode('existing')}
+        >
+          {t('moveExistingFolder')}
+        </button>
+        <button
+          type="button"
+          className={`${segmentButton} ${mode === 'new' ? segmentActive : ''}`}
+          aria-pressed={mode === 'new'}
+          onClick={() => setMode('new')}
+        >
+          {t('moveNewFolder')}
+        </button>
+      </div>
+      {mode === 'existing' ? (
+        <label className="block text-sm leading-caption text-index-ink">
+          <span className="mb-1 block font-medium">{t('moveDestinationLabel')}</span>
+          <select
+            aria-label={t('moveDestinationLabel')}
+            value={targetFolderId}
+            onChange={(event) => setExistingFolderId(event.target.value)}
+            className="min-h-index-row w-full rounded-index border border-index-line bg-index-canvas px-2 text-sm text-index-ink focus-visible:outline focus-visible:ring-2 focus-visible:ring-index-blue"
+          >
+            <option value="" disabled>{t('moveChooseFolder')}</option>
+            {options.map(({ node, depth }) => (
+              <option key={node.id} value={node.id}>{`${'　'.repeat(depth)}${node.title}`}</option>
+            ))}
+          </select>
+        </label>
+      ) : (
+        <div className="space-y-2">
+          <label className="block text-sm leading-caption text-index-ink">
+            <span className="mb-1 block font-medium">{t('moveNewFolderName')}</span>
+            <input
+              type="text"
+              value={newFolderTitle}
+              onChange={(event) => setNewFolderTitle(event.target.value)}
+              className="min-h-index-row w-full rounded-index border border-index-line bg-index-canvas px-2 text-sm text-index-ink placeholder:text-index-faint focus-visible:outline focus-visible:ring-2 focus-visible:ring-index-blue"
+              aria-label={t('moveNewFolderName')}
+            />
+          </label>
+          <label className="block text-sm leading-caption text-index-ink">
+            <span className="mb-1 block font-medium">{t('moveParentFolder')}</span>
+            <select
+              aria-label={t('moveParentFolder')}
+              value={parentFolderId}
+              onChange={(event) => setNewFolderParentId(event.target.value)}
+              className="min-h-index-row w-full rounded-index border border-index-line bg-index-canvas px-2 text-sm text-index-ink focus-visible:outline focus-visible:ring-2 focus-visible:ring-index-blue"
+            >
+              {options.map(({ node, depth }) => (
+                <option key={node.id} value={node.id}>{`${'　'.repeat(depth)}${node.title}`}</option>
+              ))}
+            </select>
+          </label>
+        </div>
+      )}
+      <button
+        type="button"
+        className="inline-flex min-h-index-row w-full items-center justify-center rounded-index bg-index-ink px-3 text-sm leading-caption font-medium text-index-canvas transition-colors hover:bg-zinc-800 disabled:cursor-not-allowed disabled:opacity-40 focus-visible:outline focus-visible:ring-2 focus-visible:ring-index-blue"
+        disabled={!canSubmit}
+        onClick={submit}
+      >
+        {t('moveConfirm')}
+      </button>
     </div>
   )
 }

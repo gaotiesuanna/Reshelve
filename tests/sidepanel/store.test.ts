@@ -330,9 +330,60 @@ describe('refreshTree 剪掉已经不存在的勾选', () => {
     vi.mocked(send).mockResolvedValue({ ok: false, error: '后台没了' })
     useStore.setState({ checkedIds: new Set(['900']) })
 
-    await useStore.getState().refreshTree()
+    await expect(useStore.getState().refreshTree()).resolves.toBe(false)
 
     expect([...useStore.getState().checkedIds]).toEqual(['900'])
+  })
+})
+
+describe('手动移动书签', () => {
+  beforeEach(() => {
+    vi.mocked(send).mockReset()
+    useStore.setState({ tree, moveSelection: new Set(['100']), busy: null, busyKind: null, error: null })
+  })
+
+  it('成功移动后清空书签选择并刷新树', async () => {
+    vi.mocked(send).mockImplementation((request: { kind: string }) => {
+      if (request.kind === 'move_bookmarks') {
+        return Promise.resolve({ ok: true, kind: 'move_bookmarks', result: { moved: 1, targetFolderId: '11', createdFolder: false } }) as never
+      }
+      return Promise.resolve({ ok: true, kind: 'get_tree', tree }) as never
+    })
+
+    await useStore.getState().moveBookmarks({
+      bookmarkIds: ['100'], destination: { kind: 'existing', folderId: '11' },
+    })
+
+    expect(useStore.getState().moveSelection).toEqual(new Set())
+    expect(useStore.getState().busy).toBeNull()
+    expect(vi.mocked(send).mock.calls.map(([request]) => (request as { kind: string }).kind)).toEqual([
+      'move_bookmarks', 'get_tree',
+    ])
+  })
+
+  it('移动成功但刷新失败时保留错误提示', async () => {
+    vi.mocked(send).mockImplementation((request: { kind: string }) => request.kind === 'move_bookmarks'
+      ? Promise.resolve({ ok: true, kind: 'move_bookmarks', result: { moved: 1, targetFolderId: '11', createdFolder: false } }) as never
+      : Promise.resolve({ ok: false, error: '后台没了' }) as never)
+
+    await useStore.getState().moveBookmarks({
+      bookmarkIds: ['100'], destination: { kind: 'existing', folderId: '11' },
+    })
+
+    expect(useStore.getState().moveSelection).toEqual(new Set())
+    expect(useStore.getState().error).toBe('书签已移动，但刷新列表失败，请重新打开此页。')
+  })
+
+  it('移动失败时保留书签选择以便重试', async () => {
+    vi.mocked(send).mockResolvedValue({ ok: false, error: '目标文件夹不存在' } as never)
+
+    await useStore.getState().moveBookmarks({
+      bookmarkIds: ['100'], destination: { kind: 'existing', folderId: '11' },
+    })
+
+    expect(useStore.getState().moveSelection).toEqual(new Set(['100']))
+    expect(useStore.getState().error).toBe('移动失败：目标文件夹不存在')
+    expect(useStore.getState().busy).toBeNull()
   })
 })
 

@@ -1,4 +1,5 @@
 import type { BookmarkNode } from '@/core/ports'
+import { sanitizeUrl } from '@/core/sanitize'
 import { t } from '@/i18n'
 import { LinkIcon } from './icons'
 
@@ -6,6 +7,8 @@ interface Props {
   nodes: BookmarkNode[]
   checkedIds: Set<string>
   onToggle: (id: string) => void
+  selectedBookmarkIds?: Set<string>
+  onToggleBookmark?: (id: string) => void
   expandedIds: Set<string>
   onToggleExpand: (id: string) => void
   showBookmarks?: boolean
@@ -52,15 +55,44 @@ export function filterBookmarkTree(nodes: BookmarkNode[], query: string): Bookma
 
 
 function Row({
-  node, depth, checkedIds, onToggle, expandedIds, onToggleExpand, showBookmarks = false,
+  node, depth, checkedIds, onToggle, selectedBookmarkIds, onToggleBookmark,
+  expandedIds, onToggleExpand, showBookmarks = false,
 }: { node: BookmarkNode; depth: number } & Omit<Props, 'nodes'>) {
   if (node.url !== undefined) {
     if (!showBookmarks) return null
+    const safeUrl = sanitizeUrl(node.url) !== null
     return (
-      <div className="flex items-center gap-1.5 py-0.5 pr-2 text-neutral-600" style={{ paddingLeft: `${depth * 14 + 4}px` }}>
+      <div className="flex min-w-0 items-center gap-1.5 py-0.5 pr-2 text-neutral-600" style={{ paddingLeft: `${depth * 14 + 4}px` }}>
+        {onToggleBookmark !== undefined ? (
+          <input
+            type="checkbox"
+            aria-label={t('treeSelectBookmark', node.title)}
+            checked={selectedBookmarkIds?.has(node.id) ?? false}
+            onChange={() => onToggleBookmark(node.id)}
+            className="h-3.5 w-3.5 shrink-0"
+          />
+        ) : null}
         <LinkIcon className="h-3 w-3 shrink-0 text-neutral-300" />
-        <span className="truncate">{node.title}</span>
-        <span className="ml-auto truncate text-sm leading-caption text-neutral-400">{node.url}</span>
+        {safeUrl ? (
+          <a
+            href={node.url}
+            target="_blank"
+            rel="noreferrer"
+            className="min-w-0 truncate text-neutral-700 hover:text-index-blue hover:underline focus-visible:outline focus-visible:outline-2 focus-visible:outline-index-blue"
+          >
+            {node.title}
+          </a>
+        ) : <span className="min-w-0 truncate text-neutral-700">{node.title}</span>}
+        {safeUrl ? (
+          <a
+            href={node.url}
+            target="_blank"
+            rel="noreferrer"
+            className="ml-auto min-w-0 truncate text-sm leading-caption text-neutral-400 hover:text-index-blue hover:underline focus-visible:outline focus-visible:outline-2 focus-visible:outline-index-blue"
+          >
+            {node.url}
+          </a>
+        ) : <span className="ml-auto min-w-0 truncate text-sm leading-caption text-neutral-400">{node.url}</span>}
       </div>
     )
   }
@@ -100,6 +132,8 @@ function Row({
           depth={depth + 1}
           checkedIds={checkedIds}
           onToggle={onToggle}
+          selectedBookmarkIds={selectedBookmarkIds}
+          onToggleBookmark={onToggleBookmark}
           expandedIds={expandedIds}
           onToggleExpand={onToggleExpand}
           showBookmarks={showBookmarks}
@@ -109,7 +143,10 @@ function Row({
   )
 }
 
-export function BookmarkTree({ nodes, checkedIds, onToggle, expandedIds, onToggleExpand, showBookmarks = false }: Props) {
+export function BookmarkTree({
+  nodes, checkedIds, onToggle, selectedBookmarkIds, onToggleBookmark,
+  expandedIds, onToggleExpand, showBookmarks = false,
+}: Props) {
   return (
     <div className="text-base leading-body">
       {topLevelNodes(nodes).map((node) => (
@@ -119,6 +156,8 @@ export function BookmarkTree({ nodes, checkedIds, onToggle, expandedIds, onToggl
           depth={0}
           checkedIds={checkedIds}
           onToggle={onToggle}
+          selectedBookmarkIds={selectedBookmarkIds}
+          onToggleBookmark={onToggleBookmark}
           expandedIds={expandedIds}
           onToggleExpand={onToggleExpand}
           showBookmarks={showBookmarks}

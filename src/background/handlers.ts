@@ -38,6 +38,7 @@ import {
 } from '@/storage/settings'
 import { findBookmarksBar } from '@/core/import'
 import { importTree } from '@/engine/importTree'
+import { moveBookmarks, MoveBookmarksError } from '@/engine/moveBookmarks'
 import type { EmitProgress, ProgressPhase } from './events'
 import type { Request, Response } from './messages'
 
@@ -91,6 +92,16 @@ export interface HandlerDeps {
   listModels?: (baseUrl: string, apiKey: string) => Promise<string[]>
   /** 仅供测试注入，生产环境使用 checkLinks 的默认值。 */
   fetchImpl?: typeof fetch
+}
+
+function describeMoveError(error: MoveBookmarksError): string {
+  switch (error.code) {
+    case 'emptySelection': return t('moveErrEmptySelection')
+    case 'missingBookmark': return t('moveErrMissingBookmark')
+    case 'missingTarget': return t('moveErrMissingTarget')
+    case 'emptyFolderName': return t('moveErrEmptyFolderName')
+    case 'missingParent': return t('moveErrMissingParent')
+  }
 }
 
 export async function handle(
@@ -1065,6 +1076,16 @@ export async function handle(
         const result = await importTree(ports, request.nodes, request.targetName, bar.id)
         log('import', t('logImportDone', String(result.bookmarks), String(result.folders)))
         return { ok: true, kind: 'import', result }
+      }
+
+      case 'move_bookmarks': {
+        try {
+          const result = await moveBookmarks(ports, request.input)
+          return { ok: true, kind: 'move_bookmarks', result }
+        } catch (error) {
+          if (error instanceof MoveBookmarksError) return { ok: false, error: describeMoveError(error) }
+          throw error
+        }
       }
 
       // 取消标记由 service worker 持有，这里只是让消息类型闭合

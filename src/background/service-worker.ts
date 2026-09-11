@@ -90,7 +90,7 @@ function closeKeepaliveDoc(): void {
  * 并发跑没有互相破坏的余地，挡住它们只会让另一个窗口连书签树都读不了。
  */
 const EXCLUSIVE: ReadonlySet<Request['kind']> = new Set([
-  'analyze', 'check_links', 'apply', 'undo', 'import', 'apply_cleanup', 'apply_aggregate', 'reclassify',
+  'analyze', 'check_links', 'apply', 'undo', 'import', 'apply_cleanup', 'apply_aggregate', 'reclassify', 'move_bookmarks',
 ])
 
 /**

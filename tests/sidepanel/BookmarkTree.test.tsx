@@ -119,6 +119,34 @@ describe('BookmarkTree 展开收起', () => {
     expect(screen.queryByText('A')).toBeNull()
   })
 
+  it('书签行提供独立选择框，并把标题和 URL 渲染为可点击链接', () => {
+    renderTree({
+      showBookmarks: true,
+      selectedBookmarkIds: new Set(['100']),
+      onToggleBookmark: vi.fn(),
+      expandedIds: new Set(['1', '10']),
+    })
+
+    const bookmarkCheckbox = screen.getByRole('checkbox', { name: '选择书签 A' }) as HTMLInputElement
+    expect(bookmarkCheckbox.checked).toBe(true)
+    expect(screen.getByRole('link', { name: 'A' }).getAttribute('href')).toBe('https://a.dev')
+    expect(screen.getByRole('link', { name: 'https://a.dev' }).getAttribute('href')).toBe('https://a.dev')
+  })
+
+  it('不安全的书签地址只显示文本，不生成可执行链接', () => {
+    renderTree({
+      nodes: [{ id: '1', title: '书签栏', children: [
+        { id: '100', title: '脚本书签', url: 'javascript:alert(1)' },
+      ]}],
+      showBookmarks: true,
+      onToggleBookmark: vi.fn(),
+      expandedIds: new Set(['1']),
+    })
+
+    expect(screen.queryByRole('link', { name: '脚本书签' })).toBeNull()
+    expect(screen.getByText('javascript:alert(1)')).toBeDefined()
+  })
+
   it('空查询返回原节点且不进入搜索结果模式', () => {
     const result = filterBookmarkTree(nodes, '  ')
     expect(result.nodes).toBe(nodes)

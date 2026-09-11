@@ -17,6 +17,7 @@ import type { DuplicateGroup } from '@/core/duplicates'
 import type { ApplyResult } from '@/engine/apply'
 import type { CleanupResult, CleanupScan } from '@/engine/cleanup'
 import type { AggregateInput, AggregateResult } from '@/engine/aggregate'
+import type { MoveBookmarksInput } from '@/engine/moveBookmarks'
 import type { StaleScanResult } from '@/core/stale'
 import type { ImportResult } from '@/engine/importTree'
 import type { LinkResult } from '@/engine/linkCheck'
@@ -192,6 +193,7 @@ const BUSY_KIND_BY_TASK: Partial<Record<Request['kind'], State['busyKind']>> = {
   import: null,
   apply_cleanup: 'cleanup',
   apply_aggregate: 'aggregate',
+  move_bookmarks: 'moveBookmarks',
 }
 
 type MessageKey = Parameters<typeof t>[0]
@@ -205,6 +207,7 @@ const BUSY_LABEL_BY_TASK: Partial<Record<Request['kind'], MessageKey>> = {
   import: 'busyImporting',
   apply_cleanup: 'busyApplying',
   apply_aggregate: 'busyAggregating',
+  move_bookmarks: 'busyMovingBookmarks',
 }
 
 /**
@@ -321,6 +324,18 @@ export function collectAllFolderIds(tree: BookmarkNode[]): string[] {
   return ids
 }
 
+/** 树里所有书签的 id，供手动移动选择在刷新后剪掉失效条目。 */
+export function collectAllBookmarkIds(tree: BookmarkNode[]): string[] {
+  const ids: string[] = []
+  const stack = [...tree]
+  while (stack.length > 0) {
+    const node = stack.pop()!
+    if (node.url !== undefined) ids.push(node.id)
+    else for (const child of node.children ?? []) stack.push(child)
+  }
+  return ids
+}
+
 export function toggleChecked(
   checked: Set<string>,
   id: string,
@@ -361,6 +376,7 @@ interface State {
   mode: AppMode
   tree: BookmarkNode[]
   checkedIds: Set<string>
+  moveSelection: Set<string>
   scan: ScanResult | null
   /**
    * 当前这一轮整理的序号，reset() 时 +1。
@@ -386,7 +402,7 @@ interface State {
   undoAvailable: boolean
   busy: string | null
   /** 当前在跑哪一步，决定能不能取消。 */
-  busyKind: 'init' | 'scan' | 'analyze' | 'apply' | 'undo' | 'cleanup' | 'aggregate' | 'checkLinks' | 'reclassify' | null
+  busyKind: 'init' | 'scan' | 'analyze' | 'apply' | 'undo' | 'cleanup' | 'aggregate' | 'checkLinks' | 'reclassify' | 'moveBookmarks' | null
   /**
    * 正在看的（或自己刚发起的）那轮后台任务的 id，来自任务广播与 get_task。
    *
@@ -492,7 +508,7 @@ interface State {
   staleError: string | null
 
   init(): Promise<void>
-  refreshTree(): Promise<void>
+  refreshTree(): Promise<boolean>
   pushEvent(event: ProgressEvent): void
   cancel(): Promise<void>
   /**
@@ -512,6 +528,8 @@ interface State {
   adoptRunningTask(record: TaskRecord): void
   adoptFinishedTask(record: TaskRecord): Promise<void>
   toggle(id: string): void
+  toggleBookmarkSelection(id: string): void
+  moveBookmarks(input: MoveBookmarksInput): Promise<void>
   goScan(): Promise<void>
   setSettings(settings: Settings): Promise<void>
   setModeOverride(mode: OrganizeMode | null): void
@@ -623,6 +641,7 @@ export const useStore = create<State>((set, get) => ({
   mode: 'organize',
   tree: [],
   checkedIds: new Set(),
+  moveSelection: new Set(),
   scan: null,
   runSeq: 0,
   settings: DEFAULT_SETTINGS,
@@ -669,22 +688,25 @@ export const useStore = create<State>((set, get) => ({
   linkCheckState: 'idle',
 
   /** 整理或撤销之后重新读一次书签树，结果页据此展示真实结构。 */
-  async refreshTree() {
+  async refreshTree(): Promise<boolean> {
     const res = await send({ kind: 'get_tree' })
-    if (!res.ok || res.kind !== 'get_tree') return
+    if (!res.ok || res.kind !== 'get_tree') return false
     // 顺手剪掉已经不存在的勾选。合并会删掉被勾中的源目录，撤销又拿新 id 把它们重建出来，
     // 两种情况下 checkedIds 里都躺着一批死 id。reset() 有意保留这个集合（「再整理一次」
     // 不用重勾），可没人剪过它：回到范围页会看到「扫描 2 个文件夹」的按钮亮着、
     // 树上却一个勾都没有，点下去扫的是一批不存在的 id，直接撞 errNoScope。
     // 只剪死的，活着的一个不动——跨 reset 记住选择是有意为之。
     const alive = new Set(collectAllFolderIds(res.tree))
+    const aliveBookmarks = new Set(collectAllBookmarkIds(res.tree))
     set({
       tree: res.tree,
       checkedIds: new Set([...get().checkedIds].filter((id) => alive.has(id))),
+      moveSelection: new Set([...get().moveSelection].filter((id) => aliveBookmarks.has(id))),
       staleScan: null,
       staleState: 'idle',
       staleError: null,
     })
+    return true
   },
 
   pushEvent(event) {
@@ -816,6 +838,10 @@ export const useStore = create<State>((set, get) => ({
           ]),
         })
       }
+      case 'move_bookmarks': {
+        set({ ...base, busy: null, busyKind: null, moveSelection: new Set() })
+        return void (await get().refreshTree())
+      }
       default:
         return set(base)
     }
@@ -868,6 +894,22 @@ export const useStore = create<State>((set, get) => ({
       staleState: 'idle',
       staleError: null,
     })
+  },
+
+  toggleBookmarkSelection(id) {
+    const next = new Set(get().moveSelection)
+    if (next.has(id)) next.delete(id)
+    else next.add(id)
+    set({ moveSelection: next })
+  },
+
+  async moveBookmarks(input) {
+    set({ busy: t('busyMovingBookmarks'), busyKind: 'moveBookmarks', error: null })
+    const res = await sendTask(set, { kind: 'move_bookmarks', input })
+    if (!res.ok) return fail(set, t('moveError', res.error), null)
+    if (res.kind !== 'move_bookmarks') return set({ busy: null, busyKind: null })
+    set({ busy: null, busyKind: null, moveSelection: new Set(), error: null })
+    if (!await get().refreshTree()) set({ error: t('moveRefreshError') })
   },
 
   async goScan() {
@@ -1572,7 +1614,7 @@ export const useStore = create<State>((set, get) => ({
       step: 'scope', scan: null, plan: null, accepted: new Set(), reclassifyMarked: new Set(),
       structureEdits: EMPTY_EDITS, modeOverride: null, titleOnly: false, titleRuleIds: [...DEFAULT_TITLE_RULE_IDS],
       applyResult: null, undoResult: null, error: null, retryable: null,
-      pendingTaskId: null,
+      pendingTaskId: null, moveSelection: new Set(),
     })
     // journal 里那份终态一并作废：重开面板不该再被旧结果拽回去。
     // 任务还在跑时后台会自己拒掉（见 sessions.ts 的 clear），发出去没有副作用。

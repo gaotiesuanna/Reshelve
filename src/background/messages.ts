@@ -11,6 +11,7 @@ import type { ImportResult } from '@/engine/importTree'
 import type { OrganizeMode } from '@/core/mode'
 import type { TestFailure } from '@/llm/probe'
 import type { StaleScanResult } from '@/core/stale'
+import type { MoveBookmarksInput, MoveBookmarksResult } from '@/engine/moveBookmarks'
 import type { TaskRecord } from './events'
 
 /**
@@ -85,6 +86,7 @@ export type Request =
    * 别的地方存着这份 plan——它只活在侧栏的 store 里，得由调用方带过来。
    */
   | { kind: 'reclassify'; plan: OrganizePlan; bookmarkIds: string[] }
+  | { kind: 'move_bookmarks'; input: MoveBookmarksInput }
 
 
 export type Response =
@@ -107,6 +109,7 @@ export type Response =
   | { ok: true; kind: 'apply_aggregate'; result: AggregateResult }
   | { ok: true; kind: 'check_links'; results: LinkResult[] }
   | { ok: true; kind: 'reclassify'; plan: OrganizePlan }
+  | { ok: true; kind: 'move_bookmarks'; result: MoveBookmarksResult }
   | { ok: true; kind: 'open_app_tab' }
   /** 当前后台任务的完整记录（含在途进度与终态载荷）；没有就是 null。 */
   | { ok: true; kind: 'get_task'; record: TaskRecord | null }

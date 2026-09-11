@@ -9,10 +9,11 @@ const tree: BookmarkNode[] = [
   { id: '0', title: '', children: [
     { id: '1', title: '书签栏', children: [
       { id: '10', title: 'react', children: [
-        { id: '100', title: 'hooks', children: [
-          { id: '1000', title: '更深一层', children: [] },
-        ]},
-        { id: '101', title: 'A', url: 'https://a.dev' },
+          { id: '100', title: 'hooks', children: [
+            { id: '1000', title: '更深一层', children: [] },
+          ]},
+          { id: '101', title: 'A', url: 'https://a.dev' },
+          { id: '102', title: 'B', url: 'https://b.dev' },
       ]},
       { id: '11', title: '工作常用', children: [] },
     ]},
@@ -23,6 +24,7 @@ beforeEach(() => {
   useStore.setState({
     tree, checkedIds: new Set(), busy: null, error: null,
     importFile: null, importError: null, importDone: null,
+    moveSelection: new Set(),
   })
 })
 
@@ -124,5 +126,27 @@ describe('TransferStep', () => {
     await userEvent.type(input, 'does-not-exist')
     expect(screen.getByText('没有找到相关书签')).toBeDefined()
   })
-})
 
+  it('选中多个书签后显示移动面板和目标文件夹选择', async () => {
+    render(<TransferStep />)
+    const input = screen.getByRole('searchbox', { name: '搜索书签' })
+    await userEvent.type(input, '.dev')
+    await userEvent.click(screen.getByRole('checkbox', { name: '选择书签 A' }))
+    await userEvent.click(screen.getByRole('checkbox', { name: '选择书签 B' }))
+    expect(screen.getByText('移动选中书签')).toBeDefined()
+    expect(screen.getByText('已选中 2 条书签')).toBeDefined()
+    expect(screen.getByRole('combobox', { name: '移动到文件夹' })).toBeDefined()
+    expect((screen.getByRole('button', { name: '确认移动' }) as HTMLButtonElement).disabled).toBe(true)
+  })
+
+  it('切换到新建文件夹时显示名称和父目录字段', async () => {
+    render(<TransferStep />)
+    await userEvent.type(screen.getByRole('searchbox', { name: '搜索书签' }), '.dev')
+    await userEvent.click(screen.getByRole('checkbox', { name: '选择书签 A' }))
+    await userEvent.click(screen.getByRole('button', { name: '新建文件夹' }))
+
+    expect(screen.getByRole('textbox', { name: '新文件夹名称' })).toBeDefined()
+    expect(screen.getByRole('combobox', { name: '新文件夹放在' })).toBeDefined()
+    expect((screen.getByRole('button', { name: '确认移动' }) as HTMLButtonElement).disabled).toBe(true)
+  })
+})

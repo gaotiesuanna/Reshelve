@@ -154,7 +154,7 @@
     "message": "近三个月"
   },
   "transferIntro": {
-    "message": "搜索书签或文件夹，勾选后导出，也可以导入别人分享的文件。这里不会改你现有的目录结构。"
+    "message": "搜索书签或文件夹，勾选后导出；也可以选中多个书签移动到已有或新建文件夹。"
   },
   "shellStepsLabel": {
     "message": "整理步骤"
@@ -219,6 +219,83 @@
   },
   "treeSearchEmpty": {
     "message": "没有找到相关书签"
+  },
+  "treeSelectBookmark": {
+    "message": "选择书签 $name$",
+    "placeholders": {
+      "name": {
+        "content": "$1"
+      }
+    }
+  },
+  "moveSelectedBookmarks": {
+    "message": "移动选中书签"
+  },
+  "busyMovingBookmarks": {
+    "message": "正在移动书签…"
+  },
+  "moveDestinationLabel": {
+    "message": "移动到文件夹"
+  },
+  "moveChooseFolder": {
+    "message": "请选择文件夹"
+  },
+  "moveExistingFolder": {
+    "message": "已有文件夹"
+  },
+  "moveNewFolder": {
+    "message": "新建文件夹"
+  },
+  "moveNewFolderName": {
+    "message": "新文件夹名称"
+  },
+  "moveParentFolder": {
+    "message": "新文件夹放在"
+  },
+  "moveConfirm": {
+    "message": "确认移动"
+  },
+  "moveCount": {
+    "message": "已选中 $count$ 条书签",
+    "placeholders": {
+      "count": {
+        "content": "$1"
+      }
+    }
+  },
+  "moveDone": {
+    "message": "已移动 $count$ 条书签",
+    "placeholders": {
+      "count": {
+        "content": "$1"
+      }
+    }
+  },
+  "moveError": {
+    "message": "移动失败：$error$",
+    "placeholders": {
+      "error": {
+        "content": "$1"
+      }
+    }
+  },
+  "moveRefreshError": {
+    "message": "书签已移动，但刷新列表失败，请重新打开此页。"
+  },
+  "moveErrEmptySelection": {
+    "message": "没有选择要移动的书签。"
+  },
+  "moveErrMissingBookmark": {
+    "message": "部分选中的书签已不存在，请刷新后重试。"
+  },
+  "moveErrMissingTarget": {
+    "message": "移动目标文件夹不存在。"
+  },
+  "moveErrEmptyFolderName": {
+    "message": "新文件夹名称不能为空。"
+  },
+  "moveErrMissingParent": {
+    "message": "新文件夹的父目录不存在。"
   },
   "scopeNeedModel": {
     "message": "书签怎么分类，由你自己配的模型说了算——现在还没配。挑一个预设，粘上 API Key，就这两步。"
