@@ -5,6 +5,13 @@ import { PROGRESS_PORT, type TaskStreamMessage } from './events'
 import { handle } from './handlers'
 import { createTaskHub } from './sessions'
 import type { PanelRequest, Request, Response } from './messages'
+import type { TaskStorage } from './task-journal'
+import { EMPTY_EDITS } from '@/core/structure'
+import {
+  clearStructureCheckpoint,
+  readStructureCheckpoint,
+  writeStructureCheckpoint,
+} from './structure-checkpoint'
 
 // 启动打点：MV3 的 service worker 会被浏览器回收。
 // 若分析过程中这行日志再次出现，说明 worker 被杀过，在途请求会以
@@ -26,7 +33,7 @@ chrome.runtime.onInstalled.addListener(() => {
  * 任务中枢的进度与终态落在 chrome.storage.session 的 journal 里，
  * 侧栏关了重开也能凭 get_task 接回来。
  */
-const task = createTaskHub({
+const sessionStorage: TaskStorage = {
   async get<T>(key: string) {
     const bag = await chrome.storage.session.get(key)
     return (bag[key] as T | undefined) ?? null
@@ -37,7 +44,9 @@ const task = createTaskHub({
   async remove(key) {
     await chrome.storage.session.remove(key)
   },
-})
+}
+
+const task = createTaskHub(sessionStorage)
 
 // 冷启动自愈：journal 里若还躺着 running/cancelling，说明上一任 SW 死在了半路
 // （被浏览器回收或扩展重载），在途请求必断——补写 interrupted 终态。
@@ -85,12 +94,14 @@ function closeKeepaliveDoc(): void {
  * reclassify 同样挡住：它跟 analyze 一样要读写分类缓存（loadCache/saveCache 整块
  * 读写，见 storage/settings.ts），两个窗口同时读改写会互相覆盖对方刚写下的条目。
  * 它不动书签树，但缓存也是要保护的全局单例。
+ * classify_structure 同样写分类缓存，并且必须冻结用户确认过的候选树，不能与另一轮
+ * 分析或分类交错。
  *
  * 没进来的都是只读或瞬时的（get_tree、scan、cleanup_scan、test_model、list_models…），
  * 并发跑没有互相破坏的余地，挡住它们只会让另一个窗口连书签树都读不了。
  */
 const EXCLUSIVE: ReadonlySet<Request['kind']> = new Set([
-  'analyze', 'check_links', 'apply', 'undo', 'import', 'apply_cleanup', 'apply_aggregate', 'reclassify', 'move_bookmarks',
+  'analyze', 'classify_structure', 'check_links', 'apply', 'undo', 'import', 'apply_cleanup', 'apply_aggregate', 'reclassify', 'move_bookmarks',
 ])
 
 /**
@@ -99,8 +110,11 @@ const EXCLUSIVE: ReadonlySet<Request['kind']> = new Set([
  * 与 EXCLUSIVE 分开是必须的：apply / undo / import / apply_cleanup / apply_aggregate 从不读
  * isCancelled、不收 signal，界面也不给它们取消按钮。把它们一并当成可取消，
  * 换来的是「点了取消 → 日志说正在取消 → 它照样跑完」这种骗人的三连。
+ * classify_structure 与 analyze 一样把 signal 传给 LLM 请求，因此属于可取消任务。
  */
-const CANCELLABLE: ReadonlySet<Request['kind']> = new Set(['analyze', 'check_links', 'reclassify'])
+const CANCELLABLE: ReadonlySet<Request['kind']> = new Set([
+  'analyze', 'classify_structure', 'check_links', 'reclassify',
+])
 
 chrome.runtime.onConnect.addListener((port) => {
   // 连接名不带身份：任务本来就是全局的，每条连接都订阅同一份广播。
@@ -166,6 +180,30 @@ chrome.runtime.onMessage.addListener((message: PanelRequest, _sender, sendRespon
     return true
   }
 
+  if (message.kind === 'get_structure_checkpoint') {
+    void readStructureCheckpoint(sessionStorage).then(
+      (checkpoint) => sendResponse({ ok: true, kind: 'get_structure_checkpoint', checkpoint }),
+      (error: unknown) => sendResponse({ ok: false, error: String(error) }),
+    )
+    return true
+  }
+
+  if (message.kind === 'save_structure_checkpoint') {
+    void writeStructureCheckpoint(sessionStorage, message.checkpoint).then(
+      () => sendResponse({ ok: true, kind: 'save_structure_checkpoint' }),
+      (error: unknown) => sendResponse({ ok: false, error: String(error) }),
+    )
+    return true
+  }
+
+  if (message.kind === 'clear_structure_checkpoint') {
+    void clearStructureCheckpoint(sessionStorage).then(
+      () => sendResponse({ ok: true, kind: 'clear_structure_checkpoint' }),
+      (error: unknown) => sendResponse({ ok: false, error: String(error) }),
+    )
+    return true
+  }
+
   const request = message as Request
   const exclusive = EXCLUSIVE.has(request.kind)
   if (exclusive && !task.begin(request.kind, CANCELLABLE.has(request.kind))) {
@@ -183,22 +221,40 @@ chrome.runtime.onMessage.addListener((message: PanelRequest, _sender, sendRespon
   // 发的 get_settings 会拿到分析那一轮的 signal，用户点取消时它跟着莫名其妙地断掉。
   const signal = exclusive ? task.signal() : undefined
 
-  handle(createChromePorts(), request, {
-    // 进度与终态广播给所有连着的侧栏——任务在后台跑，谁都可能随时打开面板来看。
-    onEvent: (event) => task.emit(event),
-    isCancelled: () => task.isCancelled(),
-    ...(signal === undefined ? {} : { signal }),
+  void (async () => {
+    if (request.kind === 'classify_structure') {
+      await writeStructureCheckpoint(sessionStorage, {
+        draft: request.draft,
+        edits: request.edits,
+        state: 'classifying',
+        updatedAt: Date.now(),
+      })
+    }
+
+    const response = await handle(createChromePorts(), request, {
+      // 进度与终态广播给所有连着的侧栏——任务在后台跑，谁都可能随时打开面板来看。
+      onEvent: (event) => task.emit(event),
+      isCancelled: () => task.isCancelled(),
+      ...(signal === undefined ? {} : { signal }),
+    })
+
+    if (response.ok && response.kind === 'analyze' && response.outcome === 'structure') {
+      await writeStructureCheckpoint(sessionStorage, {
+        draft: response.draft,
+        edits: EMPTY_EDITS,
+        state: 'awaiting_confirmation',
+        updatedAt: Date.now(),
+      })
+    }
+
+    task.end(response)
+    closeKeepaliveDoc()
+    sendResponse(response)
+  })().catch((error: unknown) => {
+    const response: Response = { ok: false, error: String(error) }
+    task.end(response)
+    closeKeepaliveDoc()
+    sendResponse(response)
   })
-    .then((response: Response) => {
-      task.end(response)
-      closeKeepaliveDoc()
-      sendResponse(response)
-    })
-    .catch((error: unknown) => {
-      const response: Response = { ok: false, error: String(error) }
-      task.end(response)
-      closeKeepaliveDoc()
-      sendResponse(response)
-    })
   return true // 保持消息通道开启以支持异步响应
 })

@@ -13,7 +13,7 @@ import type { TestFailure } from '@/llm/probe'
 import type { StaleScanResult } from '@/core/stale'
 import type { MoveBookmarksInput, MoveBookmarksResult } from '@/engine/moveBookmarks'
 import type { TaskRecord } from './events'
-import type { StructureDraft, StructureEdits } from '@/core/structure'
+import type { StructureCheckpoint, StructureDraft, StructureEdits } from '@/core/structure'
 
 /**
  * 失败分类跟着探针本身定义在 llm/probe.ts（那一层零浏览器依赖），这里再导出一次，
@@ -121,6 +121,9 @@ export type Response =
   /** 当前后台任务的完整记录（含在途进度与终态载荷）；没有就是 null。 */
   | { ok: true; kind: 'get_task'; record: TaskRecord | null }
   | { ok: true; kind: 'clear_task' }
+  | { ok: true; kind: 'get_structure_checkpoint'; checkpoint: StructureCheckpoint | null }
+  | { ok: true; kind: 'save_structure_checkpoint' }
+  | { ok: true; kind: 'clear_structure_checkpoint' }
   /**
    * cancelled 为 true 表示用户主动取消，不是出错。
    * reason 只有 test_model 会带：失败时说清是哪一类，别的请求没有这个分类。
@@ -142,6 +145,9 @@ export type Response =
 export type ControlRequest =
   | { kind: 'get_task' }
   | { kind: 'clear_task' }
+  | { kind: 'get_structure_checkpoint' }
+  | { kind: 'save_structure_checkpoint'; checkpoint: StructureCheckpoint }
+  | { kind: 'clear_structure_checkpoint' }
   | { kind: 'open_app_tab'; mode: string; step: string; checkedIds: string[] }
 
 export type PanelRequest = Request | ControlRequest

@@ -1,8 +1,10 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest'
 import { PROGRESS_PORT, type TaskRecord, type TaskStreamMessage } from '@/background/events'
 import { TASK_KEY } from '@/background/task-journal'
+import { STRUCTURE_CHECKPOINT_KEY } from '@/background/structure-checkpoint'
 import type { PanelRequest, Response } from '@/background/messages'
 import type { HandlerDeps } from '@/background/handlers'
+import type { StructureCheckpoint, StructureDraft, StructureEdits } from '@/core/structure'
 import { t } from '@/i18n'
 
 /**
@@ -38,9 +40,13 @@ interface Call {
   resolve: (response: Response) => void
 }
 let calls: Call[]
+let lifecycleEvents: string[]
 
 const handle = vi.fn((_ports: unknown, _request: unknown, deps: HandlerDeps) =>
-  new Promise<Response>((resolve) => { calls.push({ deps, resolve }) }),
+  new Promise<Response>((resolve) => {
+    lifecycleEvents.push('handle')
+    calls.push({ deps, resolve })
+  }),
 )
 
 interface KeepaliveDocOptions {
@@ -92,12 +98,33 @@ function seedJournal(record: Partial<TaskRecord>): void {
 
 let sessionBag: Map<string, unknown>
 
+const draft = { id: 'draft-1' } as StructureDraft
+const edits: StructureEdits = {
+  renames: { categoryA: 'Reading' },
+  removed: [],
+  mergedInto: {},
+  added: [],
+}
+
+function structureCheckpoint(
+  overrides: Partial<StructureCheckpoint> = {},
+): StructureCheckpoint {
+  return {
+    draft,
+    edits,
+    state: 'awaiting_confirmation',
+    updatedAt: 100,
+    ...overrides,
+  }
+}
+
 /** open_app_tab 的现场：开了哪个 URL、侧栏开关被拨了哪几下。 */
 let openedUrls: string[]
 let panelToggles: boolean[]
 
 beforeEach(async () => {
   calls = []
+  lifecycleEvents = []
   openedUrls = []
   panelToggles = []
   handle.mockClear()
@@ -131,7 +158,12 @@ beforeEach(async () => {
       local: { get: () => Promise.resolve({}), set: () => Promise.resolve() },
       session: {
         get: async (key: string) => (sessionBag.has(key) ? { [key]: sessionBag.get(key) } : {}),
-        set: async (bag: Record<string, unknown>) => { for (const [k, v] of Object.entries(bag)) sessionBag.set(k, v) },
+        set: async (bag: Record<string, unknown>) => {
+          for (const [k, v] of Object.entries(bag)) {
+            lifecycleEvents.push(`set:${k}`)
+            sessionBag.set(k, v)
+          }
+        },
         remove: async (key: string) => { sessionBag.delete(key) },
       },
     },
@@ -144,6 +176,129 @@ beforeEach(async () => {
   // 计数在这里清零，让各用例只看自己触发的调用。
   await flush()
   closeDocument.mockClear()
+})
+
+describe('结构确认检查点', () => {
+  it('rebuild analyze 在回复侧栏前保存 awaiting_confirmation 检查点', async () => {
+    const responseSeen = new Promise<{ response: Response; checkpoint: unknown }>((resolve) => {
+      onMessage({ kind: 'analyze', scopeRootIds: ['1'] }, {}, (response) => {
+        resolve({ response, checkpoint: sessionBag.get(STRUCTURE_CHECKPOINT_KEY) })
+      })
+    })
+
+    calls[0]!.resolve({ ok: true, kind: 'analyze', outcome: 'structure', draft })
+    const seen = await responseSeen
+
+    expect(seen.response).toEqual({ ok: true, kind: 'analyze', outcome: 'structure', draft })
+    expect(seen.checkpoint).toEqual({
+      draft,
+      edits: { renames: {}, removed: [], mergedInto: {}, added: [] },
+      state: 'awaiting_confirmation',
+      updatedAt: expect.any(Number),
+    })
+  })
+
+  it('save_structure_checkpoint replaces the complete edits and timestamp', async () => {
+    sessionBag.set(STRUCTURE_CHECKPOINT_KEY, structureCheckpoint({
+      edits: { ...edits, removed: ['old-category'] },
+      updatedAt: 50,
+    }))
+    const replacement = structureCheckpoint({
+      edits: { ...edits, renames: { categoryB: 'Reference' } },
+      updatedAt: 200,
+    })
+
+    expect(await sendAsync({ kind: 'save_structure_checkpoint', checkpoint: replacement }))
+      .toEqual({ ok: true, kind: 'save_structure_checkpoint' })
+    expect(sessionBag.get(STRUCTURE_CHECKPOINT_KEY)).toEqual(replacement)
+  })
+
+  it('classify_structure writes classifying before invoking handle', async () => {
+    lifecycleEvents = []
+    send({ kind: 'classify_structure', draft, edits })
+
+    await vi.waitFor(() => expect(handle).toHaveBeenCalledTimes(1))
+
+    expect(lifecycleEvents.indexOf(`set:${STRUCTURE_CHECKPOINT_KEY}`))
+      .toBeLessThan(lifecycleEvents.indexOf('handle'))
+    expect(sessionBag.get(STRUCTURE_CHECKPOINT_KEY)).toEqual({
+      draft,
+      edits,
+      state: 'classifying',
+      updatedAt: expect.any(Number),
+    })
+  })
+
+  it.each([
+    ['failure response', async () => {
+      send({ kind: 'classify_structure', draft, edits })
+      await vi.waitFor(() => expect(calls).toHaveLength(1))
+      calls[0]!.resolve({ ok: false, error: 'classification failed' })
+    }],
+    ['cancelled response', async () => {
+      send({ kind: 'classify_structure', draft, edits })
+      await vi.waitFor(() => expect(calls).toHaveLength(1))
+      send({ kind: 'cancel' })
+      calls[0]!.resolve({ ok: false, error: 'cancelled', cancelled: true })
+    }],
+    ['rejected handler', async () => {
+      handle.mockImplementationOnce(() => Promise.reject(new Error('network failed')))
+      send({ kind: 'classify_structure', draft, edits })
+    }],
+  ])('keeps the checkpoint after a %s', async (_name, finish) => {
+    await finish()
+    await flush()
+
+    expect(sessionBag.get(STRUCTURE_CHECKPOINT_KEY)).toEqual({
+      draft,
+      edits,
+      state: 'classifying',
+      updatedAt: expect.any(Number),
+    })
+  })
+
+  it('keeps the checkpoint after successful classification until explicit clear', async () => {
+    send({ kind: 'classify_structure', draft, edits })
+    await vi.waitFor(() => expect(calls).toHaveLength(1))
+    const plan = { rows: [], rebuildStructure: true }
+
+    calls[0]!.resolve({ ok: true, kind: 'classify_structure', plan: plan as never })
+    await flush()
+
+    expect(sessionBag.get(STRUCTURE_CHECKPOINT_KEY)).toEqual({
+      draft,
+      edits,
+      state: 'classifying',
+      updatedAt: expect.any(Number),
+    })
+  })
+
+  it('checkpoint controls work without claiming or entering the exclusive task slot', async () => {
+    send({ kind: 'analyze', scopeRootIds: ['1'] })
+    const checkpoint = structureCheckpoint()
+
+    expect(await sendAsync({ kind: 'save_structure_checkpoint', checkpoint }))
+      .toEqual({ ok: true, kind: 'save_structure_checkpoint' })
+    expect(await sendAsync({ kind: 'get_structure_checkpoint' }))
+      .toEqual({ ok: true, kind: 'get_structure_checkpoint', checkpoint })
+    expect(await sendAsync({ kind: 'clear_structure_checkpoint' }))
+      .toEqual({ ok: true, kind: 'clear_structure_checkpoint' })
+    expect(handle).toHaveBeenCalledTimes(1)
+  })
+
+  it('classify_structure is exclusive, cancellable, and kept alive', async () => {
+    const first = send({ kind: 'classify_structure', draft, edits })
+    expect(first).toBeNull()
+    await vi.waitFor(() => expect(calls).toHaveLength(1))
+
+    expect(send({ kind: 'analyze', scopeRootIds: ['1'] })?.ok).toBe(false)
+    expect(createDocument).toHaveBeenCalledTimes(1)
+    expect(calls[0]!.deps.signal).toBeDefined()
+
+    send({ kind: 'cancel' })
+    expect(calls[0]!.deps.isCancelled?.()).toBe(true)
+    expect(calls[0]!.deps.signal?.aborted).toBe(true)
+  })
 })
 
 describe('进度广播按窗口路由', () => {
