@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { t } from '@/i18n'
 import { BookmarkTree, filterBookmarkTree, topLevelNodes } from '../components/BookmarkTree'
 import { ExportPanel } from '../components/ExportPanel'
@@ -39,6 +39,7 @@ export function TransferStep() {
   const [expanded, setExpanded] = useState<Set<string> | null>(null)
   const [searchQuery, setSearchQuery] = useState('')
   const [moveOpen, setMoveOpen] = useState(false)
+  const movePanelRef = useRef<HTMLDivElement>(null)
   const [expandedBeforeSearch, setExpandedBeforeSearch] = useState<Set<string> | null>(null)
   const [searchExpandedIds, setSearchExpandedIds] = useState<Set<string> | null>(null)
   const defaultExpanded = useMemo(
@@ -61,6 +62,12 @@ export function TransferStep() {
   useEffect(() => {
     if (moveSelection.size === 0) setMoveOpen(false)
   }, [moveSelection.size])
+  // 面板展开在文档流末尾（见 JSX 里 StickyActionBar 之后），长目录树下会落在视口外，
+  // 展开那一刻滚过去把它带进视野
+  useEffect(() => {
+    // jsdom 里没有 scrollIntoView
+    if (moveOpen) movePanelRef.current?.scrollIntoView?.({ block: 'nearest' })
+  }, [moveOpen])
 
   function changeSearchQuery(value: string): void {
     const wasActive = searchQuery.trim().length > 0
@@ -130,7 +137,8 @@ export function TransferStep() {
       </div>
       {/* 操作区钉在底部：书签上千条时目录树很长，导入导出不该被推到要滚半天才看得见的地方。
           切换条和选项组直接铺在 sticky 栏里，不再套一层灰底卡片——那层 padding
-          会把「导出 / 导入」撑得比真按钮还壮。 */}
+          会把「导出 / 导入」撑得比真按钮还壮。移动面板不放这里：钉底栏只会往上长、
+          把目录树盖掉，页面本身并不变高——它挪去了文档流末尾（见下）。 */}
       <StickyActionBar>
         {moveSelection.size > 0 && (
           <div className="mb-3">
@@ -147,7 +155,6 @@ export function TransferStep() {
                 <ChevronDownIcon className={`h-3.5 w-3.5 shrink-0 transition-transform ${moveOpen ? 'rotate-180' : ''}`} />
               </span>
             </button>
-            {moveOpen && <MoveBookmarksPanel tree={tree} busy={busy} />}
           </div>
         )}
         <div className={segmentTrack} role="group">
@@ -180,6 +187,15 @@ export function TransferStep() {
           </div>
         )}
       </StickyActionBar>
+      {/* 移动面板放在文档流里、钉底操作栏之后：点「移动选中书签」页面往下长出这一块，
+          目录树不被盖住。长目录树下用户正停在半中间，面板落在视口外，
+          展开那一刻滚过去把它带进视野（见上方 effect）。
+          mt-4 抵掉操作栏的 -mb-4，面板自己的 mt-2 再留出一道缝。 */}
+      {moveOpen && (
+        <div ref={movePanelRef} className="mt-4">
+          <MoveBookmarksPanel tree={tree} busy={busy} />
+        </div>
+      )}
     </div>
   )
 }
