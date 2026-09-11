@@ -918,13 +918,10 @@
     "message": "The test did not finish, so there is no verdict on what went wrong. Try again."
   },
   "prefsModeAdditiveOption": {
-    "message": "File into existing folders (default)"
+    "message": "File into existing folders"
   },
   "prefsModeAdditiveBody": {
     "message": "No existing folder is renamed, merged, or deleted. Bookmarks that fit nowhere are gathered into new folders by topic; the ones that can't even be given a topic land in an \"Other\" folder. The whole run can be undone."
-  },
-  "prefsModeAdditiveSummary": {
-    "message": "No existing folder is renamed, merged, or deleted. The whole run can be undone."
   },
   "prefsModeGroupLabel": {
     "message": "How to organize"
@@ -936,13 +933,10 @@
     "message": "Old folders left out of this design are numbered after this round's folders and sort after them, with their contents untouched; the exception is a folder whose name genuinely starts with a digit, which keeps it so your own naming is not clipped. A final pass then numbers any folder that is still missing a prefix."
   },
   "prefsModeRebuildOption": {
-    "message": "Redesign the whole tree"
+    "message": "Redesign the whole tree (default)"
   },
   "prefsDetailToggle": {
     "message": "Details"
-  },
-  "prefsModeRebuildSummary": {
-    "message": "The whole folder tree is redesigned, and your existing top-level folders are renamed with a number prefix. One click undoes everything."
   },
   "prefsOptionsTitle": {
     "message": "Run options"
@@ -961,9 +955,6 @@
       }
     }
   },
-  "prefsGithubOnlyScope": {
-    "message": "This run only normalizes bookmark titles in the current scope. It does not call a model or change bookmark locations."
-  },
   "prefsGithubOnlySection": {
     "message": "Title rules"
   },
@@ -981,9 +972,6 @@
   },
   "prefsLooseOnlyTitle": {
     "message": "Only classify loose bookmarks"
-  },
-  "prefsLooseOnlySummary": {
-    "message": "Only bookmarks sitting directly loose under the scope root, in no folder at all, are sent to the model. Bookmarks already inside a folder are left exactly where they are this round, right or wrong."
   },
   "prefsLooseOnlyBody": {
     "message": "Choosing \"File into existing folders\" reclassifies every bookmark in scope on every run — that's what catches a bookmark that's already in a folder but filed wrong, at the cost of running classification over everything each time (cached ones aside). This option saves that cost, but a misfiled bookmark won't be corrected automatically anymore — move it by hand, or switch back to \"File into existing folders\" for one full pass."

@@ -506,15 +506,15 @@ describe('放弃这一轮之后，在途结果不再落地', () => {
     expect(call?.modeOverride).toBeUndefined()
   })
 
-  it('重新扫描与 reset 都会把推翻清掉——那是上一批书签的判断', async () => {
-    useStore.setState({ modeOverride: 'rebuild' })
+  it('reset 清掉推翻；扫描完成后整理方式回到重新设计', async () => {
+    useStore.setState({ modeOverride: 'additive' })
     useStore.getState().reset()
     expect(useStore.getState().modeOverride).toBeNull()
 
-    useStore.setState({ modeOverride: 'rebuild' })
+    useStore.setState({ modeOverride: 'additive' })
     vi.mocked(send).mockImplementation(() => Promise.resolve({ ok: true, kind: 'scan', scan }) as never)
     await useStore.getState().goScan()
-    expect(useStore.getState().modeOverride).toBeNull()
+    expect(useStore.getState().modeOverride).toBe('rebuild')
   })
 
   it('title-only 请求带上本轮 ruleIds，不写 settings', async () => {

@@ -121,33 +121,39 @@ export function PreferencesStep() {
       <IndexSection title={t('prefsModeGroupLabel')}>
         <div className={choiceList} role="radiogroup" aria-label={t('prefsModeGroupLabel')}>
           <div>
-            <label className={`${choiceRow} hover:bg-index-blue-soft`}>
-              <input
-                type="radio"
-                name="prefs-mode"
-                className="h-3.5 w-3.5 shrink-0 accent-index-blue"
-                checked={!titleOnly && !rebuild && !settings.onlyLooseInAdditive}
-                onChange={() => pickOrganizeChoice('additive', decision.mode, settings, setTitleOnly, setModeOverride, setSettings)}
-              />
-              <span className="min-w-0 flex-1">{t('prefsModeAdditiveOption')}</span>
-            </label>
-            <p className="px-3 pb-2 text-xs leading-body text-index-muted">{t('prefsModeAdditiveSummary')}</p>
-            <Detail flush label={detailLabel()}>{t('prefsModeAdditiveBody')}</Detail>
+            <dl className="grid grid-cols-[minmax(0,1fr)_auto] items-center gap-x-2">
+              <dt className="min-w-0">
+                <label className={`${choiceRow} hover:bg-index-blue-soft`}>
+                  <input
+                    type="radio"
+                    name="prefs-mode"
+                    className="h-3.5 w-3.5 shrink-0 accent-index-blue"
+                    checked={!titleOnly && !rebuild && !settings.onlyLooseInAdditive}
+                    onChange={() => pickOrganizeChoice('additive', decision.mode, settings, setTitleOnly, setModeOverride, setSettings)}
+                  />
+                  <span className="min-w-0 flex-1">{t('prefsModeAdditiveOption')}</span>
+                </label>
+              </dt>
+              <Detail inline flush label={detailLabel()}>{t('prefsModeAdditiveBody')}</Detail>
+            </dl>
           </div>
 
           <div>
-            <label className={`${choiceRow} hover:bg-index-blue-soft`}>
-              <input
-                type="radio"
-                name="prefs-mode"
-                className="h-3.5 w-3.5 shrink-0 accent-index-blue"
-                checked={!titleOnly && !rebuild && settings.onlyLooseInAdditive}
-                onChange={() => pickOrganizeChoice('loose', decision.mode, settings, setTitleOnly, setModeOverride, setSettings)}
-              />
-              <span className="min-w-0 flex-1">{t('prefsLooseOnlyTitle')}</span>
-            </label>
-            <p className="px-3 pb-2 text-xs leading-body text-index-muted">{t('prefsLooseOnlySummary')}</p>
-            <Detail flush label={detailLabel()}>{t('prefsLooseOnlyBody')}</Detail>
+            <dl className="grid grid-cols-[minmax(0,1fr)_auto] items-center gap-x-2">
+              <dt className="min-w-0">
+                <label className={`${choiceRow} hover:bg-index-blue-soft`}>
+                  <input
+                    type="radio"
+                    name="prefs-mode"
+                    className="h-3.5 w-3.5 shrink-0 accent-index-blue"
+                    checked={!titleOnly && !rebuild && settings.onlyLooseInAdditive}
+                    onChange={() => pickOrganizeChoice('loose', decision.mode, settings, setTitleOnly, setModeOverride, setSettings)}
+                  />
+                  <span className="min-w-0 flex-1">{t('prefsLooseOnlyTitle')}</span>
+                </label>
+              </dt>
+              <Detail inline flush label={detailLabel()}>{t('prefsLooseOnlyBody')}</Detail>
+            </dl>
             {!titleOnly && !rebuild && settings.onlyLooseInAdditive && (
               <Detail
                 flush
@@ -181,34 +187,41 @@ export function PreferencesStep() {
           </div>
 
           <div>
-            <label className={`${choiceRow} hover:bg-index-blue-soft`}>
-              <input
-                type="radio"
-                name="prefs-mode"
-                className="h-3.5 w-3.5 shrink-0 accent-index-blue"
-                checked={!titleOnly && rebuild}
-                onChange={() => pickOrganizeChoice('rebuild', decision.mode, settings, setTitleOnly, setModeOverride, setSettings)}
-              />
-              <span className="min-w-0 flex-1">{t('prefsModeRebuildOption')}</span>
-            </label>
-            <p className="px-3 pb-2 text-xs leading-body text-index-muted">{t('prefsModeRebuildSummary')}</p>
-            <Detail flush label={detailLabel()}>{t('prefsModeRebuildBody')}</Detail>
+            <dl className="grid grid-cols-[minmax(0,1fr)_auto] items-center gap-x-2">
+              <dt className="min-w-0">
+                <label className={`${choiceRow} hover:bg-index-blue-soft`}>
+                  <input
+                    type="radio"
+                    name="prefs-mode"
+                    className="h-3.5 w-3.5 shrink-0 accent-index-blue"
+                    checked={!titleOnly && rebuild}
+                    onChange={() => pickOrganizeChoice('rebuild', decision.mode, settings, setTitleOnly, setModeOverride, setSettings)}
+                  />
+                  <span className="min-w-0 flex-1">{t('prefsModeRebuildOption')}</span>
+                </label>
+              </dt>
+              <Detail inline flush label={detailLabel()}>{t('prefsModeRebuildBody')}</Detail>
+            </dl>
           </div>
 
           <div>
-            <label className={`${choiceRow} hover:bg-index-blue-soft`}>
-              <input
-                type="radio"
-                name="prefs-mode"
-                className="h-3.5 w-3.5 shrink-0 accent-index-blue"
-                checked={titleOnly}
-                onChange={() => pickOrganizeChoice('titleOnly', decision.mode, settings, setTitleOnly, setModeOverride, setSettings)}
-              />
-              <span className="min-w-0 flex-1">{t('prefsGithubOnlyTitle')}</span>
-            </label>
-            <p className="px-3 pb-2 text-xs leading-body text-index-muted">{t('prefsGithubOnlyScope')}</p>
-            <Detail flush label={detailLabel()}>{t('prefsGithubOnlyBody')}</Detail>
+            <dl className="grid grid-cols-[minmax(0,1fr)_auto] items-center gap-x-2">
+              <dt className="min-w-0">
+                <label className={`${choiceRow} hover:bg-index-blue-soft`}>
+                  <input
+                    type="radio"
+                    name="prefs-mode"
+                    className="h-3.5 w-3.5 shrink-0 accent-index-blue"
+                    checked={titleOnly}
+                    onChange={() => pickOrganizeChoice('titleOnly', decision.mode, settings, setTitleOnly, setModeOverride, setSettings)}
+                  />
+                  <span className="min-w-0 flex-1">{t('prefsGithubOnlyTitle')}</span>
+                </label>
+              </dt>
+              <Detail inline flush label={detailLabel()}>{t('prefsGithubOnlyBody')}</Detail>
+            </dl>
           </div>
+
         </div>
 
         {!titleOnly && (

@@ -65,7 +65,7 @@ const messyScan = scanOf([ROOT], Array.from({ length: 5 }, (_, i) => bookmark(`l
  */
 const anyScan = scanOf([ROOT, folder('10', '目录', '1', 1)], [bookmark('a', '10')])
 
-function setup(scan: ScanResult, modeOverride: OrganizeMode | null = null): void {
+function setup(scan: ScanResult, modeOverride: OrganizeMode | null = 'rebuild'): void {
   useStore.setState({
     scan,
     settings: { ...DEFAULT_SETTINGS },
@@ -210,20 +210,20 @@ describe('PreferencesStep 清理空文件夹的说明', () => {
   it('清理选项可独立勾选，不改变整理方式选中项', async () => {
     setup(tidyScan)
     render(<PreferencesStep />)
-    const additive = screen.getByRole('radio', { name: '归入现有目录（默认）' }) as HTMLInputElement
-    expect(additive.checked).toBe(true)
+    const rebuild = screen.getByRole('radio', { name: '重新设计整棵树（默认）' }) as HTMLInputElement
+    expect(rebuild.checked).toBe(true)
     const clean = screen.getByRole('checkbox', { name: '整理后清理空文件夹' }) as HTMLInputElement
     expect(clean.checked).toBe(true)
     await userEvent.click(clean)
     expect(useStore.getState().settings.removeEmptyFolders).toBe(false)
-    expect(additive.checked).toBe(true)
+    expect(rebuild.checked).toBe(true)
     expect(useStore.getState().titleOnly).toBe(false)
-    expect(useStore.getState().modeOverride).toBeNull()
+    expect(useStore.getState().modeOverride).toBe('rebuild')
   })
 })
 
 /**
- * 「归入现有（默认）」「只处理散落书签」「重新设计整棵树」是同一个维度上的三个点
+ * 「归入现有」「只处理散落书签」「重新设计整棵树（默认）」是同一个维度上的三个点
  * ——这次整理该动多大范围、多深——用户明确要求把它们并列成一组单选，不再是
  * 「顶部一个逃生口按钮 + 下面选项列表里一个孤零零的勾选框」。
  */
@@ -235,10 +235,12 @@ describe('PreferencesStep 整理方式四选一', () => {
     return within(radioGroup()).getByRole('radio', { name }) as HTMLInputElement
   }
 
-  it('判已整理时默认选中「归入现有目录」，理由句仍然讲清楚凭什么这么判', () => {
+  it('扫描完成后默认选中重新设计，不跟 detectMode，也不跟上一轮散落选项', () => {
     setup(tidyScan)
+    useStore.setState({ settings: { ...DEFAULT_SETTINGS, onlyLooseInAdditive: true } })
     render(<PreferencesStep />)
-    expect(radio('归入现有目录（默认）').checked).toBe(true)
+    expect(radio('重新设计整棵树（默认）').checked).toBe(true)
+    expect(radio('只处理散落书签').checked).toBe(false)
     expect(screen.getByText(/带编号前缀/)).toBeTruthy()
   })
 
@@ -261,50 +263,41 @@ describe('PreferencesStep 整理方式四选一', () => {
     expect(useStore.getState().titleOnly).toBe(false)
   })
 
-  it('选「重新设计整棵树」：推翻模式判断', async () => {
-    setup(tidyScan)
+  it('选「重新设计整棵树」：modeOverride 钉在 rebuild', async () => {
+    setup(tidyScan, null)
     render(<PreferencesStep />)
-    await userEvent.click(radio('重新设计整棵树'))
+    await userEvent.click(radio('重新设计整棵树（默认）'))
     expect(useStore.getState().modeOverride).toBe('rebuild')
     expect(useStore.getState().titleOnly).toBe(false)
   })
 
-  it('推翻之后改选「归入现有目录」：modeOverride 与 onlyLooseInAdditive 一起复位', async () => {
+  it('改选「归入现有目录」：modeOverride 与 onlyLooseInAdditive 一起复位', async () => {
     setup(tidyScan)
     render(<PreferencesStep />)
-    await userEvent.click(radio('重新设计整棵树'))
-    await userEvent.click(radio('归入现有目录（默认）'))
+    await userEvent.click(radio('归入现有目录'))
 
     expect(useStore.getState().modeOverride).toBeNull()
     expect(useStore.getState().settings.onlyLooseInAdditive).toBe(false)
     expect(useStore.getState().titleOnly).toBe(false)
   })
 
-  it('推翻之后改选「只处理散落书签」：同样能直接切回去，不用先跳回默认', async () => {
-    setup(tidyScan)
-    render(<PreferencesStep />)
-    await userEvent.click(radio('重新设计整棵树'))
-    await userEvent.click(radio('只处理散落书签'))
 
-    expect(useStore.getState().modeOverride).toBeNull()
-    expect(useStore.getState().settings.onlyLooseInAdditive).toBe(true)
-    expect(useStore.getState().titleOnly).toBe(false)
-  })
-
-  it('四项短摘要默认可见，长说明默认收起', () => {
+  it('四项摘要不显示，说明按钮位于各自选项第一行右侧且默认收起', () => {
     setup(tidyScan)
     render(<PreferencesStep />)
     const group = radioGroup()
-    expect(within(group).getByText(/不会改名、合并或删除任何现有文件夹/)).toBeTruthy()
-    expect(within(group).getByText(/只把直接散落在范围根下/)).toBeTruthy()
-    expect(within(group).getByText(/会重新设计整棵目录树/)).toBeTruthy()
-    expect(within(group).getByText(/本轮只规范化当前范围内的书签标题/)).toBeTruthy()
+    expect(within(group).queryByText(/不会改名、合并或删除任何现有文件夹/)).toBeNull()
+    expect(within(group).queryByText(/只把直接散落在范围根下/)).toBeNull()
+    expect(within(group).queryByText(/会重新设计整棵目录树/)).toBeNull()
+    expect(within(group).queryByText(/本轮只规范化当前范围内的书签标题/)).toBeNull()
     expect(within(group).queryByText(/实在分不进去的书签会按主题攒成新目录/)).toBeNull()
     expect(within(group).queryByText(/选「归入现有目录」时，每一轮都会把范围内全部书签重新判断一遍/)).toBeNull()
     expect(within(group).queryByText(/没进本轮设计的旧文件夹/)).toBeNull()
     expect(within(group).queryByText(/也不会清理空文件夹/)).toBeNull()
     for (const button of within(group).getAllByRole('button', { name: '说明' })) {
       expect(button.getAttribute('aria-expanded')).toBe('false')
+      expect(button.closest('dt')).toBeTruthy()
+      expect(button.closest('dl')?.querySelector('label')).toBeTruthy()
     }
   })
 
@@ -321,7 +314,7 @@ describe('PreferencesStep 整理方式四选一', () => {
     setup(messyScan)
     render(<PreferencesStep />)
     expect(screen.getByRole('button', { name: '返回' })).toBeTruthy()
-    expect(radio('重新设计整棵树').checked).toBe(true)
+    expect(radio('重新设计整棵树（默认）').checked).toBe(true)
     expect(within(radioGroup()).getAllByRole('radio')).toHaveLength(4)
     expect(screen.getByText(/范围内一个目录都没有/)).toBeTruthy()
   })
@@ -329,7 +322,7 @@ describe('PreferencesStep 整理方式四选一', () => {
   it('判一团乱麻时改选归入现有：显式推翻为 additive', async () => {
     setup(messyScan)
     render(<PreferencesStep />)
-    await userEvent.click(radio('归入现有目录（默认）'))
+    await userEvent.click(radio('归入现有目录'))
     expect(useStore.getState().modeOverride).toBe('additive')
     expect(useStore.getState().titleOnly).toBe(false)
     expect(useStore.getState().settings.onlyLooseInAdditive).toBe(false)
@@ -349,9 +342,9 @@ describe('PreferencesStep 整理方式四选一', () => {
     render(<PreferencesStep />)
     await userEvent.click(radio('仅规范化书签标题'))
     expect(useStore.getState().titleOnly).toBe(true)
-    await userEvent.click(radio('归入现有目录（默认）'))
+    await userEvent.click(radio('归入现有目录'))
     expect(useStore.getState().titleOnly).toBe(false)
-    expect(radio('归入现有目录（默认）').checked).toBe(true)
+    expect(radio('归入现有目录').checked).toBe(true)
   })
 })
 
@@ -420,7 +413,7 @@ describe('PreferencesStep 散落书签名单', () => {
     await userEvent.click(radio('只处理散落书签'))
     expect(listToggle('2 个散落书签')).toBeTruthy()
 
-    await userEvent.click(radio('归入现有目录（默认）'))
+    await userEvent.click(radio('归入现有目录'))
     expect(within(radioGroup()).queryByRole('button', { name: /散落书签/ })).toBeNull()
   })
 })

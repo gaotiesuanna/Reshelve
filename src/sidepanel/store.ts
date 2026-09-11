@@ -417,11 +417,11 @@ interface State {
   /** 结构确认页的草稿态编辑，不写进 Settings，每次 analyze 重置。 */
   structureEdits: StructureEdits
   /**
-   * 用户对自动判断的推翻，`null` 表示听判断的。
+   * 用户对自动判断的推翻。扫描完成后默认 `'rebuild'`：偏好页先勾「重新设计整棵树」。
+   * `null` 仍表示听 detectMode（用户改选「归入现有」且判断本就是 additive 时）。
    *
-   * 与 structureEdits 一样是草稿态，不进 Settings：一次推翻只对这一次整理生效
-   * （见 issues/14-mode-detection.md §5）。重新扫描或 reset 之后作废——
-   * 那时判断的对象已经换了一批书签。
+   * 与 structureEdits 一样是草稿态，不进 Settings：一次选择只对这一次整理生效
+   * （见 issues/14-mode-detection.md §5）。reset 清掉；重新扫描重新落到 `'rebuild'`。
    */
   modeOverride: OrganizeMode | null
   /** 偏好页本轮只统一 GitHub 标题，不进 Settings。 */
@@ -877,7 +877,7 @@ export const useStore = create<State>((set, get) => ({
     if (isStale(get, set, run)) return
     if (!res.ok) return fail(set, res.error, 'scan')
     if (res.kind !== 'scan') return set({ busy: null, busyKind: null })
-    set({ scan: res.scan, step: 'preferences', modeOverride: null, titleOnly: false, titleRuleIds: [...DEFAULT_TITLE_RULE_IDS], busy: null, busyKind: null })
+    set({ scan: res.scan, step: 'preferences', modeOverride: 'rebuild', titleOnly: false, titleRuleIds: [...DEFAULT_TITLE_RULE_IDS], busy: null, busyKind: null })
   },
 
   async setSettings(settings) {

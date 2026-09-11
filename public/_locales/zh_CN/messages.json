@@ -918,13 +918,10 @@
     "message": "测试没跑完，判断不出是哪一类问题。请再试一次。"
   },
   "prefsModeAdditiveOption": {
-    "message": "归入现有目录（默认）"
+    "message": "归入现有目录"
   },
   "prefsModeAdditiveBody": {
     "message": "不会改名、合并或删除任何现有文件夹。实在分不进去的书签会按主题攒成新目录；连主题都定不出来的，会归进一个「其他」目录。整理可一键撤销。"
-  },
-  "prefsModeAdditiveSummary": {
-    "message": "不会改名、合并或删除任何现有文件夹。整理可一键撤销。"
   },
   "prefsModeGroupLabel": {
     "message": "整理方式"
@@ -936,13 +933,10 @@
     "message": "没进本轮设计的旧文件夹会接着本轮编号往后编，排到设计目录后面，里面的内容原样保留；名字本身就以数字开头的除外，那个号原样留着，免得剪掉你自己起的名字。落地时还会再扫一遍，给仍然没编号的目录补号。"
   },
   "prefsModeRebuildOption": {
-    "message": "重新设计整棵树"
+    "message": "重新设计整棵树（默认）"
   },
   "prefsDetailToggle": {
     "message": "说明"
-  },
-  "prefsModeRebuildSummary": {
-    "message": "会重新设计整棵目录树，你现有的一级文件夹会被改名、加上编号前缀。整理可一键撤销。"
   },
   "prefsOptionsTitle": {
     "message": "整理选项"
@@ -961,9 +955,6 @@
       }
     }
   },
-  "prefsGithubOnlyScope": {
-    "message": "本轮只规范化当前范围内的书签标题，不调用模型，也不改变书签位置。"
-  },
   "prefsGithubOnlySection": {
     "message": "标题规则"
   },
@@ -981,9 +972,6 @@
   },
   "prefsLooseOnlyTitle": {
     "message": "只处理散落书签"
-  },
-  "prefsLooseOnlySummary": {
-    "message": "只把直接散落在范围根下、没进任何文件夹的书签交给模型分类；已经在文件夹里的书签，不论放得对不对，这一轮都不会被重新判断。"
   },
   "prefsLooseOnlyBody": {
     "message": "选「归入现有目录」时，每一轮都会把范围内全部书签重新判断一遍——这样才抓得出已经在某个文件夹里、但放错了的书签，代价是每轮都要为全部书签跑一次分类（已缓存的除外）。选这一项能省下这笔钱，但放错的书签不会再被自动纠正，只能手动移动，或改选「归入现有目录」跑一次全量整理。"
