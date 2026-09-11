@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { t } from '@/i18n'
 import { BookmarkTree, filterBookmarkTree, topLevelNodes } from '../components/BookmarkTree'
 import { ExportPanel } from '../components/ExportPanel'
@@ -6,7 +6,7 @@ import { FolderPicker } from '../components/FolderPicker'
 import { ImportPanel } from '../components/ImportPanel'
 import { segmentActive, segmentButton, segmentTrack } from '../components/buttonStyles'
 import { StickyActionBar } from '../components/IndexControls'
-import { DownloadIcon, UploadIcon } from '../components/icons'
+import { ChevronDownIcon, DownloadIcon, UploadIcon } from '../components/icons'
 import { collectAllFolderIds, useStore } from '../store'
 import type { BookmarkNode } from '@/core/ports'
 import type { MoveBookmarksInput } from '@/engine/moveBookmarks'
@@ -38,6 +38,7 @@ export function TransferStep() {
   const [transfer, setTransfer] = useState<TransferPanel>(initialTransfer)
   const [expanded, setExpanded] = useState<Set<string> | null>(null)
   const [searchQuery, setSearchQuery] = useState('')
+  const [moveOpen, setMoveOpen] = useState(false)
   const [expandedBeforeSearch, setExpandedBeforeSearch] = useState<Set<string> | null>(null)
   const [searchExpandedIds, setSearchExpandedIds] = useState<Set<string> | null>(null)
   const defaultExpanded = useMemo(
@@ -56,6 +57,10 @@ export function TransferStep() {
     : expandedIds
   const folderIds = collectAllFolderIds(visibleNodes)
   const allOpen = folderIds.length > 0 && folderIds.every((id) => visibleExpandedIds.has(id))
+  // 全部取消勾选后收起移动面板：下次重新勾选时不该自动弹开
+  useEffect(() => {
+    if (moveSelection.size === 0) setMoveOpen(false)
+  }, [moveSelection.size])
 
   function changeSearchQuery(value: string): void {
     const wasActive = searchQuery.trim().length > 0
@@ -127,7 +132,24 @@ export function TransferStep() {
           切换条和选项组直接铺在 sticky 栏里，不再套一层灰底卡片——那层 padding
           会把「导出 / 导入」撑得比真按钮还壮。 */}
       <StickyActionBar>
-        {moveSelection.size > 0 && <MoveBookmarksPanel tree={tree} busy={busy} />}
+        {moveSelection.size > 0 && (
+          <div className="mb-3">
+            <button
+              type="button"
+              aria-expanded={moveOpen}
+              disabled={busy !== null}
+              onClick={() => setMoveOpen((prev) => !prev)}
+              className="flex min-h-index-row w-full items-center justify-between gap-2 rounded-index border border-index-line bg-index-blue-soft px-3 text-sm leading-caption font-semibold text-index-ink transition-colors hover:bg-index-blue-soft/70 focus-visible:outline focus-visible:ring-2 focus-visible:ring-index-blue disabled:cursor-not-allowed disabled:opacity-40"
+            >
+              <span>{t('moveSelectedBookmarks')}</span>
+              <span className="flex items-center gap-1.5 text-xs font-normal text-index-muted">
+                {t('moveCount', String(moveSelection.size))}
+                <ChevronDownIcon className={`h-3.5 w-3.5 shrink-0 transition-transform ${moveOpen ? 'rotate-180' : ''}`} />
+              </span>
+            </button>
+            {moveOpen && <MoveBookmarksPanel tree={tree} busy={busy} />}
+          </div>
+        )}
         <div className={segmentTrack} role="group">
           <button
             type="button"
@@ -198,11 +220,7 @@ function MoveBookmarksPanel({ tree, busy }: { tree: BookmarkNode[]; busy: string
   }
 
   return (
-    <div className="mb-3 space-y-2 rounded-index border border-index-line bg-index-blue-soft p-3">
-      <div className="flex items-center justify-between gap-2">
-        <p className="text-sm leading-caption font-semibold text-index-ink">{t('moveSelectedBookmarks')}</p>
-        <span className="text-xs leading-caption text-index-muted">{t('moveCount', String(selectedCount))}</span>
-      </div>
+    <div className="mt-2 space-y-2 rounded-index border border-index-line bg-index-blue-soft p-3">
       <div className={segmentTrack} role="group" aria-label={t('moveDestinationLabel')}>
         <button
           type="button"

@@ -138,14 +138,18 @@ describe('TransferStep', () => {
     expect(screen.getByText('没有找到相关书签')).toBeDefined()
   })
 
-  it('选中多个书签后显示移动面板和目标文件夹树选择器', async () => {
+  it('选中书签后先出现移动按钮，点击按钮才展开文件夹选择器', async () => {
     render(<TransferStep />)
     const input = screen.getByRole('searchbox', { name: '搜索书签' })
     await userEvent.type(input, '.dev')
     await userEvent.click(screen.getByRole('checkbox', { name: '选择书签 A' }))
     await userEvent.click(screen.getByRole('checkbox', { name: '选择书签 B' }))
-    expect(screen.getByText('移动选中书签')).toBeDefined()
+
+    // 选中后只出现移动按钮，文件夹选择器不直接弹出
     expect(screen.getByText('已选中 2 条书签')).toBeDefined()
+    expect(screen.queryByRole('radiogroup', { name: '移动到文件夹' })).toBeNull()
+
+    await userEvent.click(screen.getByRole('button', { name: /移动选中书签/ }))
     expect(screen.getByRole('radiogroup', { name: '移动到文件夹' })).toBeDefined()
     expect((screen.getByRole('button', { name: '确认移动' }) as HTMLButtonElement).disabled).toBe(true)
 
@@ -154,10 +158,30 @@ describe('TransferStep', () => {
     expect((screen.getByRole('button', { name: '确认移动' }) as HTMLButtonElement).disabled).toBe(false)
   })
 
+  it('再点移动按钮收起面板；取消全部勾选后按钮消失，重新勾选不自动展开', async () => {
+    render(<TransferStep />)
+    await userEvent.type(screen.getByRole('searchbox', { name: '搜索书签' }), '.dev')
+    await userEvent.click(screen.getByRole('checkbox', { name: '选择书签 A' }))
+
+    await userEvent.click(screen.getByRole('button', { name: /移动选中书签/ }))
+    expect(screen.getByRole('radiogroup', { name: '移动到文件夹' })).toBeDefined()
+
+    await userEvent.click(screen.getByRole('button', { name: /移动选中书签/ }))
+    expect(screen.queryByRole('radiogroup', { name: '移动到文件夹' })).toBeNull()
+
+    // 取消勾选后按钮消失；重新勾选时面板不自动展开
+    await userEvent.click(screen.getByRole('checkbox', { name: '选择书签 A' }))
+    expect(screen.queryByRole('button', { name: /移动选中书签/ })).toBeNull()
+    await userEvent.click(screen.getByRole('checkbox', { name: '选择书签 A' }))
+    expect(screen.getByRole('button', { name: /移动选中书签/ })).toBeDefined()
+    expect(screen.queryByRole('radiogroup', { name: '移动到文件夹' })).toBeNull()
+  })
+
   it('切换到新建文件夹时显示名称和父目录树选择器', async () => {
     render(<TransferStep />)
     await userEvent.type(screen.getByRole('searchbox', { name: '搜索书签' }), '.dev')
     await userEvent.click(screen.getByRole('checkbox', { name: '选择书签 A' }))
+    await userEvent.click(screen.getByRole('button', { name: /移动选中书签/ }))
     await userEvent.click(screen.getByRole('button', { name: '新建文件夹' }))
 
     expect(screen.getByRole('textbox', { name: '新文件夹名称' })).toBeDefined()
