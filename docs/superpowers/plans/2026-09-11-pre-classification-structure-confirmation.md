@@ -277,12 +277,13 @@ git commit -m "refactor(audit): support target-only assignments"
 **Files:**
 - Create: `src/background/rebuild.ts`
 - Create: `tests/background/rebuild.test.ts`
+- Modify: `src/background/messages.ts`
 - Modify: `src/background/handlers.ts`
 - Modify: `tests/background/handlers.test.ts`
 
 **Interfaces:**
 - Consumes: Task 1 draft/compiler APIs, Task 2 target-only audit APIs, existing `extractTags`, `designTagFolders`, `designFolders`, `buildCategoryTree`, `classifyBookmarks`, `planTitleRewrites`, and `buildPlan`.
-- Produces: `designRebuildDraft(input): Promise<StructureDraft>` and `classifyRebuildDraft(input): Promise<OrganizePlan>` in `src/background/rebuild.ts`; `handle()` dispatches them from `analyze` and `classify_structure`.
+- Produces: the discriminated `AnalyzeResponse`, the `classify_structure` business request/response, `designRebuildDraft(input): Promise<StructureDraft>`, and `classifyRebuildDraft(input): Promise<OrganizePlan>` in `src/background/rebuild.ts`; `handle()` dispatches them from `analyze` and `classify_structure`.
 - The helper input carries resolved scan/roots/settings/client/progress/cancellation dependencies rather than reading Chrome globals.
 
 - [ ] **Step 1: Add failing design-stage tests**
@@ -330,9 +331,19 @@ Run: `npm test -- tests/background/rebuild.test.ts tests/background/handlers.tes
 
 Expected: FAIL because `classify_structure` and stale-draft validation do not exist.
 
-- [ ] **Step 6: Implement frozen classification and handler outcomes**
+- [ ] **Step 6: Add the two-stage business message contract and implement frozen classification**
 
-Define helper contracts in `src/background/rebuild.ts`:
+In `messages.ts`, add the request and discriminated response before changing `handle()`:
+
+```ts
+| { kind: 'classify_structure'; draft: StructureDraft; edits: StructureEdits }
+
+export type AnalyzeResponse =
+  | { ok: true; kind: 'analyze'; outcome: 'plan'; plan: OrganizePlan }
+  | { ok: true; kind: 'analyze'; outcome: 'structure'; draft: StructureDraft }
+```
+
+Include `AnalyzeResponse` and `{ ok: true; kind: 'classify_structure'; plan: OrganizePlan }` in `Response`. Then define the helper contracts in `src/background/rebuild.ts`:
 
 ```ts
 export interface DesignRebuildDraftInput {
@@ -380,7 +391,7 @@ Expected: PASS.
 - [ ] **Step 8: Commit**
 
 ```bash
-git add src/background/rebuild.ts tests/background/rebuild.test.ts src/background/handlers.ts tests/background/handlers.test.ts
+git add src/background/rebuild.ts tests/background/rebuild.test.ts src/background/messages.ts src/background/handlers.ts tests/background/handlers.test.ts
 git commit -m "feat(background): split rebuild design from classification"
 ```
 
@@ -397,8 +408,8 @@ git commit -m "feat(background): split rebuild design from classification"
 - Modify: `src/background/events.ts`
 
 **Interfaces:**
-- Consumes: `StructureDraft`, `StructureEdits`, and `StructureCheckpoint` from Task 1; handler behavior from Task 3.
-- Produces: discriminated `AnalyzeResponse`, `classify_structure` request/response, `get_structure_checkpoint`, `save_structure_checkpoint`, `clear_structure_checkpoint`, and checkpoint storage functions.
+- Consumes: `StructureDraft`, `StructureEdits`, and `StructureCheckpoint` from Task 1 plus the two-stage business message contract and handler behavior from Task 3.
+- Produces: `get_structure_checkpoint`, `save_structure_checkpoint`, `clear_structure_checkpoint`, checkpoint storage functions, and service-worker lifecycle policy for the new business request.
 
 - [ ] **Step 1: Add failing storage adapter tests**
 
@@ -420,19 +431,17 @@ Run: `npm test -- tests/background/structure-checkpoint.test.ts`
 
 Expected: FAIL because the module is absent.
 
-- [ ] **Step 3: Implement checkpoint storage and message unions**
+- [ ] **Step 3: Implement checkpoint storage and control-message unions**
 
-In `messages.ts`, add:
+Keep Task 3's `AnalyzeResponse` and `classify_structure` business contract unchanged. In `messages.ts`, add the three checkpoint requests to `ControlRequest` and these corresponding success members to `Response`:
 
 ```ts
-| { kind: 'classify_structure'; draft: StructureDraft; edits: StructureEdits }
-
-type AnalyzeResponse =
-  | { ok: true; kind: 'analyze'; outcome: 'plan'; plan: OrganizePlan }
-  | { ok: true; kind: 'analyze'; outcome: 'structure'; draft: StructureDraft }
+| { ok: true; kind: 'get_structure_checkpoint'; checkpoint: StructureCheckpoint | null }
+| { ok: true; kind: 'save_structure_checkpoint' }
+| { ok: true; kind: 'clear_structure_checkpoint' }
 ```
 
-Add the three checkpoint requests to `ControlRequest` and corresponding responses to `Response`. Extend the task-kind type in `events.ts` so task records can represent `classify_structure`.
+Extend the task-kind type in `events.ts` so task records can represent `classify_structure`.
 
 - [ ] **Step 4: Add failing service-worker lifecycle tests**
 
