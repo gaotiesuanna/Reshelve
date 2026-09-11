@@ -187,11 +187,11 @@ describe('英文界面渲染守卫：步骤组件', () => {
     // 它是 GitHub 下唯一的子目录，过滤掉自己之后下拉一个选项都不剩，标题本身仍只出现在
     // <input value> 里，从没进过 textContent（实测确认，见评审 final-review.md M1）
     assertNoChinese(container, 'StructureStep', /前端|其他/g)
-    // 同一行保留 incoming 与 Merge into…；标题列靠截断而不是折行来让位
-    const githubRow = screen.getByDisplayValue('GitHub').closest('li')!
-    expect(githubRow.textContent).toContain('incoming')
+    // 行上只露数字；incoming 完整说法在 title。子目录仍挂在一级 li 里。
+    const githubRow = screen.getByDisplayValue('GitHub').closest('div')!
+    expect(within(githubRow).getByTitle('2 incoming')).toBeTruthy()
     expect(within(githubRow).getByRole('combobox', { name: 'Merge GitHub into' })).toBeTruthy()
-    expect(within(githubRow).getByDisplayValue('AI 工具')).toBeTruthy()
+    expect(within(screen.getByDisplayValue('GitHub').closest('li')!).getByDisplayValue('AI 工具')).toBeTruthy()
   })
 
   it('StructureStep（合并模式：合并到输入框与「源目录会被删除」说明）', () => {

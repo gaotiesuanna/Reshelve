@@ -48,20 +48,25 @@ describe('StructureStep', () => {
 
   it('按层级展示目录，编号由位置算出', () => {
     render(<StructureStep />)
-    expect(screen.getAllByText('01')).toHaveLength(3) // 01 GitHub、其下 01 AI 工具、02 前端 下的 01 React
-    expect(screen.getByText('02')).toBeTruthy()
+    const section = screen.getByTestId('structure-section')
+    expect(section.querySelector('[data-index="01"]')).toBeTruthy()
+    expect(section.querySelector('[data-index="01.01"]')).toBeTruthy()
+    expect(section.querySelector('[data-index="02"]')).toBeTruthy()
+    expect(section.querySelector('[data-index="02.01"]')).toBeTruthy()
+    expect(section.querySelector('[data-index="03"]')).toBeTruthy()
   })
 
   it('每个目录显示将移入的书签数', () => {
     render(<StructureStep />)
-    // 一级目录的条数含子目录：GitHub 与「前端」各 2 条
-    expect(screen.getByDisplayValue('GitHub').closest('div')!.textContent).toContain('2 条将移入')
-    expect(screen.getByDisplayValue('AI 工具').closest('li')!.textContent).toContain('2 条将移入')
-    expect(screen.getByDisplayValue('前端').closest('div')!.textContent).toContain('2 条将移入')
-    expect(screen.getByDisplayValue('React').closest('li')!.textContent).toContain('1 条将移入')
+    // 一级目录的条数含子目录：GitHub 与「前端」各 2 条。行上只露数字，完整说法在 title，
+    // 避免和「合并到」拼成一句。
+    expect(screen.getByDisplayValue('GitHub').closest('div')!.querySelector('[title="2 条将移入"]')?.textContent).toBe('2')
+    expect(screen.getByDisplayValue('AI 工具').closest('div')!.querySelector('[title="2 条将移入"]')?.textContent).toBe('2')
+    expect(screen.getByDisplayValue('前端').closest('div')!.querySelector('[title="2 条将移入"]')?.textContent).toBe('2')
+    expect(screen.getByDisplayValue('React').closest('div')!.querySelector('[title="1 条将移入"]')?.textContent).toBe('1')
     // 「合并到」下拉现在也会把「其他」列成选项文本，getByText('其他') 会歧义——
     // 用 selector 精确定位「其他」那一行本身的 <span>（不可删节点用 span 渲染标题，不是 <option>）
-    expect(screen.getByText('其他', { selector: 'span' }).closest('div')!.textContent).toContain('1 条将移入')
+    expect(screen.getByText('其他', { selector: 'span' }).closest('div')!.querySelector('[title="1 条将移入"]')?.textContent).toBe('1')
   })
 
   it('改名写入 structureEdits', async () => {
