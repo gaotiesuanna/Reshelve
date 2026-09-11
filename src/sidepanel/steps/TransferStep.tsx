@@ -121,7 +121,7 @@ export function TransferStep() {
             onToggleBookmark={toggleBookmarkSelection}
             expandedIds={visibleExpandedIds}
             onToggleExpand={toggleExpand}
-            showBookmarks={searchActive}
+            showBookmarks
           />
           {searchActive && !searchResult.hasMatches && (
             <p className="px-2 py-3 text-center text-sm leading-caption text-neutral-500">{t('treeSearchEmpty')}</p>

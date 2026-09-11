@@ -110,6 +110,16 @@ describe('TransferStep', () => {
     expect(screen.getByText('https://a.dev')).toBeDefined()
   })
 
+  it('浏览模式展开文件夹也显示其中的书签，可直接勾选用于移动', async () => {
+    render(<TransferStep />)
+    await userEvent.click(screen.getByRole('button', { name: '展开 react' }))
+    expect(screen.getByRole('link', { name: 'A' }).getAttribute('href')).toBe('https://a.dev')
+    expect(screen.getByText('https://b.dev')).toBeDefined()
+
+    await userEvent.click(screen.getByRole('checkbox', { name: '选择书签 A' }))
+    expect(screen.getByText('已选中 1 条书签')).toBeDefined()
+  })
+
   it('搜索时自动展开命中路径，清空后恢复搜索前的展开状态', async () => {
     render(<TransferStep />)
     const react = screen.getByText('react')
