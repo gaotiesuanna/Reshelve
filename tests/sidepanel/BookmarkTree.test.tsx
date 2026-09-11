@@ -141,6 +141,20 @@ describe('BookmarkTree 展开收起', () => {
     expect(row.firstElementChild?.className).toContain('h-5 w-5')
   })
 
+  it('书签选择框是圆形，与文件夹的方形勾选框区分开', () => {
+    renderTree({
+      showBookmarks: true,
+      selectedBookmarkIds: new Set(['100']),
+      onToggleBookmark: vi.fn(),
+      expandedIds: new Set(['1', '10']),
+    })
+    const bookmark = screen.getByRole('checkbox', { name: '选择书签 A' }) as HTMLInputElement
+    expect(bookmark.className).toContain('rounded-full')
+
+    const folder = screen.getByRole('checkbox', { name: /react/ }) as HTMLInputElement
+    expect(folder.className).not.toContain('rounded-full')
+  })
+
   it('不安全的书签地址只显示文本，不生成可执行链接', () => {
     renderTree({
       nodes: [{ id: '1', title: '书签栏', children: [

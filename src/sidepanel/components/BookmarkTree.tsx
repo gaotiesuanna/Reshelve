@@ -70,7 +70,7 @@ function Row({
             aria-label={t('treeSelectBookmark', node.title)}
             checked={selectedBookmarkIds?.has(node.id) ?? false}
             onChange={() => onToggleBookmark(node.id)}
-            className="h-3.5 w-3.5 shrink-0"
+            className="h-3.5 w-3.5 shrink-0 appearance-none rounded-full border border-neutral-400 bg-white checked:border-index-blue checked:bg-index-blue focus-visible:outline focus-visible:outline-2 focus-visible:outline-index-blue"
           />
         ) : null}
         <LinkIcon className="h-3 w-3 shrink-0 text-neutral-300" />
