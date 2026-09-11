@@ -147,18 +147,18 @@ describe('nextStepAfterAnalyze', () => {
 
 describe('结构确认步骤', () => {
   it('renameNode 与 removeNode 累积到 structureEdits', () => {
-    useStore.setState({ plan: makePlan(), structureEdits: { renames: {}, removed: [], mergedInto: {} } })
+    useStore.setState({ plan: makePlan(), structureEdits: { renames: {}, removed: [], mergedInto: {}, added: [] } })
     useStore.getState().renameNode('tmp:1', '代码仓库')
     useStore.getState().removeNode('tmp:3')
     expect(useStore.getState().structureEdits).toEqual({
-      renames: { 'tmp:1': '代码仓库' }, removed: ['tmp:3'], mergedInto: {},
+      renames: { 'tmp:1': '代码仓库' }, removed: ['tmp:3'], mergedInto: {}, added: [],
     })
   })
 
   it('confirmStructure 把编辑写进 plan 并进入 review', () => {
     useStore.setState({
       plan: makePlan(),
-      structureEdits: { renames: { 'tmp:1': '代码仓库' }, removed: [], mergedInto: {} },
+      structureEdits: { renames: { 'tmp:1': '代码仓库' }, removed: [], mergedInto: {}, added: [] },
       step: 'structure',
     })
     useStore.getState().confirmStructure()
@@ -170,7 +170,7 @@ describe('结构确认步骤', () => {
   it('confirmStructure 后重新全选，不再看置信度——放错比不放更可接受', () => {
     const plan = makePlan()
     plan.rows[0]!.confidence = 0.3 // 就算是低置信度的行，也照样进 accepted
-    useStore.setState({ plan, structureEdits: { renames: {}, removed: [], mergedInto: {} }, accepted: new Set() })
+    useStore.setState({ plan, structureEdits: { renames: {}, removed: [], mergedInto: {}, added: [] }, accepted: new Set() })
     useStore.getState().confirmStructure()
     const accepted = useStore.getState().accepted
     expect(accepted.has(plan.rows[0]!.bookmarkId)).toBe(true)
@@ -180,11 +180,11 @@ describe('结构确认步骤', () => {
   it('backToPreferences 回到偏好页并清空结构编辑', () => {
     useStore.setState({
       step: 'structure',
-      structureEdits: { renames: { 'tmp:1': 'x' }, removed: [], mergedInto: {} },
+      structureEdits: { renames: { 'tmp:1': 'x' }, removed: [], mergedInto: {}, added: [] },
     })
     useStore.getState().backToPreferences()
     expect(useStore.getState().step).toBe('preferences')
-    expect(useStore.getState().structureEdits).toEqual({ renames: {}, removed: [], mergedInto: {} })
+    expect(useStore.getState().structureEdits).toEqual({ renames: {}, removed: [], mergedInto: {}, added: [] })
   })
 
   it('合并同时写 removed 与 mergedInto——两件事必须一起发生', () => {
