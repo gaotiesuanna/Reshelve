@@ -227,18 +227,22 @@ export function PreferencesStep() {
         {!titleOnly && (
           <div data-testid="prefs-clean-option" className="mt-2.5">
             <div className={choiceList}>
-              <label className={`${choiceRow} hover:bg-index-blue-soft`}>
-                <input
-                  type="checkbox"
-                  className="h-3.5 w-3.5 shrink-0 accent-index-blue"
-                  checked={settings.removeEmptyFolders}
-                  onChange={(e) => void setSettings({ ...settings, removeEmptyFolders: e.target.checked })}
-                />
-                <span className="min-w-0 flex-1">{t('prefsCleanTitle')}</span>
-              </label>
-              <Detail flush label={detailLabel()}>
-                {`${t('prefsCleanSummary')} ${t('prefsCleanBody')}`}
-              </Detail>
+              <dl className="grid grid-cols-[minmax(0,1fr)_auto] items-center gap-x-2">
+                <dt className="min-w-0">
+                  <label className={`${choiceRow} hover:bg-index-blue-soft`}>
+                    <input
+                      type="checkbox"
+                      className="h-3.5 w-3.5 shrink-0 accent-index-blue"
+                      checked={settings.removeEmptyFolders}
+                      onChange={(e) => void setSettings({ ...settings, removeEmptyFolders: e.target.checked })}
+                    />
+                    <span className="min-w-0 flex-1">{t('prefsCleanTitle')}</span>
+                  </label>
+                </dt>
+                <Detail inline flush label={detailLabel()}>
+                  {`${t('prefsCleanSummary')} ${t('prefsCleanBody')}`}
+                </Detail>
+              </dl>
             </div>
           </div>
         )}

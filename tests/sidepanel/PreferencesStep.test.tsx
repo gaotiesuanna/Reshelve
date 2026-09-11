@@ -206,6 +206,14 @@ describe('PreferencesStep 清理空文件夹的说明', () => {
     ).toBeNull()
     expect(screen.getByRole('checkbox', { name: '整理后清理空文件夹' })).toBeTruthy()
   })
+  it('说明按钮位于清理选项第一行右侧', () => {
+    setup(messyScan)
+    render(<PreferencesStep />)
+    const card = screen.getByTestId('prefs-clean-option')
+    const toggle = within(card).getByRole('button', { name: '说明' })
+    expect(toggle.closest('dt')).toBeTruthy()
+    expect(toggle.closest('dl')?.querySelector('label')).toBeTruthy()
+  })
 
   it('清理选项可独立勾选，不改变整理方式选中项', async () => {
     setup(tidyScan)
