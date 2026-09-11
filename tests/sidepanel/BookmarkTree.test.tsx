@@ -135,7 +135,7 @@ describe('BookmarkTree 展开收起', () => {
 
   it('书签行预留箭头占位，勾选框与同级文件夹对齐以体现层级', () => {
     renderTree({ showBookmarks: true, expandedIds: new Set(['1', '10']) })
-    const row = screen.getByRole('link', { name: 'A' }).parentElement!
+    const row = screen.getByRole('link', { name: 'A' }).closest('div[style*="padding-left"]')!
     // 文件夹行的勾选框在「内边距 + 20px 展开箭头」之后；书签行必须有同样的占位，
     // 否则子书签看起来比父文件夹还靠左，层级关系丢失
     expect(row.firstElementChild?.className).toContain('h-5 w-5')

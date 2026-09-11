@@ -62,38 +62,40 @@ function Row({
     if (!showBookmarks) return null
     const safeUrl = sanitizeUrl(node.url) !== null
     return (
-      <div className="flex min-w-0 items-center gap-1.5 py-0.5 pr-2 text-neutral-600" style={{ paddingLeft: `${depth * 14 + 4}px` }}>
+      <div className="flex min-w-0 items-center py-0.5 pr-2 text-neutral-600" style={{ paddingLeft: `${depth * 14 + 4}px` }}>
         <span className="h-5 w-5 shrink-0" />
-        {onToggleBookmark !== undefined ? (
-          <input
-            type="checkbox"
-            aria-label={t('treeSelectBookmark', node.title)}
-            checked={selectedBookmarkIds?.has(node.id) ?? false}
-            onChange={() => onToggleBookmark(node.id)}
-            className="h-3.5 w-3.5 shrink-0 appearance-none rounded-full border border-neutral-400 bg-white checked:border-index-blue checked:bg-index-blue focus-visible:outline focus-visible:outline-2 focus-visible:outline-index-blue"
-          />
-        ) : null}
-        <LinkIcon className="h-3 w-3 shrink-0 text-neutral-300" />
-        {safeUrl ? (
-          <a
-            href={node.url}
-            target="_blank"
-            rel="noreferrer"
-            className="min-w-0 truncate text-neutral-700 hover:text-index-blue hover:underline focus-visible:outline focus-visible:outline-2 focus-visible:outline-index-blue"
-          >
-            {node.title}
-          </a>
-        ) : <span className="min-w-0 truncate text-neutral-700">{node.title}</span>}
-        {safeUrl ? (
-          <a
-            href={node.url}
-            target="_blank"
-            rel="noreferrer"
-            className="ml-auto min-w-0 truncate text-sm leading-caption text-neutral-400 hover:text-index-blue hover:underline focus-visible:outline focus-visible:outline-2 focus-visible:outline-index-blue"
-          >
-            {node.url}
-          </a>
-        ) : <span className="ml-auto min-w-0 truncate text-sm leading-caption text-neutral-400">{node.url}</span>}
+        <div className="flex min-w-0 flex-1 items-center gap-1.5">
+          {onToggleBookmark !== undefined ? (
+            <input
+              type="checkbox"
+              aria-label={t('treeSelectBookmark', node.title)}
+              checked={selectedBookmarkIds?.has(node.id) ?? false}
+              onChange={() => onToggleBookmark(node.id)}
+              className="h-3.5 w-3.5 shrink-0 appearance-none rounded-full border border-neutral-400 bg-white checked:border-index-blue checked:bg-index-blue focus-visible:outline focus-visible:outline-2 focus-visible:outline-index-blue"
+            />
+          ) : null}
+          <LinkIcon className="h-3 w-3 shrink-0 text-neutral-300" />
+          {safeUrl ? (
+            <a
+              href={node.url}
+              target="_blank"
+              rel="noreferrer"
+              className="min-w-0 truncate text-neutral-700 hover:text-index-blue hover:underline focus-visible:outline focus-visible:outline-2 focus-visible:outline-index-blue"
+            >
+              {node.title}
+            </a>
+          ) : <span className="min-w-0 truncate text-neutral-700">{node.title}</span>}
+          {safeUrl ? (
+            <a
+              href={node.url}
+              target="_blank"
+              rel="noreferrer"
+              className="ml-auto min-w-0 truncate text-sm leading-caption text-neutral-400 hover:text-index-blue hover:underline focus-visible:outline focus-visible:outline-2 focus-visible:outline-index-blue"
+            >
+              {node.url}
+            </a>
+          ) : <span className="ml-auto min-w-0 truncate text-sm leading-caption text-neutral-400">{node.url}</span>}
+        </div>
       </div>
     )
   }
