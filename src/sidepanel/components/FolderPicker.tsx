@@ -297,7 +297,7 @@ export function FolderPicker({
 
       {/* 文件夹树滚动框 */}
       <div
-        className="max-h-48 overflow-y-auto rounded border border-index-line bg-index-canvas p-1"
+        className="max-h-72 overflow-y-auto rounded border border-index-line bg-index-canvas p-1"
         role="radiogroup"
         aria-label={label ?? t('moveDestinationLabel')}
       >
