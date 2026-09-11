@@ -1,5 +1,5 @@
 import { afterEach, describe, it, expect, vi } from 'vitest'
-import { handle, deepenBudget } from '@/background/handlers'
+import { handle as handleRequest, deepenBudget } from '@/background/handlers'
 import { createFakeBookmarks, type TreeSpec } from '../fakes/fake-bookmarks'
 import { createFakeStorage } from '../fakes/fake-storage'
 import { DEFAULT_SETTINGS, SETTINGS_KEY, activeLlm, loadCache, saveSettings, type Settings } from '@/storage/settings'
@@ -10,6 +10,30 @@ import type { OrganizePlan, PlanRow } from '@/core/types'
 import type { ProgressEvent } from '@/background/events'
 import { MAX_SIBLINGS, stripNumberPrefix } from '@/core/tree'
 import type { OrganizeMode } from '@/core/mode'
+import { EMPTY_EDITS } from '@/core/structure'
+
+/**
+ * Historical handler tests assert final rebuild plans. The product boundary is now two-stage,
+ * so those assertions exercise both business requests while new contract tests call handleRequest directly.
+ */
+async function handle(...args: Parameters<typeof handleRequest>): ReturnType<typeof handleRequest> {
+  const response = await handleRequest(...args)
+  const [ports, request, deps] = args
+  if (
+    request.kind !== 'analyze' ||
+    !response.ok ||
+    response.kind !== 'analyze' ||
+    response.outcome !== 'structure'
+  ) return response
+  const classified = await handleRequest(
+    ports,
+    { kind: 'classify_structure', draft: response.draft, edits: EMPTY_EDITS },
+    deps,
+  )
+  return classified.ok && classified.kind === 'classify_structure'
+    ? { ok: true, kind: 'analyze', outcome: 'plan', plan: classified.plan }
+    : classified
+}
 
 const tree = [
   { id: '0', title: '', children: [
@@ -90,8 +114,8 @@ describe('handle', () => {
       now: () => 1,
     })
 
-    expect(res).toMatchObject({ ok: true, kind: 'analyze' })
-    if (!res.ok || res.kind !== 'analyze') return
+    expect(res).toMatchObject({ ok: true, kind: 'analyze', outcome: 'plan' })
+    if (!res.ok || res.kind !== 'analyze' || res.outcome !== 'plan') return
     expect(res.plan.titleOnly).toBe(true)
     expect(res.plan.operations).toEqual([
       {
@@ -104,6 +128,36 @@ describe('handle', () => {
       },
     ])
     expect(createClient).not.toHaveBeenCalled()
+  })
+
+  it('rebuild analyze 在逐条分类前返回结构草案', async () => {
+    const fake = createFakeBookmarks(rebuildTree)
+    const ports = { bookmarks: fake.api, storage: createFakeStorage() }
+    await saveSettings(ports, {
+      ...DEFAULT_SETTINGS,
+      ...withLlm({ baseUrl: 'https://x/v1', apiKey: 'sk-x', model: 'm' }),
+    })
+    const complete = vi.fn()
+      .mockResolvedValueOnce({
+        results: REBUILD_IDS.map((bookmark_id) => ({ bookmark_id, primary_topic: '前端' })),
+      })
+      .mockResolvedValueOnce({
+        folders: [{ title: '前端', topics: ['前端'], children: [] }],
+      })
+
+    const response = await handleRequest(
+      ports,
+      { kind: 'analyze', scopeRootIds: ['1'], modeOverride: 'rebuild' },
+      { createClient: () => ({ complete }), now: () => 1 },
+    )
+
+    expect(response).toMatchObject({
+      ok: true,
+      kind: 'analyze',
+      outcome: 'structure',
+      draft: expect.objectContaining({ scopeRootIds: ['1'] }),
+    })
+    expect(complete).toHaveBeenCalledTimes(2)
   })
 
   it('analyze 在 baseUrl 指向本机时放行空 Key——本机 Ollama 不校验 Key，那道门不该拦他', async () => {
@@ -754,14 +808,14 @@ describe('handle', () => {
     const deps = { createClient, now: () => 1 }
 
     const githubOnly = await handle(ports, { kind: 'analyze', scopeRootIds: ['1'], titleOnly: true }, deps)
-    if (!githubOnly.ok || githubOnly.kind !== 'analyze') return
+    if (!githubOnly.ok || githubOnly.kind !== 'analyze' || githubOnly.outcome !== 'plan') return
     expect(githubOnly.plan.operations.map((o) => o.type === 'rename_bookmark' ? o.bookmarkId : null)).toEqual(['100'])
     expect(createClient).not.toHaveBeenCalled()
 
     const youtube = await handle(ports, {
       kind: 'analyze', scopeRootIds: ['1'], titleOnly: true, ruleIds: ['youtube'],
     }, deps)
-    if (!youtube.ok || youtube.kind !== 'analyze') return
+    if (!youtube.ok || youtube.kind !== 'analyze' || youtube.outcome !== 'plan') return
     expect(youtube.plan.operations).toEqual([
       {
         type: 'rename_bookmark',
@@ -915,7 +969,7 @@ async function analyzePlan(
   scopeRootIds: string[] = ['1'],
 ): Promise<OrganizePlan> {
   const res = await handle(ports as never, { kind: 'analyze', scopeRootIds, modeOverride }, deps as never)
-  if (!res.ok || res.kind !== 'analyze') throw new Error(`analyze 应当成功：${JSON.stringify(res)}`)
+  if (!res.ok || res.kind !== 'analyze' || res.outcome !== 'plan') throw new Error(`analyze 应当成功：${JSON.stringify(res)}`)
   return res.plan
 }
 
@@ -1343,7 +1397,7 @@ describe('handle analyze 目录下限', () => {
     })
   }
 
-  it('分类后仍不足下限的目录不出现在计划里，书签并进父目录', async () => {
+  it('确认前够下限的目录在分类后人数变少也保持冻结', async () => {
     const complete = skewedComplete()
     const { ports, deps } = setupSkewed(complete)
     // 阈值恒为 3，不必再拧（原来这里写的就是 3）
@@ -1352,11 +1406,11 @@ describe('handle analyze 目录下限', () => {
     const res = await handle(ports, { kind: 'analyze', scopeRootIds: ['1'], modeOverride: 'rebuild' }, deps) as { plan: OrganizePlan }
     const created = res.plan.operations.flatMap((o) => (o.type === 'create_folder' ? [o.title] : []))
     expect(created.some((title) => title.includes('React'))).toBe(true)
-    expect(created.some((title) => title.includes('Vue'))).toBe(false)
-    // 那个书签落在父目录，而不是掉进「其他」或原地不动
+    expect(created.some((title) => title.includes('Vue'))).toBe(true)
+    // 确认后的逐条分类只测量，不再按实际人数剪掉用户确认过的 Vue。
     const row = res.plan.rows.find((r) => r.bookmarkId === loneVueId)!
-    expect(row.toPath.map((p) => p.replace(/^\d+ /, ''))).toEqual(['前端'])
-    expect(row.reason).toContain('不足 3 个')
+    expect(row.toPath.map((p) => p.replace(/^\d+ /, ''))).toEqual(['前端', 'Vue'])
+    expect(row.reason).toBe('r')
   })
 
   // 日志里那个数字过去直接印 settings.minFolderSize。存量记录里拧过的值不许再从
@@ -1380,7 +1434,7 @@ describe('handle analyze 目录下限', () => {
   // 退成 core 里的内部常量，一律生效。那条用例问的事情本身还在：**存量存储里躺着
   // 关掉过的开关时，这次整理会不会被它带偏。** 答案反过来了，所以断言跟着反过来，
   // 而不是把这条用例删掉。存量键只能从存储那一侧写，它已经不在 Settings 类型里
-  it('存量记录里躺着 enforceMinFolderSize=false，那个只有一个书签的子目录照样被剪', async () => {
+  it('存量记录里的 enforceMinFolderSize=false 不改变确认后的结构冻结', async () => {
     const complete = skewedComplete()
     const { ports, deps } = setupSkewed(complete)
     await saveSettings(ports, rebuild())
@@ -1389,7 +1443,7 @@ describe('handle analyze 目录下限', () => {
     const res = await handle(ports, { kind: 'analyze', scopeRootIds: ['1'], modeOverride: 'rebuild' }, deps) as { plan: OrganizePlan }
     const created = res.plan.operations.flatMap((o) => (o.type === 'create_folder' ? [o.title] : []))
     expect(created.some((title) => title.includes('React'))).toBe(true)
-    expect(created.some((title) => title.includes('Vue'))).toBe(false)
+    expect(created.some((title) => title.includes('Vue'))).toBe(true)
   })
 })
 
@@ -1866,7 +1920,7 @@ describe('analyze 归入现有模式不拿「其他」当分类候选', () => {
     expect(classifyPrompts.flatMap(catalogPaths)).toContain('书签栏 / 其他')
   })
 
-  it('推翻重建模式不受影响：那条路的「其他」是刚设计出来的收容所，必须能被选中', async () => {
+  it('推翻重建会在确认前剪掉预计为空的「其他」', async () => {
     const fake = createFakeBookmarks(rebuildTree)
     const ports = { bookmarks: fake.api, storage: createFakeStorage() }
     const classifyPrompts: string[] = []
@@ -1885,8 +1939,7 @@ describe('analyze 归入现有模式不拿「其他」当分类候选', () => {
     await saveSettings(ports, settings)
     await analyzePlan(ports, { createClient: () => ({ complete }), now: () => 1 }, 'rebuild')
 
-    // 推翻模式的候选路径不含范围根名，「其他」自己就是一整行（带建树期给的编号）
-    expect(classifyPrompts.flatMap(catalogPaths)).toContain('02 其他')
+    expect(classifyPrompts.flatMap(catalogPaths)).not.toContain('02 其他')
   })
 })
 
@@ -2739,10 +2792,7 @@ describe('analyze 的 prune 二次判定', () => {
   const tagsOf = (id: string): string =>
     id.startsWith('a') ? '前端' : id.startsWith('c') ? '冷门' : '孤单'
 
-  /**
-   * 二次判定那组用例共用的假件。收到的分类提示词原样记进 `prompts`，
-   * 数它的长度就知道二次判定那一轮跑没跑。
-   */
+  /** 收到的分类提示词原样记进 `prompts`，用来钉住确认后只分类一次。 */
   function rehomeComplete(prompts: string[]): LlmClient['complete'] {
     return vi.fn(async (prompt: string) => {
       if (prompt.includes('标签清单')) {
@@ -2774,7 +2824,7 @@ describe('analyze 的 prune 二次判定', () => {
     })
   }
 
-  it('落进「其他」的书签会带着存活目录再问一次，选中了就改判并重写理由', async () => {
+  it('确认后只按冻结候选分类一次，不再运行 prune-time rehome', async () => {
     const prompts: string[] = []
     const complete = rehomeComplete(prompts)
 
@@ -2789,30 +2839,18 @@ describe('analyze 的 prune 二次判定', () => {
       { createClient: () => ({ complete }), now: () => 1 },
     ) as { plan: OrganizePlan }
 
-    // 二次判定确实发生了：分类提示词出现了两次
-    expect(prompts).toHaveLength(2)
-    // 第二次只带那一条被撤的书签
-    expect(prompts[1]).toContain('"c0"')
-    expect(prompts[1]).not.toContain('"a0"')
-    // 「其他」这时候还活着（d0/d1/d2 撑着），但候选里必须被剔掉——这才是这条断言
-    // 真正要盯住的东西：不剔掉的话，模型会把它当默认答案，「其他」永远也不会真正退场。
-    // 候选行是「id=xxx 目录=02 其他」这种带编号的写法，不能拿 '目录=其他' 去匹配——
-    // 那个子串永远凑不出来，断言会白转（见 final-review.md I1 的实测教训）
-    expect(prompts[1]).not.toContain('其他')
-    // 改判后的理由点名的是它真正被挤出来的那个目录「冷门」，不是「其他」（见 I2）
+    expect(prompts).toHaveLength(1)
+    expect(prompts[0]).toContain('"c0"')
     const row = res.plan.rows.find((r) => r.bookmarkId === 'c0')!
-    expect(row.reason).toContain('冷门')
-    expect(row.reason).toContain('不足 3 个')
-    expect(row.reason).toContain('前端')
-    expect(row.toPath.at(-1)).toContain('前端')
-    // confidence 用的是二次判定这一次的把握度，不是首次分类那次对「冷门」的把握度（见 I3）
-    expect(row.confidence).toBeCloseTo(0.42)
+    expect(row.reason).toBe('r')
+    expect(row.toPath.at(-1)).toContain('冷门')
+    expect(row.confidence).toBeCloseTo(0.9)
   })
 
   // 判准 A5 此前全链路一个执行点都没有：真实那一遍「其他」占 34.8%，那个数没有任何人
   // 算过，用户看到的是一棵没有任何警告的树（organize-audit-holes 05 票）。
   // 这条夹具里 d0..d10 共 11 条全落进「其他」，总数 23 条 → 47.8%，远过 10% 红线。
-  it('「其他」占比过红线时，复核页警告里带上条数与百分比', async () => {
+  it('预计为空而被剪掉的「其他」不会在分类后重新出现', async () => {
     const complete = rehomeComplete([])
     const fake = createFakeBookmarks(rehomeTree)
     const ports = { bookmarks: fake.api, storage: createFakeStorage() }
@@ -2825,18 +2863,14 @@ describe('analyze 的 prune 二次判定', () => {
       { createClient: () => ({ complete }), now: () => 1 },
     ) as { plan: OrganizePlan }
 
-    const warning = res.plan.warnings.find((w) => w.includes('其他') && w.includes('%'))
-    expect(warning).toBeDefined()
-    // 光说「有点多」没用——用户要靠这两个数才判得出这次整理值不值得应用（判准 C）
-    expect(warning).toContain('11')
-    expect(warning).toContain('47.8')
-    expect(warning).toContain('10')
+    expect(res.plan.candidates.some((candidate) => candidate.path.at(-1)?.includes('其他'))).toBe(false)
+    expect(res.plan.warnings.some((warning) => warning.includes('其他') && warning.includes('%'))).toBe(false)
   })
 
   // 开关删掉之前，`rebuild && settings.enforceMinFolderSize` 这道闸把**整个二次判定**
   // 一起关掉了：关过开关的人不但小目录不撤，掉进「其他」的书签也不会再问一次模型。
   // 这是删旋钮真正的行为变化里最容易被忽略的一半，单独钉一条
-  it('存量记录里躺着 enforceMinFolderSize=false，二次判定那一轮照样会跑', async () => {
+  it('存量记录里的 enforceMinFolderSize=false 不恢复 prune-time rehome', async () => {
     const prompts: string[] = []
     const complete = rehomeComplete(prompts)
     const fake = createFakeBookmarks(rehomeTree)
@@ -2852,13 +2886,11 @@ describe('analyze 的 prune 二次判定', () => {
       { createClient: () => ({ complete }), now: () => 1 },
     ) as { plan: OrganizePlan }
 
-    expect(prompts).toHaveLength(2)
-    expect(prompts[1]).toContain('"c0"')
-    // c0 真的被改判去了「前端」，不是问过一轮就丢掉结果
-    expect(res.plan.rows.find((r) => r.bookmarkId === 'c0')!.toPath.at(-1)).toContain('前端')
+    expect(prompts).toHaveLength(1)
+    expect(res.plan.rows.find((r) => r.bookmarkId === 'c0')!.toPath.at(-1)).toContain('冷门')
   })
 
-  it('模型说没有合适的，就保持 prune 定好的去处，不再改判', async () => {
+  it('确认后不会发起第二次改判请求', async () => {
     let classifyCalls = 0
     const complete = vi.fn(async (prompt: string) => {
       if (prompt.includes('标签清单')) {
@@ -2902,16 +2934,14 @@ describe('analyze 的 prune 二次判定', () => {
       { createClient: () => ({ complete }), now: () => 1 },
     ) as { plan: OrganizePlan }
 
-    // 二次判定确实被问过一次，不是压根没进这个分支
-    expect(classifyCalls).toBe(2)
-    // 没有改判成别的目录，去处仍是 prune 定好的：并进「其他」
+    expect(classifyCalls).toBe(1)
     const row = res.plan.rows.find((r) => r.bookmarkId === 'c0')
     expect(row).toBeDefined()
-    expect(row!.toPath.at(-1)).toContain('其他')
-    expect(row!.reason).toContain('冷门')
+    expect(row!.toPath.at(-1)).toContain('冷门')
+    expect(row!.reason).toBe('r')
   })
 
-  it('二次判定改判之后，「其他」若被抽薄会被再撤一遍，不会建出一个不足下限的目录（钉住 C1）', async () => {
+  it('实际占用不足下限也不改变确认后的候选结构', async () => {
     // 更贴近票面复现场景的最小夹具：min=3，a0..a10（11 条）→ 前端、
     // b0 → 冷门、b1/b2 → 其他；prune 把 b0 并进「其他」使其达标（3 条），
     // 二次判定又把 b0 改判去「前端」，「其他」只剩 b1/b2 两条——
@@ -2983,22 +3013,10 @@ describe('analyze 的 prune 二次判定', () => {
       { createClient: () => ({ complete }), now: () => 1 },
     ) as { plan: OrganizePlan }
 
-    // 不变量：每一个真的会被建出来的目录，落进去的书签数都不低于 minFolderSize——
-    // 哪怕它是二次判定改判之后才变薄的
-    const createdIds = new Set(
-      res.plan.operations.filter((o) => o.type === 'create_folder').map((o) => o.temporaryId),
-    )
-    const countByFolder = new Map<string, number>()
-    for (const op of res.plan.operations) {
-      if (op.type !== 'move_bookmark' || op.toTemporaryId === null) continue
-      countByFolder.set(op.toTemporaryId, (countByFolder.get(op.toTemporaryId) ?? 0) + 1)
-    }
-    for (const id of createdIds) {
-      expect(countByFolder.get(id) ?? 0).toBeGreaterThanOrEqual(3)
-    }
-    // 具体到这个场景：「其他」被二次撤销，b1/b2 退回原位，计划里看不到「其他」这个目的地
+    expect(classifyCalls).toBe(1)
+    expect(res.plan.candidates.some((candidate) => candidate.path.at(-1)?.includes('冷门'))).toBe(true)
     expect(res.plan.rows.some((r) => r.toPath.at(-1)?.includes('其他'))).toBe(false)
-    expect(res.plan.rows.find((r) => r.bookmarkId === 'b0')?.toPath.at(-1)).toContain('前端')
+    expect(res.plan.rows.find((r) => r.bookmarkId === 'b0')?.toPath.at(-1)).toContain('冷门')
   })
 
 })
@@ -3756,7 +3774,7 @@ describe('结构自检：撑爆的叶子再切一层', () => {
     expect(giveUp[0]!.message).toContain('分开')
   })
 
-  it('「其他」装超上限时继续分类：主题不够就重抽，切开后提升到一级', async () => {
+  it('预计归属没有把空主题送进「其他」时，不按确认后的实际分类重新设计', async () => {
     const REST = 18
     const VPN = 3
     const fake = createFakeBookmarks([
@@ -3824,15 +3842,15 @@ describe('结构自检：撑爆的叶子再切一层', () => {
       onEvent: (event: ProgressEvent) => events.push(event),
     }, 'rebuild')
 
-    expect(tagPasses).toBeGreaterThanOrEqual(2)
-    expect(events.some((e) => e.message.includes('重新抽取标签'))).toBe(true)
-    expect(designPrompts.some((p) => p.includes('来自「其他」'))).toBe(false)
+    expect(tagPasses).toBe(1)
+    expect(events.some((e) => e.message.includes('重新抽取标签'))).toBe(false)
+    expect(designPrompts).toHaveLength(1)
     const created = plan.operations.flatMap((o) =>
       o.type === 'create_folder' ? [stripNumberPrefix(o.title)] : [])
-    expect(created).toContain('GitHub')
-    expect(created).toContain('文档')
-    expect(plan.candidates.some((c) => c.path.length === 1 && c.path[0]!.endsWith('GitHub'))).toBe(true)
-    expect(plan.candidates.some((c) => c.path.length === 1 && c.path[0]!.endsWith('文档'))).toBe(true)
+    expect(created).not.toContain('GitHub')
+    expect(created).not.toContain('文档')
+    expect(plan.candidates.some((c) => c.path.length === 1 && c.path[0]!.endsWith('GitHub'))).toBe(false)
+    expect(plan.candidates.some((c) => c.path.length === 1 && c.path[0]!.endsWith('文档'))).toBe(false)
   })
 })
 

@@ -177,7 +177,7 @@ describe('journal 落盘', () => {
     const { hub, storage } = twoWindows()
     hub.begin('analyze', true)
     hub.emit(event('跑了几分钟'))
-    const response: Response = { ok: true, kind: 'analyze', plan: { rows: [] } as never }
+    const response: Response = { ok: true, kind: 'analyze', outcome: 'plan', plan: { rows: [] } as never }
 
     hub.end(response)
     await new Promise((resolve) => { setTimeout(resolve, 0) })

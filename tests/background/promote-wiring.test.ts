@@ -5,12 +5,12 @@ import { createFakeBookmarks } from '../fakes/fake-bookmarks'
 import { createFakeStorage } from '../fakes/fake-storage'
 import { withLlm } from '../fakes/settings'
 import type { LlmClient } from '@/llm/client'
-import type { OrganizePlan } from '@/core/types'
+import type { StructureDraft } from '@/core/structure'
 
 /**
- * 16 条书签，标签分两族（构建工具 8 / 测试框架 8），但全局目录设计**一个都不映射**，
- * 于是 16 条整批落进「其他」。02 票摘掉豁免之后「其他」会被下切成两个子目录，
- * 07 票再把这两族提到一级。
+ * 16 条书签，标签分两族（构建工具 8 / 测试框架 8），全局目录设计先把两族映射到
+ * 「其他」。预估分配因此能在分类前发现这个目录过大，把它下切成两个子目录，
+ * 再把这两族提到一级。
  */
 function setup() {
   const fake = createFakeBookmarks([
@@ -30,8 +30,8 @@ function setup() {
             { title: '构建', topics: ['构建工具'], children: [] },
             { title: '测试', topics: ['测试框架'], children: [] },
           ] }
-        // 全局那一轮：设计出的目录一个标签都不认，16 条全成未映射
-        : { folders: [{ title: '甲', topics: ['无人认领'], children: [] }] }
+        // 全局那一轮：先把两族都设计到「其他」，让预估分配触发下切与提升
+        : { folders: [{ title: '其他', topics: ['构建工具', '测试框架'], children: [] }] }
     }
     if (!prompt.includes('候选目录')) {
       return { results: Array.from({ length: 16 }, (_, i) => ({
@@ -66,28 +66,38 @@ describe('「其他」切出来的族提到一级', () => {
     await saveSettings(ports, settings)
     const res = await handle(
       ports, { kind: 'analyze', scopeRootIds: ['1'], modeOverride: 'rebuild' }, deps,
-    ) as { plan: OrganizePlan }
+    ) as { outcome: 'structure'; draft: StructureDraft }
 
-    const created = res.plan.operations.filter((o) => o.type === 'create_folder')
-    const promoted = created.filter((o) => /构建|测试/.test(o.title))
+    expect(res.outcome).toBe('structure')
+    const promoted = res.draft.newFolders.filter((folder) => /构建|测试/.test(folder.title))
     expect(promoted).toHaveLength(2)
     // 提到一级 = 直接挂在范围根上，不再挂在「其他」这个临时目录下
-    for (const op of promoted) {
-      expect(op.parentTemporaryId).toBeNull()
-      expect(op.parentId).toBe('1')
+    for (const folder of promoted) {
+      expect(folder.parentTemporaryId).toBeNull()
+      expect(folder.parentId).toBe('1')
     }
   })
 
-  it('理由改写成「本来要落进其他」，并带上这一族的条数', async () => {
+  it('分类前的预估分配跟着提升结果改投两个一级目录', async () => {
     const { ports, deps } = setup()
     await saveSettings(ports, settings)
     const res = await handle(
       ports, { kind: 'analyze', scopeRootIds: ['1'], modeOverride: 'rebuild' }, deps,
-    ) as { plan: OrganizePlan }
+    ) as { outcome: 'structure'; draft: StructureDraft }
 
-    const row = res.plan.rows.find((r) => /构建|测试/.test(r.toPath.at(-1) ?? ''))
-    expect(row).toBeDefined()
-    expect(row!.reason).toContain('其他')
-    expect(row!.reason).toContain('8')
+    const promotedIds = new Set(
+      res.draft.candidates
+        .filter((candidate) => /构建|测试/.test(candidate.path.at(-1) ?? ''))
+        .map((candidate) => candidate.id),
+    )
+    const counts = new Map<string, number>()
+    for (const assignment of res.draft.estimatedAssignments) {
+      expect(promotedIds.has(assignment.targetCategoryId ?? '')).toBe(true)
+      counts.set(
+        assignment.targetCategoryId!,
+        (counts.get(assignment.targetCategoryId!) ?? 0) + 1,
+      )
+    }
+    expect([...counts.values()].sort((a, b) => a - b)).toEqual([8, 8])
   })
 })

@@ -447,7 +447,7 @@ describe('放弃这一轮之后，在途结果不再落地', () => {
     await Promise.resolve()
     useStore.getState().reset()
 
-    finish({ ok: true, kind: 'analyze', plan: makePlan() })
+    finish({ ok: true, kind: 'analyze', outcome: 'plan', plan: makePlan() })
     await running
 
     expect(useStore.getState().step).toBe('scope')
@@ -465,7 +465,7 @@ describe('放弃这一轮之后，在途结果不再落地', () => {
     const running = useStore.getState().analyze()
     await Promise.resolve()
     useStore.getState().reset()
-    finish({ ok: true, kind: 'analyze', plan: makePlan() })
+    finish({ ok: true, kind: 'analyze', outcome: 'plan', plan: makePlan() })
     await running
 
     expect(useStore.getState().busy).toBeNull()
@@ -497,7 +497,7 @@ describe('放弃这一轮之后，在途结果不再落地', () => {
   it('没有 reset 时结果正常落地', async () => {
     vi.mocked(send).mockImplementation((req: { kind: string }) =>
       req.kind === 'analyze'
-        ? (Promise.resolve({ ok: true, kind: 'analyze', plan: makePlan() }) as never)
+        ? (Promise.resolve({ ok: true, kind: 'analyze', outcome: 'plan', plan: makePlan() }) as never)
         : (Promise.resolve({ ok: true }) as never))
 
     await useStore.getState().analyze()
@@ -508,7 +508,7 @@ describe('放弃这一轮之后，在途结果不再落地', () => {
   it('分析完成后默认全部勾选——放错比不放更可接受', async () => {
     vi.mocked(send).mockImplementation((req: { kind: string }) =>
       req.kind === 'analyze'
-        ? (Promise.resolve({ ok: true, kind: 'analyze', plan: makePlan() }) as never)
+        ? (Promise.resolve({ ok: true, kind: 'analyze', outcome: 'plan', plan: makePlan() }) as never)
         : (Promise.resolve({ ok: true }) as never))
 
     await useStore.getState().analyze()
@@ -520,7 +520,7 @@ describe('放弃这一轮之后，在途结果不再落地', () => {
     vi.mocked(send).mockImplementation((req: { kind: string }) =>
       req.kind === 'analyze'
         ? (Promise.resolve({
-            ok: true, kind: 'analyze', plan: { ...makePlan(), rebuildStructure: false },
+            ok: true, kind: 'analyze', outcome: 'plan', plan: { ...makePlan(), rebuildStructure: false },
           }) as never)
         : (Promise.resolve({ ok: true }) as never))
 
@@ -532,7 +532,7 @@ describe('放弃这一轮之后，在途结果不再落地', () => {
     useStore.setState({ modeOverride: 'rebuild' })
     vi.mocked(send).mockImplementation((req: { kind: string }) =>
       req.kind === 'analyze'
-        ? (Promise.resolve({ ok: true, kind: 'analyze', plan: makePlan() }) as never)
+        ? (Promise.resolve({ ok: true, kind: 'analyze', outcome: 'plan', plan: makePlan() }) as never)
         : (Promise.resolve({ ok: true }) as never))
 
     await useStore.getState().analyze()
@@ -547,7 +547,7 @@ describe('放弃这一轮之后，在途结果不再落地', () => {
     useStore.setState({ modeOverride: null })
     vi.mocked(send).mockImplementation((req: { kind: string }) =>
       req.kind === 'analyze'
-        ? (Promise.resolve({ ok: true, kind: 'analyze', plan: makePlan() }) as never)
+        ? (Promise.resolve({ ok: true, kind: 'analyze', outcome: 'plan', plan: makePlan() }) as never)
         : (Promise.resolve({ ok: true }) as never))
 
     await useStore.getState().analyze()
@@ -573,7 +573,7 @@ describe('放弃这一轮之后，在途结果不再落地', () => {
     vi.mocked(send).mockImplementation((req: { kind: string }) =>
       req.kind === 'analyze'
         ? (Promise.resolve({
-            ok: true, kind: 'analyze',
+            ok: true, kind: 'analyze', outcome: 'plan',
             plan: { ...makePlan(), titleOnly: true, rows: [], operations: [] },
           }) as never)
         : (Promise.resolve({ ok: true }) as never))
@@ -591,7 +591,7 @@ describe('放弃这一轮之后，在途结果不再落地', () => {
     useStore.setState({ titleOnly: false, titleRuleIds: ['youtube'] })
     vi.mocked(send).mockImplementation((req: { kind: string }) =>
       req.kind === 'analyze'
-        ? (Promise.resolve({ ok: true, kind: 'analyze', plan: makePlan() }) as never)
+        ? (Promise.resolve({ ok: true, kind: 'analyze', outcome: 'plan', plan: makePlan() }) as never)
         : (Promise.resolve({ ok: true }) as never))
 
     await useStore.getState().analyze()
@@ -949,7 +949,7 @@ describe('失败之后的重试', () => {
     })
     vi.mocked(send).mockImplementation((req: { kind: string }) =>
       req.kind === 'analyze'
-        ? (Promise.resolve({ ok: true, kind: 'analyze', plan: makePlan() }) as never)
+        ? (Promise.resolve({ ok: true, kind: 'analyze', outcome: 'plan', plan: makePlan() }) as never)
         : (Promise.resolve({ ok: true }) as never))
 
     await useStore.getState().retry()
@@ -1212,7 +1212,7 @@ describe('长连接断在空闲期时，下一次长任务前重连', () => {
     vi.mocked(send).mockImplementation((req) =>
       Promise.resolve(
         req.kind === 'analyze'
-          ? { ok: true, kind: 'analyze', plan: makePlan() }
+          ? { ok: true, kind: 'analyze', outcome: 'plan', plan: makePlan() }
           : { ok: true, kind: req.kind, tree: [], settings: DEFAULT_SETTINGS, available: false },
       ) as never,
     )
@@ -1239,7 +1239,7 @@ describe('长连接断在空闲期时，下一次长任务前重连', () => {
     vi.mocked(send).mockImplementation((req) =>
       Promise.resolve(
         req.kind === 'analyze'
-          ? { ok: true, kind: 'analyze', plan: makePlan() }
+          ? { ok: true, kind: 'analyze', outcome: 'plan', plan: makePlan() }
           : { ok: true, kind: req.kind, tree: [], settings: DEFAULT_SETTINGS, available: false },
       ) as never,
     )
@@ -1310,7 +1310,7 @@ describe('后台任务的接回', () => {
       const plan = makePlan()
       stubInit(taskRecord({
         status: 'done',
-        result: { ok: true, kind: 'analyze', plan },
+        result: { ok: true, kind: 'analyze', outcome: 'plan', plan },
         finishedAt: 2,
       }))
 

@@ -373,7 +373,7 @@ describe('get_task / clear_task', () => {
     onConnect(fakePort())
     send({ kind: 'analyze', scopeRootIds: ['1'] })
     const plan = { rows: [], rebuildStructure: false }
-    calls[0]!.resolve({ ok: true, kind: 'analyze', plan: plan as never })
+    calls[0]!.resolve({ ok: true, kind: 'analyze', outcome: 'plan', plan: plan as never })
     await flush()
 
     const res = await sendAsync({ kind: 'get_task' })
@@ -529,4 +529,3 @@ describe('offscreen 保活文档的生命周期', () => {
     expect(handle).not.toHaveBeenCalled()
   })
 })
-

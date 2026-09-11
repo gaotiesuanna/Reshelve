@@ -776,6 +776,9 @@ export const useStore = create<State>((set, get) => ({
     if (res === undefined || !res.ok) return set(base)
     switch (res.kind) {
       case 'analyze': {
+        // Task 5 adopts structure drafts and drives confirmation; until then only final plans
+        // enter the existing review flow.
+        if (res.outcome !== 'plan') return set(base)
         return set({
           ...base,
           plan: res.plan,
@@ -979,6 +982,7 @@ export const useStore = create<State>((set, get) => ({
     }
     if (!res.ok) return fail(set, res.error, 'analyze')
     if (res.kind !== 'analyze') return set({ busy: null, busyKind: null })
+    if (res.outcome !== 'plan') return set({ busy: null, busyKind: null })
     set({
       plan: res.plan,
       // 默认全选：不勾 = 书签留在原来那个散落的位置 = 彻底找不到；进了一个不太准的主题目录，

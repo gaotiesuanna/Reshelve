@@ -1,22 +1,21 @@
 import { currentLocale, resolveLocale, setLocale, t } from '@/i18n'
-import { buildCandidatesFromFolders, normalizeName, stripNumberPrefix } from '@/core/map'
+import { buildCandidatesFromFolders } from '@/core/map'
 import {
-  collapseSameNameFolders, createTemporaryIdFactory, dropFallbackFromCandidates, expandFolder,
+  collapseSameNameFolders, dropFallbackFromCandidates,
   findOversizedFolders, measureFallbackShare, measureTopSiblings, promoteFallbackChildren,
 } from '@/core/audit'
 import type { Locale } from '@/core/locale'
 import {
   applyReclassifyResults, buildPlan, type FolderMoveSpec, type NewFolderSpec, type RenameFolderSpec,
 } from '@/core/plan'
-import { MIN_FOLDER_BOOKMARKS, pruneReason, pruneSmallFolders } from '@/core/prune'
 import { findScopeRoots, looseBookmarks, scanTree } from '@/core/scan'
 import { detectMode } from '@/core/mode'
 import { DEFAULT_TITLE_RULE_IDS, planTitleRewrites } from '@/core/titles'
-import { buildCategoryTree, FALLBACK_TITLE, MAX_SIBLINGS as PRODUCT_MAX_SIBLINGS } from '@/core/tree'
-import { deriveShape, FALLBACK_SHARE_LIMIT, MAX_LEAF, SHAPE_MAX_SIBLINGS } from '@/core/shape'
+import { MAX_SIBLINGS as PRODUCT_MAX_SIBLINGS } from '@/core/tree'
+import { FALLBACK_SHARE_LIMIT, SHAPE_MAX_SIBLINGS } from '@/core/shape'
 import { clusterHomeless, dropAlreadyGrouped, planFallbackFolder, planNewFolders } from '@/core/newTopics'
 import type { Ports } from '@/core/ports'
-import type { CachedClassification, OrganizePlan, TagResult } from '@/core/types'
+import type { CachedClassification, TagResult } from '@/core/types'
 import { applyPlan } from '@/engine/apply'
 import { applyCleanup, scanForCleanup } from '@/engine/cleanup'
 import { aggregateBookmarks } from '@/engine/aggregate'
@@ -29,47 +28,28 @@ import { isModelConfigured, llmConcurrency } from '@/llm/config'
 import { listRemoteModels } from '@/llm/models'
 import { probeModel } from '@/llm/probe'
 import { classifyBookmarks } from '@/llm/classify'
-import {
-  applyDesign, collectTopics, designFolders, designTagFolders, nameMergedFolder, nameNewTopics,
-} from '@/llm/folders'
-import { extractTags } from '@/llm/tags'
+import { nameNewTopics } from '@/llm/folders'
 import {
   DEFAULT_SETTINGS, activeLlm, loadCache, loadSettings, saveCache, saveSettings,
+  findEndpoint,
 } from '@/storage/settings'
 import { findBookmarksBar } from '@/core/import'
 import { importTree } from '@/engine/importTree'
 import { moveBookmarks, MoveBookmarksError } from '@/engine/moveBookmarks'
 import type { EmitProgress, ProgressPhase } from './events'
 import type { Request, Response } from './messages'
+import {
+  classifyRebuildDraft,
+  designRebuildDraft,
+  InvalidStructureDraftError,
+  isRebuildDraftFresh,
+  RebuildCancelledError,
+  RebuildClassificationError,
+  staleRebuildDraftError,
+  StaleStructureDraftError,
+} from './rebuild'
 
-/**
- * 「切开撑爆的目录」这一步最多多花几次模型调用的**下限**。实际预算见 deepenBudget。
- *
- * 这个数曾经是固定上限 20（「够 4 轮 × 5 个超载目录」），并附着一句
- * 「正常库根本摸不到它」。**判准 A1 的上限从 20 收到 12 之后（见 core/shape.ts 的
- * MAX_LEAF 与 issues/38-source-vs-topic.md 的 D2），那句话变成假的**：
- * 原型实测（issues 目录旁的 tools/deepen-budget.mjs）打满预算的规模从
- * N≈1571 提前到 **N≈454**，而 450 条是个再普通不过的库。
- *
- * 病根不在这个数，在于 SWEET_LEAF 与 MAX_LEAF 现在都是 12——deriveShape
- * **瞄准的正好是上限**，而真实分布里约四成目录高于均值，于是结构上必然有
- * 四成叶子超标要切。下切因此从异常路径变成了常规路径，而这恰恰是它该做的事：
- * 「一级具体、撑得起来的才有二级」这个形状 deriveShape 自己产不出来
- * （它的两层布局是 floor(√leaves)，天生「少而粗的一级」），只能靠下切走出来。
- */
-const MIN_DEEPEN_CALLS = 20
-
-/**
- * 这一轮允许下切几次：`max(MIN_DEEPEN_CALLS, 推导出的叶子数)`。
- *
- * 跟着库规模走而不是写死，因为**它是兜底不是预算**——没有超载目录时循环自己就退出，
- * 另有一道「产出没比上一轮变好就停」的止损。所以把顶抬高在正常情况下一分钱都不多花，
- * 只改变病态库的行为。分母取 leaves 不是拍的：实测需要量约 `0.5 × leaves`
- * （N=1200 时 100 个叶子需要 53 次），留了一倍余量。
- */
-export function deepenBudget(leaves: number): number {
-  return Math.max(MIN_DEEPEN_CALLS, leaves)
-}
+export { deepenBudget } from './rebuild'
 
 export interface HandlerDeps {
   createClient?: (config: LlmConfig, locale: Locale) => LlmClient
@@ -169,7 +149,7 @@ export async function handle(
             titleRewrites,
           })
           log('classify', t('logAnalyzeDone', '0'))
-          return { ok: true, kind: 'analyze', plan }
+          return { ok: true, kind: 'analyze', outcome: 'plan', plan }
         }
         // 本机模型服务器不校验 Key，所以这里问的是「模型配好了没有」而不是「有没有 Key」，
         // 与选范围页、偏好页共用同一个谓词——三处各判各的时，本地 Ollama 用户会被卡在
@@ -183,7 +163,10 @@ export async function handle(
         const scan = scanTree(tree, request.scopeRootIds)
         // findScopeRoots 按书签树顺序返回，确定性；
         // 直接取 scopeRootIds[0] 拿到的是用户的点击顺序，先点子目录时甚至不是真正的根
-        const roots = findScopeRoots(tree, request.scopeRootIds)
+        const roots = findScopeRoots(tree, request.scopeRootIds).flatMap((root) => {
+          const folder = scan.folders.find((candidate) => candidate.id === root.id)
+          return folder === undefined ? [] : [folder]
+        })
 
         // 走哪条路由产品自己判，不推给用户拨开关（见 issues/14-mode-detection.md）。
         // 判断只看这次扫描的结果，与设置无关；用户在偏好页推翻时才带 modeOverride 过来。
@@ -198,6 +181,33 @@ export async function handle(
           : t(decision.mode === 'rebuild' ? 'logModeRebuild' : 'logModeAdditive', decision.reason))
 
         const client = createClient(llm, locale)
+        if (rebuild) {
+          const destinationRootId = roots[0]?.id
+          if (destinationRootId === undefined) return { ok: false, error: t('errNoScope') }
+          try {
+            const createdAt = now()
+            const draft = await designRebuildDraft({
+              id: `structure-${createdAt}`,
+              createdAt,
+              scopeRootIds: request.scopeRootIds,
+              destinationRootId,
+              locale,
+              llm: { baseUrl: llm.baseUrl, model: llm.model },
+              rewriteGithubTitles: settings.rewriteGithubTitles,
+              scan,
+              roots,
+              client,
+              concurrency,
+              batchSize: deps.batchSize,
+              emit,
+              isCancelled,
+            })
+            return { ok: true, kind: 'analyze', outcome: 'structure', draft }
+          } catch (error) {
+            if (error instanceof RebuildCancelledError) return CANCELLED
+            throw error
+          }
+        }
         // 候选目录要排除的是「范围根自己」，不是勾选界面级联勾上的整个 id 集合——
         // 勾书签栏会把它所有子目录的 id 也塞进 scopeRootIds，照单排除就是排除了一切，
         // 非推翻模式的候选表永远是空的（见 issues review C2）。roots 已经用
@@ -210,186 +220,15 @@ export async function handle(
         // 只在归入现有模式下打：推翻模式的候选来自下面的 buildCategoryTree，根本不经过
         // buildCandidatesFromFolders（这里算出的 candidates 会在 rebuild 分支里被整个
         // 覆盖），在那条路上打这句话说的是另一条代码路径发生的事，会误导用户。
-        if (!rebuild) {
-          const nonRootFolderCount = scan.folders.length - roots.length
-          const foldedCount = nonRootFolderCount - candidates.length
-          if (foldedCount > 0) {
-            log('scan', t('logDuplicateFolders', String(foldedCount)))
-          }
+        const nonRootFolderCount = scan.folders.length - roots.length
+        const foldedCount = nonRootFolderCount - candidates.length
+        if (foldedCount > 0) {
+          log('scan', t('logDuplicateFolders', String(foldedCount)))
         }
         let newFolders: NewFolderSpec[] = []
         let renameFolders: RenameFolderSpec[] = []
         let folderMoves: FolderMoveSpec[] = []
-        let tags: TagResult[] = []
-        let planMergeRoot: NonNullable<OrganizePlan['mergeRoot']> | undefined
-        /** 范围根的绝对层级（见 core/level.ts）。下切时算子目录的 startLevel 要用。 */
-        let rootLevel = 0
-        /**
-         * 下切这一步的调用上限。推翻模式下由形状推导的叶子数算出（见 deepenBudget），
-         * 非推翻模式根本不跑下切，留着下限值当占位。
-         */
-        let deepenCap = MIN_DEEPEN_CALLS
-        /**
-         * designTagFolders 覆盖之前的那一代标签。
-         *
-         * 那一代是 extractTags 抽的逐条真实主题，必然比设计出来的目录名细——
-         * 「01 软件工程」这个名字本身就是 design 阶段把若干个主题聚成一簇的产物。
-         * 留住它，下切就不必再花一次逐条抽取调用。
-         */
-        let preDesignTags: TagResult[] = []
-
-        if (rebuild) {
-          const rootId = roots[0]?.id
-          if (rootId === undefined) return { ok: false, error: t('errNoScope') }
-          // 勾中「书签栏」这类永久目录表达的是「整理这里面」，不是「把这两个并起来」；
-          // 它们也删不掉、父节点是不可见的 '0'，排除后所有边界情况一并消失
-          const hasPermanent = roots.some((r) => (r.parentId ?? '0') === '0')
-          const merging = roots.length >= 2 && !hasPermanent
-          // 这批新目录会落在第几层，按绝对层级算（见 core/level.ts）：勾书签栏是 1、
-          // 勾「其他书签」是 2。
-          // 合并模式也是 +1 而不是 +2：新容器建在 roots[0] 的父目录下，占的正是
-          // roots[0] 原来那一层，主题目录进容器后仍是 rootLevel + 1。
-          // rootId 来自 roots[0]，而 scanTree 会把每个 root 自己也放进 folders，必然找得到；
-          // 万一没有，?? 0 让它退回改造前的行为，而不是把整次分析弄崩
-          rootLevel = scan.folders.find((f) => f.id === rootId)?.level ?? 0
-          const startLevel = rootLevel + 1
-          // 目录的数量与层数由这次要整理的书签总数推导，不再由用户拨旋钮
-          // （见 issues/10-shape-from-count.md「决定：方案 D」）。
-          const shape = deriveShape(scan.bookmarks.length)
-          // 上限只管「要不要再往下分」，不阻止在勾中处建第一层：用户勾了这里就是要在这里
-          // 整理，返回「一个目录都不建」看起来像坏了。层数看的是推导出的 shape.depth
-          // 是否到了两层。曾经管这件事的 settings.maxFolderDepth 已随清单第 12 项删掉，
-          // 存量存储里遗留的那个键也读都不读（见 storage/settings.ts 的旧旋钮名单）
-          deepenCap = deepenBudget(shape.leaves)
-          const allowChildren = shape.depth >= 2
-          // shape.top 在三层（N > 1200）时是 0——票 10 有意把三层的分配留空，先兜底
-          // 退回 SHAPE_MAX_SIBLINGS，不让「其他」以外的目录数塌成 0
-          const topWithFallback = shape.top === 0 ? SHAPE_MAX_SIBLINGS : shape.top
-          // 推导值是「要几个主题目录」，即 topWithFallback 个。「其他」是兜底桶，
-          // 不是模型被要求去填的主题——传「推导值本身」让它从里面扣，真正承载书签的
-          // 主题目录就只剩 topWithFallback − 1 个，占用变成 N/(topWithFallback − 1)，
-          // 会把判准 A1（叶子 ≤ 20）顶破（复核实测：N ∈ [21,24]∪[181,200]∪[241,288]∪
-          // [401,420] 时最坏一叶 24 条，见 final-review.md I1）。
-          // 改成「其他」加在推导值之上：传 topWithFallback + 1。tree.ts／folders.ts
-          // 已有的 `max − 1` 留位逻辑不变，+1 之后再 −1 正好还原出 topWithFallback 个
-          // 主题目录，「其他」是白加的第 topWithFallback + 1 格，账不再从推导值里扣。
-          // 代价：同层总数（主题 + 其他）因此最多到 topWithFallback + 1 = 11，破判准
-          // A3（同层 ≤ 10）一个位子——这是有意的取舍：同层多一个是线性代价（多扫一行），
-          // 多一层是指数代价；A3 是更软的那条。A1 被顶破意味着一个目录能摸到 24 条，
-          // 逐层浏览时摸不动，是根尺子的直接失败。
-          // 下限 2（原来的 Math.max(topWithFallback, 2)）在 +1 之后已经天然满足：
-          // topWithFallback 最小是 1（N ≤ 12），+1 = 2，与原下限拍出的值相同，
-          // 可以去掉这道 max。
-          const maxTopFolders = topWithFallback + 1
-          // 两层时二级目录（某个主题下的子目录）不该复用一级预算：一级预算回答的是
-          // 「有几个主题」，二级要的是「每个主题下摊几个」——按方案 D 应为
-          // ceil(shape.leaves / topWithFallback)（票 10 补账第 8 条）。三层
-          // （N > 1200）时 topWithFallback 同样是那条路径唯一在用的「实际分支数」，
-          // 用它当分母与一级预算的兜底口径一致。一层时这个值不会被用到
-          // （allowChildren 为 false，tree.ts 不会往 children 里塞东西、
-          // folders.ts 的提示词也要求只输出一层），算出来也无害。
-          const maxChildFolders = Math.ceil(shape.leaves / topWithFallback)
-          const containerTitle = merging ? undefined : roots.find((r) => r.id === rootId)?.title
-          log('tags', t('logTagsStart', String(scan.bookmarks.length)))
-          tags = await extractTags(scan.bookmarks, client, locale, {
-            onProgress: progress('tags'),
-            onLog: (message, level) => log('tags', message, level),
-            isCancelled,
-            concurrency,
-          })
-          if (isCancelled()) return CANCELLED
-          // 分批抽标签的模型看不到全局，同义碎片只能在这里归并
-          log('tree', t('logTreeStart', String(scan.bookmarks.length)))
-          preDesignTags = tags
-          tags = await designTagFolders(tags, client, locale, {
-            onLog: (message, level) => log('tree', message, level),
-            isCancelled,
-            maxTopFolders,
-            maxChildFolders,
-            allowChildren,
-            startLevel,
-            ...(containerTitle === undefined ? {} : { containerTitle }),
-            minFolderSize: MIN_FOLDER_BOOKMARKS,
-          })
-          if (isCancelled()) return CANCELLED
-          let mergeRoot: { parentId: string; title: string } | undefined
-          if (merging) {
-            const sourceTitles = roots.map((r) => r.title)
-            // 跨父目录（一个在书签栏、一个在其他书签）时落在树序第一个根的父目录下；
-            // 同父时它就是那个共同父目录，两种情况写法相同
-            const parentId = roots[0]!.parentId!
-            const named = await nameMergedFolder(
-              collectTopics(tags), sourceTitles, client, locale,
-              { onLog: (message, level) => log('tree', message, level) },
-            )
-            if (isCancelled()) return CANCELLED
-            // 兜底名字要去掉源目录名上的编号：模型那条路径 nameMergedFolder 已经剥过，
-            // 这条不剥的话，对上一轮整理出的「01 前端」再整理会建出「NiceG + 01 前端」
-            const title = named ?? sourceTitles.map(stripNumberPrefix).join(' + ')
-            if (named === null) log('tree', t('logMergeNameFailed', title), 'warn')
-            else log('tree', t('logMergeNamed', title))
-            mergeRoot = { parentId, title }
-          }
-          const tree_ = buildCategoryTree({
-            tags, rootId, existingFolders: scan.folders, locale,
-            mergeRoot,
-            maxTopFolders,
-            maxChildFolders,
-            allowChildren,
-            minFolderSize: MIN_FOLDER_BOOKMARKS,
-          })
-          if (mergeRoot !== undefined && tree_.mergeRootTemporaryId !== null) {
-            planMergeRoot = {
-              temporaryId: tree_.mergeRootTemporaryId,
-              title: mergeRoot.title,
-              sourceRootIds: roots.map((r) => r.id),
-              sourceTitles: roots.map((r) => r.title),
-            }
-          }
-          candidates = tree_.candidates
-          newFolders = tree_.newFolders
-          renameFolders = tree_.renameFolders
-          log(
-            'tree',
-            t(
-              'logTreeDone',
-              String(tree_.newFolders.length),
-              String(tree_.candidates.length - tree_.newFolders.length),
-            ),
-          )
-          // 形状推导只给目标、不强制：分不开的主题模型自然给不出更细的子目录，
-          // 确定性规则不该硬拆（见 issues/10-shape-from-count.md「其余几问」）。
-          // 所以这里不做任何纠正，只把预算与实际并排记下来——将来拿真实库校准
-          // 这组数字（甜点 12、上限 20、同层 10），唯一的依据就是这条日志。
-          //
-          // 报的是「真正传下去、真正生效」的那组数，不是 deriveShape 的原始返回
-          // （shape.top / shape.depth）。原始值会在两端系统性说谎：N ≤ 12 时
-          // shape.top = 1，实际预算是 topWithFallback + 1 = 2，那个 +1 是我们自己的
-          // 下限造的、不是模型多给的，报原始值会被读成模型超产；N > 1200 时
-          // shape.top 是占位符 0、shape.depth 是 3，而实际预算是
-          // topWithFallback + 1 = 11、实际只会建 2 层（allowChildren 只开一层
-          // children，不会真的递归出第三层），报原始值等于每次都打印一条两个数字
-          // 都错的日志（见 final-review.md I2）。所以这里报 maxTopFolders
-          // （真正传给 designTagFolders/buildCategoryTree 的预算）与
-          // allowChildren 对应的实际层数。
-          //
-          // 一级目录 = 挂在范围根下的那些。两种模式挂法不同：合并模式挂在刚建的容器上
-          // （parentTemporaryId 是容器的临时 id），非合并模式挂在范围根上
-          // （parentTemporaryId 为 null、parentId 是 rootId）。
-          //
-          // 已知偏差（两条，都不影响「校准趋势」这个用途，够用）：
-          // 1. 数的是新建的一级目录。复用已有目录时它不进 newFolders（走的是 candidates
-          //    与 renameFolders），所以在「已有目录被复用」的库上这个数会偏小。
-          // 2. 数的是挂在范围根/容器下的全部新目录。
-          const containerId = tree_.mergeRootTemporaryId
-          const actualTop = tree_.newFolders.filter((f) =>
-            containerId === null
-              ? f.parentTemporaryId === null && f.parentId === rootId
-              : f.parentTemporaryId === containerId,
-          ).length
-          const effectiveDepth = allowChildren ? 2 : 1
-          log('tree', t('logShapeCompared', String(maxTopFolders), String(actualTop), String(effectiveDepth)))
-        }
+        const tags: TagResult[] = []
 
         // 「归入现有」却一个候选目录都没有。自动判断下够不着：detectMode 在没有任何
         // 非根目录时判 rebuild，而候选恰恰就是那批非根目录（buildCandidatesFromFolders
@@ -403,7 +242,7 @@ export async function handle(
         // reasonLoose 同一把尺子。只在非推翻模式下看这个开关：推翻模式本来就要
         // 从零设计整棵树，不存在「只处理一部分」这回事。
         const rootIds = new Set(roots.map((r) => r.id))
-        const onlyLoose = !rebuild && settings.onlyLooseInAdditive
+        const onlyLoose = settings.onlyLooseInAdditive
         const toClassify = onlyLoose ? looseBookmarks(scan) : scan.bookmarks
         // 提前拦住、不建缓存连接也不建 client 请求：省的不只是一次没意义的
         // 「0 条书签的分类」空转，还替用户省下了本可以避免的一次模型调用判断。
@@ -419,9 +258,9 @@ export async function handle(
         // 一个合法的出口，「无合适目录 → 带回 topic → 建新目录」那条链于是永远等不到输入
         // （见 core/audit.ts 的 dropFallbackFromCandidates）。剔的只是分类候选，
         // candidates 本身不动——「其他」还要当结构页的回落点、还要被 A5 量到。
-        const classifyCandidates = rebuild
-          ? candidates
-          : dropFallbackFromCandidates(candidates, scan.folders, request.scopeRootIds, locale)
+        const classifyCandidates = dropFallbackFromCandidates(
+          candidates, scan.folders, request.scopeRootIds, locale,
+        )
         // 推翻模式的候选是刚设计出来的，模型永远找得到归属，用不上「无合适目录时
         // 带回 topic」这条规则；让它的分类提示词继续保持这个工作流存在之前的样子，
         // 一个字节都不因为新增的非推翻建目录能力而改变（见 issues review M9）。
@@ -437,7 +276,7 @@ export async function handle(
           isCancelled,
           locale,
           model: llm.model,
-          includeTopicRule: !rebuild,
+          includeTopicRule: true,
         })
         let classifications = [...llmResults]
         // 已经跑完的批次仍然写进缓存，重来时不必再花一次钱
@@ -560,97 +399,6 @@ export async function handle(
             : []
         // 目录下限的最后一道：前两道只能按标签数预估，书签最终落在哪个目录是刚才那步定的。
         // 只在推翻重建模式下做——非推翻模式的候选目录全是用户自己的，一个都不该撤。
-        if (rebuild) {
-          const pruned = pruneSmallFolders({
-            candidates, newFolders, classifications, locale,
-            minFolderSize: MIN_FOLDER_BOOKMARKS,
-            mergeRootTemporaryId: planMergeRoot?.temporaryId ?? null,
-          })
-          candidates = pruned.candidates
-          newFolders = pruned.newFolders
-          classifications = pruned.classifications
-          if (pruned.prunedTitles.length > 0) {
-            log('classify', t('logPrunedSmall', String(pruned.prunedTitles.length), String(MIN_FOLDER_BOOKMARKS)))
-          }
-          // 「其他」退成真正的最后一档：掉进去的书签先问一次模型，存活目录里有没有更合适的。
-          // 复用 classifyBookmarks 而不是另写一个模块——分批、并发、缓存、429 重试、
-          // 「没有合适的就返回 null」这些语义它全都有，而这一步要的正是这些。
-          const pendingById = new Map(pruned.pending.map((p) => [p.bookmarkId, p]))
-          // 候选里剔掉「其他」自己：这一步的全部意义就是别让它当默认答案。
-          const rehomeCandidates = candidates.filter((c) => c.id !== pruned.fallbackId)
-          const rehomeItems = scan.bookmarks.filter((b) => pendingById.has(b.id))
-          if (rehomeItems.length > 0 && rehomeCandidates.length > 0) {
-            // 这一步要发起新的付费请求，取消必须挡在它前面检查——与全文件另外
-            // 8 处「先查取消再往下走」保持一致，不能让用户点了取消还多花一次钱
-            if (isCancelled()) return CANCELLED
-            log('classify', t('logRehomeStart', String(rehomeItems.length)))
-            // 不传 onProgress：这一步是分类阶段的补充，再报一次进度会让进度条往回跳
-            const placed = await classifyBookmarks({
-              items: rehomeItems,
-              candidates: rehomeCandidates,
-              client, cache,
-              batchSize: deps.batchSize,
-              concurrency,
-              onLog: (message, level) => log('classify', message, level),
-              isCancelled,
-              locale,
-              model: llm.model,
-              includeTopicRule: false,
-            })
-            await saveCache(ports, cache)
-            if (isCancelled()) return CANCELLED
-            const placedById = new Map(
-              placed.filter((p) => p.targetCategoryId !== null && p.source !== 'none')
-                .map((p) => [p.bookmarkId, p]),
-            )
-            const titleById = new Map(
-              rehomeCandidates.map((c) => [c.id, stripNumberPrefix(c.path.at(-1) ?? '')]),
-            )
-            let rehomed = 0
-            classifications = classifications.map((c) => {
-              const hit = placedById.get(c.bookmarkId)
-              const info = pendingById.get(c.bookmarkId)
-              if (hit === undefined || info === undefined) return c
-              // titleById 由同一份 rehomeCandidates 建、hit.targetCategoryId 来自
-              // 对这份候选表的分类结果，正常必然查得到。真查不到时宁可放弃这次
-              // 改判（保留 prune 定好的去处），也不该拼出「不再建这个目录」——
-              // 那句话只在「模型说没有合适的」时才成立，这里明明选中了一个目录
-              const targetTitle = titleById.get(hit.targetCategoryId!)
-              if (targetTitle === undefined) return c
-              rehomed += 1
-              // 理由仍旧由 pruneReason 拼：用户要知道的是「原来那个目录太小」，
-              // 而不是模型这一次的措辞
-              return {
-                ...c,
-                targetCategoryId: hit.targetCategoryId,
-                // 用这一次改判的把握度，不沿用首次分类对着一个已经不存在的目录
-                // 打出的分数——复核页默认勾选、显示的百分比都靠它
-                confidence: hit.confidence,
-                reason: pruneReason(locale, info.fromTitle, info.count, MIN_FOLDER_BOOKMARKS, targetTitle),
-              }
-            })
-            log('classify', t('logRehomeDone', String(rehomed)))
-          }
-
-          // 二次判定只会让「其他」变小：它只把书签从「其他」搬进存活目录，不会
-          // 反过来把别的目录清空，所以不必重新跑一遍撤销判断——除了「其他」自己。
-          // 「其他」抽走几条之后完全可能跌破下限，而上面那一轮
-          // pruneSmallFolders 已经跑完，没有人会再数一遍。这里再调用一次纯函数
-          // pruneSmallFolders（幂等、不花钱）就够了：数到「其他」还是不够，
-          // 就把它也撤掉，让里面剩下的书签退回原位——这批书签不再问第三次模型
-          // （票 05「决定 4」说的就是这个收场），日志与第一轮撤销复用同一条。
-          const rePruned = pruneSmallFolders({
-            candidates, newFolders, classifications, locale,
-            minFolderSize: MIN_FOLDER_BOOKMARKS,
-            mergeRootTemporaryId: planMergeRoot?.temporaryId ?? null,
-          })
-          candidates = rePruned.candidates
-          newFolders = rePruned.newFolders
-          classifications = rePruned.classifications
-          if (rePruned.prunedTitles.length > 0) {
-            log('classify', t('logPrunedSmall', String(rePruned.prunedTitles.length), String(MIN_FOLDER_BOOKMARKS)))
-          }
-        }
 
         // ---- 结构自检其一：塌掉与上层同名的穿透层 ----
         // 不分模式跑：非推翻模式下 core/newTopics.ts 同样会在范围根下建新目录，
@@ -660,7 +408,7 @@ export async function handle(
           const collapsed = collapseSameNameFolders({
             candidates, newFolders, classifications,
             existingFolders: scan.folders,
-            mergeRootTemporaryId: planMergeRoot?.temporaryId ?? null,
+            mergeRootTemporaryId: null,
           })
           candidates = collapsed.candidates
           newFolders = collapsed.newFolders
@@ -677,124 +425,6 @@ export async function handle(
         //
         // 只在推翻重建模式下跑：非推翻模式的承诺是「不重新设计结构」，往用户自己的
         // 目录里塞新子目录会破这条承诺，改为只出警告（见本块末尾）。
-        if (rebuild) {
-          const nextTemporaryId = createTemporaryIdFactory(newFolders)
-          let deepenCalls = 0
-          let previousMax = Number.MAX_SAFE_INTEGER
-          const gaveUp = new Set<string>()
-          const fallbackKey = normalizeName(FALLBACK_TITLE[locale])
-          for (;;) {
-            // scope: 'all' 而不是默认的 'new'——复用的已有目录（设计出的名字撞上旧名，
-            // 走 candidates 而不进 newFolders）本轮也是设计的一部分，书签正往里搬。
-            // 只看新建目录会造成一个没有依据的分裂：同一棵树、同一批书签、同一条判准，
-            // 新建的切、复用的不切（organize-audit-holes 03 票）。
-            // 没收到书签的用户目录 count 为 0，不会因为放宽 scope 就被卷进来。
-            const oversized = findOversizedFolders({
-              candidates, newFolders, classifications, locale, scope: 'all',
-            }).filter((folder) => !gaveUp.has(folder.id))
-            if (oversized.length === 0) break
-            // 止损：这一轮最大占用没比上一轮小，说明模型切不动了，再问也是同一个答案。
-            // 前面几道（清单空了、撞封顶、调用数上限）都可能被一个「每次返回同一个划分」
-            // 的模型绕过，只有「产出没有变好就停」拦得住。
-            // 放弃过的目录（主题不够、设计失败、没切开）从名单里拿掉，避免「其他」
-            // 一切失败就把 previousMax 钉死、整轮下切停掉（真实库里 100+ 条收容所
-            // 正是这样一刀未切）。
-            if (oversized[0]!.count >= previousMax) break
-            previousMax = oversized[0]!.count
-
-            let expandedAny = false
-            for (const folder of oversized) {
-              if (deepenCalls >= deepenCap) break
-              const mine = new Set(
-                classifications.filter((c) => c.targetCategoryId === folder.id).map((c) => c.bookmarkId),
-              )
-              let subTags = preDesignTags.filter((tag) => mine.has(tag.bookmarkId))
-              let topics = collectTopics(subTags)
-              const isFallback = normalizeName(folder.title) === fallbackKey
-              // 「其他」是异构收容所：抽标签时常被标成空主题，主题数不够不能就此停。
-              // 普通主题目录仍不重抽——真只有一个主题，再问一遍也切不出第二刀。
-              if (topics.length < 2 && isFallback && mine.size > MAX_LEAF) {
-                if (isCancelled()) return CANCELLED
-                const items = scan.bookmarks.filter((b) => mine.has(b.id))
-                log('classify', t('logDeepenRetag', folder.title, String(items.length)))
-                const fresh = await extractTags(items, client, locale, {
-                  onLog: (message, level) => log('classify', message, level),
-                  isCancelled,
-                  concurrency,
-                })
-                if (isCancelled()) return CANCELLED
-                const freshById = new Map(fresh.map((tag) => [tag.bookmarkId, tag]))
-                preDesignTags = [
-                  ...preDesignTags.filter((tag) => !freshById.has(tag.bookmarkId)),
-                  ...fresh,
-                ]
-                subTags = fresh
-                topics = collectTopics(subTags)
-              }
-              if (topics.length < 2) {
-                log('classify', t('logDeepenNoTopics', folder.title, String(folder.count), String(topics.length)), 'warn')
-                gaveUp.add(folder.id)
-                continue
-              }
-              if (isCancelled()) return CANCELLED
-              log('classify', t('logDeepenStart', folder.title, String(folder.count), String(MAX_LEAF)))
-              deepenCalls += 1
-              const design = await designFolders(topics, client, locale, {
-                oneLevel: true,
-                // 「其他」没有可当分类依据的共同点，把父目录名塞进提示词只会让模型
-                // 以为这些书签共享一个主题。省略之后走「为这摊标签设计一层目录」。
-                ...(isFallback ? {} : { parentTitle: folder.title }),
-                minFolderSize: MIN_FOLDER_BOOKMARKS,
-                startLevel: rootLevel + folder.level + 1,
-                onLog: (message, level) => log('classify', message, level),
-                isCancelled,
-              })
-              if (isCancelled()) return CANCELLED
-              if (design === null) {
-                gaveUp.add(folder.id)
-                continue
-              }
-              const parent = candidates.find((c) => c.id === folder.id)
-              if (parent === undefined) {
-                gaveUp.add(folder.id)
-                continue
-              }
-              const expanded = expandFolder({
-                parent,
-                tags: applyDesign(subTags, design),
-                classifications,
-                nextTemporaryId,
-                count: folder.count,
-                maxLeaf: MAX_LEAF,
-                locale,
-              })
-              if (expanded.createdCount === 0) {
-                log('classify', t('logDeepenNoSplit', folder.title, String(folder.count)), 'warn')
-                gaveUp.add(folder.id)
-                continue
-              }
-              newFolders = [...newFolders, ...expanded.newFolders]
-              candidates = [...candidates, ...expanded.candidates]
-              classifications = expanded.classifications
-              expandedAny = true
-              log('classify', t('logDeepenDone', folder.title, String(expanded.createdCount)))
-            }
-            if (!expandedAny || deepenCalls >= deepenCap) break
-
-            // 切出来装不满的子目录交给现成的剪枝收掉：幂等、纯函数、不花钱
-            const pruned = pruneSmallFolders({
-              candidates, newFolders, classifications, locale,
-              minFolderSize: MIN_FOLDER_BOOKMARKS,
-              mergeRootTemporaryId: planMergeRoot?.temporaryId ?? null,
-            })
-            candidates = pruned.candidates
-            newFolders = pruned.newFolders
-            classifications = pruned.classifications
-            if (pruned.prunedTitles.length > 0) {
-              log('classify', t('logPrunedSmall', String(pruned.prunedTitles.length), String(MIN_FOLDER_BOOKMARKS)))
-            }
-          }
-        }
 
         // ---- 结构自检其三：把「其他」切出来的族提到一级 ----
         // 「其他」是收容所，不应成为主题目录的父级。推翻模式下处理本轮新建的
@@ -889,7 +519,7 @@ export async function handle(
           id: `plan-${now()}`,
           createdAt: now(),
           scopeRootIds: request.scopeRootIds,
-          rebuildStructure: rebuild,
+          rebuildStructure: false,
           // onlyLoose 时这两者不同：跳过的书签这一轮压根没被看过，不该顶着
           // 「分类失败」的名义出现在复核页——那会说一句假话。用 toClassify
           // 而不是 scan.bookmarks，跳过的书签就不出现在 plan 的任何一处。
@@ -903,11 +533,68 @@ export async function handle(
           tags,
           folderMoves,
           titleRewrites,
-          mergeRoot: planMergeRoot,
         })
         for (const warning of warnings) log('classify', warning, 'warn')
         log('classify', t('logAnalyzeDone', String(plan.rows.length)))
-        return { ok: true, kind: 'analyze', plan }
+        return { ok: true, kind: 'analyze', outcome: 'plan', plan }
+      }
+
+      case 'classify_structure': {
+        const draftLocale = request.draft.locale
+        setLocale(draftLocale)
+        const tree = await ports.bookmarks.getTree()
+        const scan = scanTree(tree, request.draft.scopeRootIds)
+        const roots = findScopeRoots(tree, request.draft.scopeRootIds).flatMap((root) => {
+          const folder = scan.folders.find((candidate) => candidate.id === root.id)
+          return folder === undefined ? [] : [folder]
+        })
+        if (!isRebuildDraftFresh(request.draft, scan, roots)) {
+          return { ok: false, error: staleRebuildDraftError(draftLocale).message }
+        }
+
+        const endpoint = findEndpoint(settings, request.draft.llm.baseUrl)
+        const llm: LlmConfig | null = endpoint !== null && endpoint.models.includes(request.draft.llm.model)
+          ? { baseUrl: endpoint.baseUrl, apiKey: endpoint.apiKey, model: request.draft.llm.model }
+          : null
+        if (llm === null || !isModelConfigured(llm)) {
+          return {
+            ok: false,
+            error: draftLocale === 'zh_CN'
+              ? '结构草案使用的模型配置已失效，请返回偏好页重新生成结构'
+              : 'The model configuration used by this draft is no longer available. Return to Preferences and regenerate the structure.',
+          }
+        }
+
+        const cache = await loadCache(ports)
+        try {
+          const plan = await classifyRebuildDraft({
+            draft: request.draft,
+            edits: request.edits,
+            locale: draftLocale,
+            scan,
+            roots,
+            client: createClient(llm, draftLocale),
+            concurrency: llmConcurrency(llm.baseUrl),
+            batchSize: deps.batchSize,
+            emit,
+            isCancelled,
+            cache,
+          })
+          return { ok: true, kind: 'classify_structure', plan }
+        } catch (error) {
+          if (error instanceof RebuildCancelledError) return CANCELLED
+          if (
+            error instanceof StaleStructureDraftError ||
+            error instanceof InvalidStructureDraftError ||
+            error instanceof RebuildClassificationError
+          ) {
+            return { ok: false, error: error.message }
+          }
+          throw error
+        } finally {
+          // 已完成的批次即使随后取消或失败也保留，重试不重复花钱。
+          await saveCache(ports, cache)
+        }
       }
 
       case 'reclassify': {

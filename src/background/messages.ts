@@ -13,6 +13,7 @@ import type { TestFailure } from '@/llm/probe'
 import type { StaleScanResult } from '@/core/stale'
 import type { MoveBookmarksInput, MoveBookmarksResult } from '@/engine/moveBookmarks'
 import type { TaskRecord } from './events'
+import type { StructureDraft, StructureEdits } from '@/core/structure'
 
 /**
  * 失败分类跟着探针本身定义在 llm/probe.ts（那一层零浏览器依赖），这里再导出一次，
@@ -46,6 +47,7 @@ export type Request =
       /** title-only 时选用的规则。缺省按 GitHub-only 处理，兼容旧侧栏。 */
       ruleIds?: string[]
     }
+  | { kind: 'classify_structure'; draft: StructureDraft; edits: StructureEdits }
   | { kind: 'apply'; plan: OrganizePlan; accepted: string[] }
   | { kind: 'undo' }
   | { kind: 'get_settings' }
@@ -89,10 +91,15 @@ export type Request =
   | { kind: 'move_bookmarks'; input: MoveBookmarksInput }
 
 
+export type AnalyzeResponse =
+  | { ok: true; kind: 'analyze'; outcome: 'plan'; plan: OrganizePlan }
+  | { ok: true; kind: 'analyze'; outcome: 'structure'; draft: StructureDraft }
+
 export type Response =
   | { ok: true; kind: 'get_tree'; tree: BookmarkNode[] }
   | { ok: true; kind: 'scan'; scan: ScanResult }
-  | { ok: true; kind: 'analyze'; plan: OrganizePlan }
+  | AnalyzeResponse
+  | { ok: true; kind: 'classify_structure'; plan: OrganizePlan }
   | { ok: true; kind: 'apply'; result: ApplyResult }
   | { ok: true; kind: 'undo'; result: UndoResult }
   | { ok: true; kind: 'get_settings'; settings: Settings }
