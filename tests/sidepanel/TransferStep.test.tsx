@@ -38,29 +38,40 @@ describe('TransferStep', () => {
     expect(screen.queryByText(/勾选你想让 Reshelve 重构的文件夹/)).toBeNull()
   })
 
-  it('默认展开导出格式', () => {
+  it('默认收起导出和导入面板，点击导出后才出现导出选项框，再次点击收起', async () => {
     render(<TransferStep />)
+    expect(screen.queryByRole('button', { name: '带文件夹结构' })).toBeNull()
+    expect(screen.queryByRole('button', { name: '纯链接清单' })).toBeNull()
+    expect(screen.queryByRole('button', { name: '浏览器书签文件' })).toBeNull()
+    expect(screen.queryByText('选择文件…')).toBeNull()
+
+    await userEvent.click(screen.getByRole('button', { name: '导出' }))
     expect(screen.getByRole('button', { name: '带文件夹结构' })).toBeDefined()
     expect(screen.getByRole('button', { name: '纯链接清单' })).toBeDefined()
     expect(screen.getByRole('button', { name: '浏览器书签文件' })).toBeDefined()
-    expect(screen.queryByText('选择文件…')).toBeNull()
+
+    await userEvent.click(screen.getByRole('button', { name: '导出' }))
+    expect(screen.queryByRole('button', { name: '带文件夹结构' })).toBeNull()
   })
 
-  it('点导入后换成文件选择', async () => {
+  it('点导入后展开文件选择，再次点击收起', async () => {
     render(<TransferStep />)
     await userEvent.click(screen.getByRole('button', { name: '导入' }))
     expect(screen.getByText('选择文件…')).toBeDefined()
     expect(screen.queryByRole('button', { name: '带文件夹结构' })).toBeNull()
+
+    await userEvent.click(screen.getByRole('button', { name: '导入' }))
+    expect(screen.queryByText('选择文件…')).toBeNull()
   })
 
   it('导出和导入互斥，只展开一边', async () => {
     render(<TransferStep />)
     await userEvent.click(screen.getByRole('button', { name: '导入' }))
+    expect(screen.getByText('选择文件…')).toBeDefined()
     await userEvent.click(screen.getByRole('button', { name: '导出' }))
     expect(screen.getByRole('button', { name: '带文件夹结构' })).toBeDefined()
     expect(screen.queryByText('选择文件…')).toBeNull()
   })
-
   it('已有导入预览时进页自动展开导入，避免确认界面被收掉', () => {
     useStore.setState({ importError: '这个文件不是有效的 JSON。' })
     render(<TransferStep />)
@@ -127,7 +138,7 @@ describe('TransferStep', () => {
     expect(screen.getByText('没有找到相关书签')).toBeDefined()
   })
 
-  it('选中多个书签后显示移动面板和目标文件夹选择', async () => {
+  it('选中多个书签后显示移动面板和目标文件夹树选择器', async () => {
     render(<TransferStep />)
     const input = screen.getByRole('searchbox', { name: '搜索书签' })
     await userEvent.type(input, '.dev')
@@ -135,18 +146,26 @@ describe('TransferStep', () => {
     await userEvent.click(screen.getByRole('checkbox', { name: '选择书签 B' }))
     expect(screen.getByText('移动选中书签')).toBeDefined()
     expect(screen.getByText('已选中 2 条书签')).toBeDefined()
-    expect(screen.getByRole('combobox', { name: '移动到文件夹' })).toBeDefined()
+    expect(screen.getByRole('radiogroup', { name: '移动到文件夹' })).toBeDefined()
     expect((screen.getByRole('button', { name: '确认移动' }) as HTMLButtonElement).disabled).toBe(true)
+
+    // 点击工作常用文件夹选中目标
+    await userEvent.click(screen.getByText('工作常用'))
+    expect((screen.getByRole('button', { name: '确认移动' }) as HTMLButtonElement).disabled).toBe(false)
   })
 
-  it('切换到新建文件夹时显示名称和父目录字段', async () => {
+  it('切换到新建文件夹时显示名称和父目录树选择器', async () => {
     render(<TransferStep />)
     await userEvent.type(screen.getByRole('searchbox', { name: '搜索书签' }), '.dev')
     await userEvent.click(screen.getByRole('checkbox', { name: '选择书签 A' }))
     await userEvent.click(screen.getByRole('button', { name: '新建文件夹' }))
 
     expect(screen.getByRole('textbox', { name: '新文件夹名称' })).toBeDefined()
-    expect(screen.getByRole('combobox', { name: '新文件夹放在' })).toBeDefined()
+    expect(screen.getByRole('radiogroup', { name: '新文件夹放在' })).toBeDefined()
     expect((screen.getByRole('button', { name: '确认移动' }) as HTMLButtonElement).disabled).toBe(true)
+
+    // 输入新文件夹名称后可确认移动
+    await userEvent.type(screen.getByRole('textbox', { name: '新文件夹名称' }), '新分组')
+    expect((screen.getByRole('button', { name: '确认移动' }) as HTMLButtonElement).disabled).toBe(false)
   })
 })

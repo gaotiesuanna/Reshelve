@@ -2,6 +2,7 @@ import { useMemo, useState } from 'react'
 import { t } from '@/i18n'
 import { BookmarkTree, filterBookmarkTree, topLevelNodes } from '../components/BookmarkTree'
 import { ExportPanel } from '../components/ExportPanel'
+import { FolderPicker } from '../components/FolderPicker'
 import { ImportPanel } from '../components/ImportPanel'
 import { segmentActive, segmentButton, segmentTrack } from '../components/buttonStyles'
 import { StickyActionBar } from '../components/IndexControls'
@@ -10,24 +11,9 @@ import { collectAllFolderIds, useStore } from '../store'
 import type { BookmarkNode } from '@/core/ports'
 import type { MoveBookmarksInput } from '@/engine/moveBookmarks'
 
-type TransferPanel = 'export' | 'import'
+type TransferPanel = 'export' | 'import' | null
 type MovePanelMode = 'existing' | 'new'
 
-interface FolderOption {
-  node: BookmarkNode
-  depth: number
-}
-
-function folderOptions(nodes: BookmarkNode[]): FolderOption[] {
-  const options: FolderOption[] = []
-  function visit(node: BookmarkNode, depth: number): void {
-    if (node.url !== undefined) return
-    options.push({ node, depth })
-    for (const child of node.children ?? []) visit(child, depth + 1)
-  }
-  for (const node of topLevelNodes(nodes)) visit(node, 0)
-  return options
-}
 
 function selectedIdsInTree(nodes: BookmarkNode[], selected: Set<string>): string[] {
   const ids: string[] = []
@@ -44,7 +30,7 @@ function selectedIdsInTree(nodes: BookmarkNode[], selected: Set<string>): string
 
 function initialTransfer(): TransferPanel {
   const { importFile, importError, importDone } = useStore.getState()
-  return importFile !== null || importError !== null || importDone !== null ? 'import' : 'export'
+  return importFile !== null || importError !== null || importDone !== null ? 'import' : null
 }
 
 export function TransferStep() {
@@ -148,8 +134,8 @@ export function TransferStep() {
             className={`${segmentButton} ${transfer === 'export' ? segmentActive : ''}`}
             aria-expanded={transfer === 'export'}
             aria-pressed={transfer === 'export'}
-            disabled={busy !== null && transfer !== 'export'}
-            onClick={() => setTransfer('export')}
+            disabled={busy !== null}
+            onClick={() => setTransfer((prev) => (prev === 'export' ? null : 'export'))}
           >
             <DownloadIcon className={`h-3.5 w-3.5 shrink-0 ${transfer === 'export' ? 'text-index-ink' : 'text-index-faint'}`} />
             {t('exportToggle')}
@@ -159,16 +145,18 @@ export function TransferStep() {
             className={`${segmentButton} ${transfer === 'import' ? segmentActive : ''}`}
             aria-expanded={transfer === 'import'}
             aria-pressed={transfer === 'import'}
-            disabled={busy !== null && transfer !== 'import'}
-            onClick={() => setTransfer('import')}
+            disabled={busy !== null}
+            onClick={() => setTransfer((prev) => (prev === 'import' ? null : 'import'))}
           >
             <UploadIcon className={`h-3.5 w-3.5 shrink-0 ${transfer === 'import' ? 'text-index-ink' : 'text-index-faint'}`} />
             {t('importToggle')}
           </button>
         </div>
-        <div className="mt-2">
-          {transfer === 'export' ? <ExportPanel /> : <ImportPanel />}
-        </div>
+        {transfer !== null && (
+          <div className="mt-2">
+            {transfer === 'export' ? <ExportPanel /> : <ImportPanel />}
+          </div>
+        )}
       </StickyActionBar>
     </div>
   )
@@ -180,8 +168,19 @@ function MoveBookmarksPanel({ tree, busy }: { tree: BookmarkNode[]; busy: string
   const [existingFolderId, setExistingFolderId] = useState('')
   const [newFolderParentId, setNewFolderParentId] = useState('')
   const [newFolderTitle, setNewFolderTitle] = useState('')
-  const options = useMemo(() => folderOptions(tree), [tree])
-  const fallbackFolderId = options[0]?.node.id ?? ''
+  const fallbackFolderId = useMemo(() => {
+    function findFirst(nodes: BookmarkNode[]): string {
+      for (const node of nodes) {
+        if (node.url === undefined) return node.id
+        if (node.children) {
+          const found = findFirst(node.children)
+          if (found) return found
+        }
+      }
+      return ''
+    }
+    return findFirst(topLevelNodes(tree))
+  }, [tree])
   const targetFolderId = existingFolderId
   const parentFolderId = newFolderParentId || fallbackFolderId
   const selectedCount = useStore((state) => state.moveSelection.size)
@@ -223,20 +222,14 @@ function MoveBookmarksPanel({ tree, busy }: { tree: BookmarkNode[]; busy: string
         </button>
       </div>
       {mode === 'existing' ? (
-        <label className="block text-sm leading-caption text-index-ink">
-          <span className="mb-1 block font-medium">{t('moveDestinationLabel')}</span>
-          <select
-            aria-label={t('moveDestinationLabel')}
-            value={targetFolderId}
-            onChange={(event) => setExistingFolderId(event.target.value)}
-            className="min-h-index-row w-full rounded-index border border-index-line bg-index-canvas px-2 text-sm text-index-ink focus-visible:outline focus-visible:ring-2 focus-visible:ring-index-blue"
-          >
-            <option value="" disabled>{t('moveChooseFolder')}</option>
-            {options.map(({ node, depth }) => (
-              <option key={node.id} value={node.id}>{`${'　'.repeat(depth)}${node.title}`}</option>
-            ))}
-          </select>
-        </label>
+        <FolderPicker
+          tree={tree}
+          selectedId={targetFolderId}
+          onSelect={setExistingFolderId}
+          disabled={busy !== null}
+          label={t('moveDestinationLabel')}
+          name="move-existing-folder-target"
+        />
       ) : (
         <div className="space-y-2">
           <label className="block text-sm leading-caption text-index-ink">
@@ -249,19 +242,14 @@ function MoveBookmarksPanel({ tree, busy }: { tree: BookmarkNode[]; busy: string
               aria-label={t('moveNewFolderName')}
             />
           </label>
-          <label className="block text-sm leading-caption text-index-ink">
-            <span className="mb-1 block font-medium">{t('moveParentFolder')}</span>
-            <select
-              aria-label={t('moveParentFolder')}
-              value={parentFolderId}
-              onChange={(event) => setNewFolderParentId(event.target.value)}
-              className="min-h-index-row w-full rounded-index border border-index-line bg-index-canvas px-2 text-sm text-index-ink focus-visible:outline focus-visible:ring-2 focus-visible:ring-index-blue"
-            >
-              {options.map(({ node, depth }) => (
-                <option key={node.id} value={node.id}>{`${'　'.repeat(depth)}${node.title}`}</option>
-              ))}
-            </select>
-          </label>
+          <FolderPicker
+            tree={tree}
+            selectedId={parentFolderId}
+            onSelect={setNewFolderParentId}
+            disabled={busy !== null}
+            label={t('moveParentFolder')}
+            name="move-new-folder-parent"
+          />
         </div>
       )}
       <button

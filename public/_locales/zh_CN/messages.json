@@ -252,6 +252,31 @@
   "moveParentFolder": {
     "message": "新文件夹放在"
   },
+  "folderPickerSearchPlaceholder": {
+    "message": "搜索文件夹..."
+  },
+  "folderPickerSearchLabel": {
+    "message": "搜索文件夹"
+  },
+  "folderPickerEmpty": {
+    "message": "没有找到匹配的文件夹"
+  },
+  "folderPickerSelected": {
+    "message": "已选：$path$",
+    "placeholders": {
+      "path": {
+        "content": "$1"
+      }
+    }
+  },
+  "folderPickerSelectRadio": {
+    "message": "选择文件夹 $name$",
+    "placeholders": {
+      "name": {
+        "content": "$1"
+      }
+    }
+  },
   "moveConfirm": {
     "message": "确认移动"
   },

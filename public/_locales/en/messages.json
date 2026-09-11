@@ -252,6 +252,31 @@
   "moveParentFolder": {
     "message": "Place new folder in"
   },
+  "folderPickerSearchPlaceholder": {
+    "message": "Search folders…"
+  },
+  "folderPickerSearchLabel": {
+    "message": "Search folders"
+  },
+  "folderPickerEmpty": {
+    "message": "No matching folders found"
+  },
+  "folderPickerSelected": {
+    "message": "Selected: $path$",
+    "placeholders": {
+      "path": {
+        "content": "$1"
+      }
+    }
+  },
+  "folderPickerSelectRadio": {
+    "message": "Select folder $name$",
+    "placeholders": {
+      "name": {
+        "content": "$1"
+      }
+    }
+  },
   "moveConfirm": {
     "message": "Move now"
   },
