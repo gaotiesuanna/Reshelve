@@ -6,26 +6,50 @@ import { FALLBACK_TITLE, MAX_SIBLINGS as PRODUCT_MAX_SIBLINGS } from './tree'
 import { MAX_LEAF, SHAPE_MAX_SIBLINGS } from './shape'
 import type { CategoryCandidate, Classification, TagResult } from './types'
 
+export interface TargetAssignment {
+  bookmarkId: string
+  targetCategoryId: string | null
+}
+
+export function remapAssignmentTargets<T extends TargetAssignment>(
+  assignments: readonly T[],
+  targetMap: ReadonlyMap<string, string | null>,
+): T[] {
+  return assignments.map((assignment) => {
+    if (!targetMap.has(assignment.targetCategoryId ?? '')) return { ...assignment }
+    return { ...assignment, targetCategoryId: targetMap.get(assignment.targetCategoryId!) ?? null }
+  })
+}
+
+function isClassification(assignment: TargetAssignment): assignment is Classification {
+  return 'confidence' in assignment && 'reason' in assignment && 'source' in assignment
+}
+
+/** Legacy post-classification callers still surface audit reasons in the review UI. */
+function rewriteClassificationReason<T extends TargetAssignment>(assignment: T, reason: string): T {
+  return isClassification(assignment) ? { ...assignment, reason } : assignment
+}
+
 /** 读父目录名字只需要这两个字段，FolderItem 可以直接传入。 */
 export interface ExistingFolderRef {
   id: string
   title: string
 }
 
-export interface CollapseInput {
+export interface CollapseInput<T extends TargetAssignment = Classification> {
   candidates: CategoryCandidate[]
   newFolders: NewFolderSpec[]
-  classifications: Classification[]
+  classifications: T[]
   /** 范围内已存在的目录。父目录是范围根这类已有目录时，从这里读它的名字。 */
   existingFolders: ExistingFolderRef[]
   /** 合并模式下容器目录的临时 id。它不参与塌陷——拆了它 planMergeRoot 的引用就断了。 */
   mergeRootTemporaryId?: string | null
 }
 
-export interface CollapseResult {
+export interface CollapseResult<T extends TargetAssignment = Classification> {
   candidates: CategoryCandidate[]
   newFolders: NewFolderSpec[]
-  classifications: Classification[]
+  classifications: T[]
   /** 被塌掉的目录名（带编号），供日志与排查。 */
   collapsedTitles: string[]
 }
@@ -76,10 +100,12 @@ function renumberChildren(
  *
  * 迭代到不动点：同名可能连着两层，拆完一层还可能新冒出一对。
  */
-export function collapseSameNameFolders(input: CollapseInput): CollapseResult {
+export function collapseSameNameFolders<T extends TargetAssignment>(
+  input: CollapseInput<T>,
+): CollapseResult<T> {
   let newFolders = input.newFolders.map((f) => ({ ...f }))
   let candidates = input.candidates.map((c) => ({ ...c }))
-  const classifications = input.classifications.map((c) => ({ ...c }))
+  let classifications = input.classifications.map((c) => ({ ...c }))
   const titleById = new Map(input.existingFolders.map((f) => [f.id, f.title]))
   const collapsedTitles: string[] = []
 
@@ -125,11 +151,10 @@ export function collapseSameNameFolders(input: CollapseInput): CollapseResult {
       .filter((f) => f.temporaryId !== victim.temporaryId)
       .map((f) => (f.parentTemporaryId === victim.temporaryId ? { ...f, parentId, parentTemporaryId } : f))
 
-    for (const classification of classifications) {
-      if (classification.targetCategoryId === victim.temporaryId) {
-        classification.targetCategoryId = parentCandidateId
-      }
-    }
+    classifications = remapAssignmentTargets(
+      classifications,
+      new Map([[victim.temporaryId, parentCandidateId]]),
+    )
 
     candidates = candidates
       .filter((c) => c.id !== victim.temporaryId)
@@ -220,9 +245,9 @@ export interface FallbackShare {
   share: number
 }
 
-export interface FallbackShareInput {
+export interface FallbackShareInput<T extends TargetAssignment = Classification> {
   candidates: CategoryCandidate[]
-  classifications: Classification[]
+  classifications: T[]
   locale: Locale
   /** 范围内书签总数。A5 的分母是全库，不是「被分类到某处的书签数」。 */
   total: number
@@ -242,7 +267,9 @@ export interface FallbackShareInput {
  *
  * 没有一级的「其他」时返回 null——不是 0，两者含义不同（没建出来 vs 建了但是空的）。
  */
-export function measureFallbackShare(input: FallbackShareInput): FallbackShare | null {
+export function measureFallbackShare<T extends TargetAssignment>(
+  input: FallbackShareInput<T>,
+): FallbackShare | null {
   const fallbackKey = normalizeName(FALLBACK_TITLE[input.locale])
   const fallback = input.candidates.find(
     (c) => c.path.length === 1 && normalizeName(stripNumberPrefix(c.path[0] ?? '')) === fallbackKey,
@@ -304,10 +331,10 @@ export interface ExistingFolderPlacement {
   index: number
 }
 
-export interface PromoteInput {
+export interface PromoteInput<T extends TargetAssignment = Classification> {
   candidates: CategoryCandidate[]
   newFolders: NewFolderSpec[]
-  classifications: Classification[]
+  classifications: T[]
   locale: Locale
   /** 真正的范围根，用于识别带范围根路径前缀的现有「其他」。 */
   rootIds?: readonly string[]
@@ -316,10 +343,10 @@ export interface PromoteInput {
   bookmarkCountByFolder?: ReadonlyMap<string, number>
 }
 
-export interface PromoteResult {
+export interface PromoteResult<T extends TargetAssignment = Classification> {
   candidates: CategoryCandidate[]
   newFolders: NewFolderSpec[]
-  classifications: Classification[]
+  classifications: T[]
   folderMoves: FolderMoveSpec[]
   warnings: string[]
   /** 提上来的族，按原顺序。A3 的警告与日志要靠它说数字。 */
@@ -351,7 +378,9 @@ export interface PromoteResult {
  * candidates 顺序整体重算（`bareName` 内含 stripNumberPrefix，旧号会被剥掉重给），
  * 放到 buildPlan 之后就会跟编号锚点打架。
  */
-export function promoteFallbackChildren(input: PromoteInput): PromoteResult {
+export function promoteFallbackChildren<T extends TargetAssignment>(
+  input: PromoteInput<T>,
+): PromoteResult<T> {
   const fallbackKey = normalizeName(FALLBACK_TITLE[input.locale])
   const specById = new Map(input.newFolders.map((f) => [f.temporaryId, f]))
   const placementById = new Map((input.existingFolders ?? []).map((f) => [f.id, f]))
@@ -403,7 +432,7 @@ export function promoteFallbackChildren(input: PromoteInput): PromoteResult {
     .filter((c) => normalizeName(stripNumberPrefix(c.path.at(-1) ?? '')) === fallbackKey)
     .map(fallbackFor)
     .filter((f): f is Fallback => f !== null)
-  const noop: PromoteResult = {
+  const noop: PromoteResult<T> = {
     candidates: input.candidates,
     newFolders: input.newFolders,
     classifications: input.classifications,
@@ -518,11 +547,11 @@ export function promoteFallbackChildren(input: PromoteInput): PromoteResult {
       promotedReason(input.locale, promotedCounts.get(candidate.id) ?? 0),
     ]),
   )
-  const classifications = input.classifications.map((classification) => {
-    const reason = classification.targetCategoryId === null
+  const classifications = input.classifications.map((assignment) => {
+    const reason = assignment.targetCategoryId === null
       ? undefined
-      : reasonById.get(classification.targetCategoryId)
-    return reason === undefined ? classification : { ...classification, reason }
+      : reasonById.get(assignment.targetCategoryId)
+    return reason === undefined ? assignment : rewriteClassificationReason(assignment, reason)
   })
   return {
     candidates: reordered,
@@ -553,10 +582,10 @@ export interface OversizedFolder {
   kind: 'capacity' | 'leftovers'
 }
 
-export interface OversizedInput {
+export interface OversizedInput<T extends TargetAssignment = Classification> {
   candidates: CategoryCandidate[]
   newFolders: NewFolderSpec[]
-  classifications: Classification[]
+  classifications: T[]
   locale: Locale
   /** 'new'（默认）只看本批新建的目录；'all' 连用户已有目录一起看，用于出警告。 */
   scope?: 'new' | 'all'
@@ -581,7 +610,9 @@ export interface OversizedInput {
  * 取消掉一部分移动后，实际落地的目录会比这里量到的小。这个偏差不修——复核页的
  * 取消是用户的决定，不该反过来推翻结构。
  */
-export function findOversizedFolders(input: OversizedInput): OversizedFolder[] {
+export function findOversizedFolders<T extends TargetAssignment>(
+  input: OversizedInput<T>,
+): OversizedFolder[] {
   const maxLevel = input.maxLevel ?? MAX_AUDIT_LEVEL
   const maxLeaf = input.maxLeaf ?? MAX_LEAF
   const newIds = new Set(input.newFolders.map((f) => f.temporaryId))
@@ -654,7 +685,7 @@ export function createTemporaryIdFactory(existing: NewFolderSpec[]): () => strin
   return () => `tmp:${++max}`
 }
 
-export interface ExpandInput {
+export interface ExpandInput<T extends TargetAssignment = Classification> {
   /**
    * 要下切的目录。可以是本批新建的（`tmp:` 开头），也可以是复用的已有目录
    * （真实书签 id）——推翻模式下 findOversizedFolders 用 scope: 'all' 两种都吐
@@ -667,7 +698,7 @@ export interface ExpandInput {
    */
   tags: TagResult[]
   /** 当前全量分类。只有 targetCategoryId === parent.id 的会被改写。 */
-  classifications: Classification[]
+  classifications: T[]
   nextTemporaryId: () => string
   /** parent 原本装了多少条，写进 reason。 */
   count: number
@@ -675,10 +706,10 @@ export interface ExpandInput {
   locale: Locale
 }
 
-export interface ExpandResult {
+export interface ExpandResult<T extends TargetAssignment = Classification> {
   newFolders: NewFolderSpec[]
   candidates: CategoryCandidate[]
-  classifications: Classification[]
+  classifications: T[]
   /** 真的建出来的子目录数。0 表示这次没能切开。 */
   createdCount: number
 }
@@ -694,7 +725,7 @@ export interface ExpandResult {
  * - 没被映射到的书签**留在父目录里**平铺，与组根的 ownBookmarkIds 是同一个行为；
  * - 只切得出一个子目录就整个放弃。那一层不承载任何区分度，建出来只是让用户多点一次。
  */
-export function expandFolder(input: ExpandInput): ExpandResult {
+export function expandFolder<T extends TargetAssignment>(input: ExpandInput<T>): ExpandResult<T> {
   const mine = new Set(
     input.classifications.filter((c) => c.targetCategoryId === input.parent.id).map((c) => c.bookmarkId),
   )
@@ -743,10 +774,10 @@ export function expandFolder(input: ExpandInput): ExpandResult {
     for (const bookmarkId of bucket.bookmarkIds) targetByBookmark.set(bookmarkId, temporaryId)
   })
 
-  const classifications = input.classifications.map((c) => {
-    const target = targetByBookmark.get(c.bookmarkId)
-    if (target === undefined || c.targetCategoryId !== input.parent.id) return c
-    return { ...c, targetCategoryId: target, reason }
+  const classifications = input.classifications.map((assignment) => {
+    const target = targetByBookmark.get(assignment.bookmarkId)
+    if (target === undefined || assignment.targetCategoryId !== input.parent.id) return assignment
+    return rewriteClassificationReason({ ...assignment, targetCategoryId: target }, reason)
   })
 
   return { newFolders, candidates, classifications, createdCount: newFolders.length }

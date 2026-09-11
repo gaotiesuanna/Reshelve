@@ -1,10 +1,12 @@
 import { describe, it, expect } from 'vitest'
 import {
-  collapseSameNameFolders, dropFallbackFromCandidates, findOversizedFolders, measureFallbackShare,
+  collapseSameNameFolders, createTemporaryIdFactory, dropFallbackFromCandidates, expandFolder,
+  findOversizedFolders, measureFallbackShare, promoteFallbackChildren,
 } from '@/core/audit'
 import type { CollapseInput } from '@/core/audit'
 import type { NewFolderSpec } from '@/core/plan'
 import { MAX_LEAF } from '@/core/shape'
+import type { EstimatedAssignment } from '@/core/structure'
 import type { CategoryCandidate, Classification } from '@/core/types'
 
 const rootId = 'root'
@@ -39,6 +41,53 @@ function collapse(input: Partial<CollapseInput> & Pick<CollapseInput, 'candidate
 }
 
 describe('collapseSameNameFolders', () => {
+  it('用预估归属塌掉同名层时按字面目标映射且不补写分类字段', () => {
+    const classifications: EstimatedAssignment[] = [
+      { bookmarkId: 'a', targetCategoryId: 'tmp:1' },
+      { bookmarkId: 'b', targetCategoryId: 'tmp:2' },
+    ]
+    const result = collapseSameNameFolders({
+      candidates: [
+        cand('tmp:1', ['01 GitHub']),
+        cand('tmp:2', ['01 GitHub', '01 软件工程']),
+      ],
+      newFolders: [
+        top('tmp:1', '01 GitHub'),
+        child('tmp:2', 'tmp:1', '01 软件工程'),
+      ],
+      classifications,
+      existingFolders,
+      mergeRootTemporaryId: null,
+    })
+
+    expect(result.candidates.map((candidate) => candidate.id)).toEqual(['tmp:2'])
+    expect(result.classifications).toEqual([
+      { bookmarkId: 'a', targetCategoryId: rootId },
+      { bookmarkId: 'b', targetCategoryId: 'tmp:2' },
+    ])
+  })
+
+  it('通用目标映射保留 Classification 的额外字段和已有 prune 理由', () => {
+    const classification: Classification = {
+      bookmarkId: 'a',
+      targetCategoryId: 'tmp:1',
+      confidence: 0.72,
+      reason: '「旧目录」只装下 1 个书签，不足 3 个，已并入「GitHub」',
+      detail: '上游细节',
+      topic: '工程工具',
+      source: 'llm',
+    }
+    const result = collapseSameNameFolders({
+      candidates: [cand('tmp:1', ['01 GitHub'])],
+      newFolders: [top('tmp:1', '01 GitHub')],
+      classifications: [classification],
+      existingFolders,
+      mergeRootTemporaryId: null,
+    })
+
+    expect(result.classifications).toEqual([{ ...classification, targetCategoryId: rootId }])
+  })
+
   it('范围根叫 GitHub 时，组目录「01 GitHub」被塌掉，子目录上提并重编号', () => {
     const result = collapse({
       candidates: [
@@ -117,6 +166,66 @@ describe('collapseSameNameFolders', () => {
     expect(result.candidates.map((c) => c.path)).toEqual([['01 软件工程']])
   })
 
+})
+
+describe('target-only audit mutations', () => {
+  it('用预估归属下切目录时按书签映射新目标且不补写 reason', () => {
+    const classifications: EstimatedAssignment[] = [
+      { bookmarkId: 'a', targetCategoryId: 'tmp:7' },
+      { bookmarkId: 'b', targetCategoryId: 'tmp:7' },
+      { bookmarkId: 'c', targetCategoryId: 'tmp:8' },
+    ]
+    const result = expandFolder({
+      parent: cand('tmp:7', ['01 软件工程']),
+      tags: [
+        { bookmarkId: 'a', primaryTopic: '构建工具', secondaryTopic: null },
+        { bookmarkId: 'b', primaryTopic: '测试框架', secondaryTopic: null },
+      ],
+      classifications,
+      nextTemporaryId: createTemporaryIdFactory([
+        top('tmp:7', '01 软件工程'),
+        top('tmp:8', '02 其他'),
+      ]),
+      count: 2,
+      maxLeaf: 12,
+      locale: 'zh_CN',
+    })
+
+    expect(result.candidates.map((candidate) => candidate.id)).toEqual(['tmp:9', 'tmp:10'])
+    expect(result.classifications).toEqual([
+      { bookmarkId: 'a', targetCategoryId: 'tmp:9' },
+      { bookmarkId: 'b', targetCategoryId: 'tmp:10' },
+      { bookmarkId: 'c', targetCategoryId: 'tmp:8' },
+    ])
+  })
+
+  it('用预估归属提升「其他」子目录时按目标计数且保持归属字段原样', () => {
+    const classifications: EstimatedAssignment[] = [
+      { bookmarkId: 'a', targetCategoryId: 'tmp:10' },
+      { bookmarkId: 'b', targetCategoryId: 'tmp:10' },
+      { bookmarkId: 'z', targetCategoryId: 'tmp:9' },
+    ]
+    const result = promoteFallbackChildren({
+      candidates: [
+        cand('tmp:9', ['02 其他']),
+        cand('tmp:10', ['02 其他', '01 构建工具']),
+      ],
+      newFolders: [
+        top('tmp:9', '02 其他'),
+        child('tmp:10', 'tmp:9', '01 构建工具'),
+      ],
+      classifications,
+      locale: 'zh_CN',
+    })
+
+    expect(result.candidates.map((candidate) => candidate.id)).toEqual(['tmp:10', 'tmp:9'])
+    expect(result.candidates.map((candidate) => candidate.path)).toEqual([
+      ['01 构建工具'],
+      ['02 其他'],
+    ])
+    expect(result.classifications).toEqual(classifications)
+    expect(result.promoted).toEqual([{ title: '构建工具', count: 2 }])
+  })
 })
 
 describe('measureFallbackShare', () => {

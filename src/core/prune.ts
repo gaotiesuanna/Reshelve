@@ -2,6 +2,7 @@ import type { Locale } from './locale'
 import { normalizeName, stripNumberPrefix } from './map'
 import type { NewFolderSpec } from './plan'
 import { FALLBACK_TITLE } from './tree'
+import type { TargetAssignment } from './audit'
 import type { CategoryCandidate, Classification } from './types'
 
 /**
@@ -25,10 +26,10 @@ import type { CategoryCandidate, Classification } from './types'
  */
 export const MIN_FOLDER_BOOKMARKS = 3
 
-export interface PruneInput {
+export interface PruneInput<T extends TargetAssignment = Classification> {
   candidates: CategoryCandidate[]
   newFolders: NewFolderSpec[]
-  classifications: Classification[]
+  classifications: T[]
   /** 目录至少要装下几个书签。1 或更小表示用户关掉了这项约束。 */
   minFolderSize: number
   locale: Locale
@@ -36,10 +37,10 @@ export interface PruneInput {
   mergeRootTemporaryId?: string | null
 }
 
-export interface PruneResult {
+export interface PruneResult<T extends TargetAssignment = Classification> {
   candidates: CategoryCandidate[]
   newFolders: NewFolderSpec[]
-  classifications: Classification[]
+  classifications: T[]
   /** 被撤掉的目录名（带编号），供日志与排查。 */
   prunedTitles: string[]
   /**
@@ -78,6 +79,24 @@ export function pruneReason(
   return targetTitle === null ? `${head}, so it is not created` : `${head}, so it was merged into "${targetTitle}"`
 }
 
+function isClassification(assignment: TargetAssignment): assignment is Classification {
+  return 'confidence' in assignment && 'reason' in assignment && 'source' in assignment
+}
+
+/** Legacy post-classification callers still surface this reason in the review UI. */
+function rewritePruneReason<T extends TargetAssignment>(
+  assignment: T,
+  locale: Locale,
+  title: string,
+  count: number,
+  minFolderSize: number,
+  targetTitle: string | null,
+): void {
+  if (isClassification(assignment)) {
+    assignment.reason = pruneReason(locale, title, count, minFolderSize, targetTitle)
+  }
+}
+
 /**
  * 撤掉分类之后仍然装不满的新目录，把里面的书签上提一层。
  *
@@ -101,7 +120,7 @@ export function pruneReason(
  * 顺序也是语义的一部分：深的先判，父目录要等子目录并进来之后才知道自己够不够；
  * 同深度时「其他」最后判，它是所有撤销的去处，先判它就会在书签并进来之前被误撤。
  */
-export function pruneSmallFolders(input: PruneInput): PruneResult {
+export function pruneSmallFolders<T extends TargetAssignment>(input: PruneInput<T>): PruneResult<T> {
   const { minFolderSize, locale } = input
   if (minFolderSize <= 1) {
     return {
@@ -165,9 +184,9 @@ export function pruneSmallFolders(input: PruneInput): PruneResult {
     // 编号是建树阶段的内部产物，讲给用户听时不必带上
     const title = stripNumberPrefix(folder.path.at(-1) ?? '')
     const targetTitle = target === null ? null : stripNumberPrefix(target.path.at(-1) ?? '')
-    for (const classification of mine) {
-      classification.targetCategoryId = target?.id ?? null
-      classification.reason = pruneReason(locale, title, mine.length, minFolderSize, targetTitle)
+    for (const assignment of mine) {
+      assignment.targetCategoryId = target?.id ?? null
+      rewritePruneReason(assignment, locale, title, mine.length, minFolderSize, targetTitle)
       // 掉进兜底目录或彻底没有下一站的，交给调用方再问一次模型。
       // 被父目录接住的不记——那是结构上说得通的去处，不必花一次调用。
       // 同一条书签可能被撤两次（子目录 → 父目录 → 「其他」），后写的覆盖先写的：
@@ -179,9 +198,9 @@ export function pruneSmallFolders(input: PruneInput): PruneResult {
       // 更早的第一跳）才用「其他」当来历。
       if (target === null || target.id === fallback?.id) {
         const isFallbackItself = folder.id === fallback?.id
-        if (!(isFallbackItself && pending.has(classification.bookmarkId))) {
-          pending.set(classification.bookmarkId, {
-            bookmarkId: classification.bookmarkId, fromTitle: title, count: mine.length,
+        if (!(isFallbackItself && pending.has(assignment.bookmarkId))) {
+          pending.set(assignment.bookmarkId, {
+            bookmarkId: assignment.bookmarkId, fromTitle: title, count: mine.length,
           })
         }
       }

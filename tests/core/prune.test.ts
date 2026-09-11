@@ -1,6 +1,7 @@
 import { describe, it, expect } from 'vitest'
 import { pruneSmallFolders, pruneReason } from '@/core/prune'
 import type { NewFolderSpec } from '@/core/plan'
+import type { EstimatedAssignment } from '@/core/structure'
 import type { CategoryCandidate, Classification } from '@/core/types'
 
 const rootId = '1'
@@ -47,6 +48,31 @@ const targetOf = (result: { classifications: Classification[] }, bookmarkId: str
   result.classifications.find((c) => c.bookmarkId === bookmarkId)!.targetCategoryId
 
 describe('pruneSmallFolders', () => {
+  it('用预估归属剪掉小目录时只改目标，不要求或补写分类字段', () => {
+    const classifications: EstimatedAssignment[] = [
+      { bookmarkId: 'a', targetCategoryId: 't1' },
+      { bookmarkId: 'z1', targetCategoryId: 't9' },
+      { bookmarkId: 'z2', targetCategoryId: 't9' },
+      { bookmarkId: 'z3', targetCategoryId: 't9' },
+    ]
+
+    const result = pruneSmallFolders({
+      candidates: [cand('t1', '01 独苗'), cand('t9', '02 其他')],
+      newFolders: [top('t1', '01 独苗'), top('t9', '02 其他')],
+      classifications,
+      minFolderSize: 3,
+      locale: 'zh_CN',
+    })
+
+    expect(result.candidates.map((candidate) => candidate.id)).toEqual(['t9'])
+    expect(result.classifications).toEqual([
+      { bookmarkId: 'a', targetCategoryId: 't9' },
+      { bookmarkId: 'z1', targetCategoryId: 't9' },
+      { bookmarkId: 'z2', targetCategoryId: 't9' },
+      { bookmarkId: 'z3', targetCategoryId: 't9' },
+    ])
+  })
+
   it('分到的书签不足下限的子目录整个撤掉，书签并进父目录', () => {
     const result = prune({
       candidates: [cand('t1', '01 前端'), cand('t2', '01 前端', '01 Svelte'), cand('t3', '02 其他')],
