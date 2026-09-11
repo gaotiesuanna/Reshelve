@@ -63,6 +63,7 @@ function Row({
     const safeUrl = sanitizeUrl(node.url) !== null
     return (
       <div className="flex min-w-0 items-center gap-1.5 py-0.5 pr-2 text-neutral-600" style={{ paddingLeft: `${depth * 14 + 4}px` }}>
+        <span className="h-5 w-5 shrink-0" />
         {onToggleBookmark !== undefined ? (
           <input
             type="checkbox"
