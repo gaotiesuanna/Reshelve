@@ -161,7 +161,7 @@ export function Shell({ children, organizeContent }: { children: ReactNode; orga
   // 完整标签页动不动一千五六百像素宽，内容铺满没法看：收进居中的限宽列，
   // 两侧露出页面背景。侧栏本就三四百像素宽，保持原样铺满。
   return tabView ? (
-    <div className="h-full bg-neutral-100 text-neutral-800">
+    <div className="h-full bg-index-page text-neutral-800">
       <div
         data-testid="tab-view-column"
         className="mx-auto flex h-full w-full max-w-3xl flex-col border-x border-index-line bg-white"

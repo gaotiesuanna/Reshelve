@@ -28,6 +28,7 @@ export default {
       colors: {
         index: {
           canvas: 'var(--index-canvas)',
+          page: 'var(--index-page)',
           ink: 'var(--index-ink)',
           muted: 'var(--index-muted)',
           faint: 'var(--index-faint)',
