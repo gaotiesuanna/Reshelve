@@ -77,6 +77,20 @@ describe('Shell 设置入口', () => {
   })
 })
 
+describe('Shell 进度取消', () => {
+  it('结构分类进行中显示取消按钮并调用 cancel', async () => {
+    const cancel = vi.fn()
+    useStore.setState({
+      busy: '正在按确认后的结构分类…', busyKind: 'classifyStructure', cancel,
+    })
+    render(<Shell organizeContent={<div>步骤内容</div>}>{null}</Shell>)
+
+    await userEvent.click(screen.getByRole('button', { name: /取消/ }))
+
+    expect(cancel).toHaveBeenCalled()
+  })
+})
+
 /**
  * 步骤条是只读的进度指示，不是导航——所以它刻意不长成按钮的样子。
  * 代价是「现在在第几步」只剩字重、颜色与展开内容在传达，读屏那边什么都收不到，

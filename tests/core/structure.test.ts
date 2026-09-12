@@ -237,6 +237,47 @@ describe('applyStructureEditsToDraft', () => {
     ])
   })
 
+  it('deleting a newly added folder removes it from candidates and folder specs', () => {
+    const result = applyStructureEditsToDraft(makeStructureDraft(), editsWith({
+      added: [{ temporaryId: 'tmp:user:gone', parentCategoryId: null, title: 'Gone' }],
+      removed: ['tmp:user:gone'],
+    }), 'en')
+
+    expect(result.validation.errors).toEqual([])
+    expect(result.candidates.some((candidate) => candidate.id === 'tmp:user:gone')).toBe(false)
+    expect(result.newFolders.some((folder) => folder.temporaryId === 'tmp:user:gone')).toBe(false)
+  })
+
+  it('allows merging an original folder into a newly added folder', () => {
+    const result = applyStructureEditsToDraft(makeStructureDraft(), editsWith({
+      added: [{ temporaryId: 'tmp:user:target', parentCategoryId: null, title: 'Research' }],
+      removed: ['topA'],
+      mergedInto: { topA: 'tmp:user:target' },
+    }), 'en')
+
+    expect(result.validation.errors).toEqual([])
+    expect(result.candidates.map((candidate) => candidate.id)).toContain('tmp:user:target')
+    expect(result.candidates.map((candidate) => candidate.id)).not.toContain('topA')
+    expect(result.estimatedAssignments.find((assignment) => assignment.bookmarkId === 'a'))
+      .toEqual({ bookmarkId: 'a', targetCategoryId: 'tmp:user:target' })
+  })
+
+  it('emits a rename operation for a user rename of a reused folder', () => {
+    const draft = makeStructureDraft({
+      candidates: [{ id: 'existing', path: ['01 Code'] }],
+      newFolders: [],
+      renameFolders: [],
+      estimatedAssignments: [],
+    })
+    const result = applyStructureEditsToDraft(draft, editsWith({
+      renames: { existing: 'Engineering' },
+    }), 'en')
+
+    expect(result.renameFolders).toEqual([{
+      folderId: 'existing', oldTitle: 'Code', newTitle: '01 Engineering',
+    }])
+  })
+
   it('builds draft view counts from compiled estimated assignments', () => {
     const view = buildStructureView(makeStructureDraft(), editsWith({}), 'en')
 
@@ -261,6 +302,11 @@ describe('validateStructureEdits', () => {
     expect(errorCodes(editsWith({
       added: [{ temporaryId: 'tmp:user:blank', parentCategoryId: null, title: '' }],
     }))).toContain('blank_name')
+  })
+
+  it('ignores a blank rename for a node that is removed', () => {
+    expect(errorCodes(editsWith({ renames: { topA: '   ' }, removed: ['topA'] })))
+      .not.toContain('blank_name')
   })
 
   it('rejects normalized sibling duplicates', () => {

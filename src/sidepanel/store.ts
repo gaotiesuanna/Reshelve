@@ -952,7 +952,12 @@ export const useStore = create<State>((set, get) => ({
       ? (checkpointRes.checkpoint ?? null)
       : null
     const hasSuccessfulTerminalResult = record?.status === 'done' && record.result?.ok === true
-    if (hasSuccessfulTerminalResult) {
+    const preserveStructureCheckpoint =
+      record?.status === 'done' && record.result?.ok === true &&
+      record.result.kind === 'analyze' && record.result.outcome === 'structure' &&
+      checkpoint?.state === 'awaiting_confirmation' &&
+      checkpoint.draft.id === record.result.draft.id
+    if (hasSuccessfulTerminalResult && !preserveStructureCheckpoint) {
       await get().adoptFinishedTask(record)
     } else if (checkpoint !== null) {
       if (record !== null && record.status !== 'running' && record.status !== 'cancelling') {
