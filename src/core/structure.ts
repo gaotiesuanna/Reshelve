@@ -2,7 +2,7 @@ import type { Locale } from './locale'
 import { normalizeName, stripNumberPrefix } from './map'
 import { summarize } from './plan'
 import type { FolderMoveSpec, NewFolderSpec, RenameFolderSpec } from './plan'
-import { FALLBACK_TITLE } from './tree'
+import { FALLBACK_TITLE, MAX_SIBLINGS } from './tree'
 import type {
   BookmarkOperation,
   CategoryCandidate,
@@ -269,7 +269,16 @@ export function validateStructureEdits(
   }
   for (const added of additions) registerName(null, added.temporaryId, added.title)
 
-  return { errors, warnings: [...draft.warnings] }
+  const topLevelCount = remaining.filter((candidate) => candidate.path.length === 1).length
+    + additions.length
+  const warnings = [...draft.warnings]
+  if (topLevelCount > MAX_SIBLINGS) {
+    warnings.push(locale === 'zh_CN'
+      ? `同层目录建议不超过 ${MAX_SIBLINGS} 个；你仍可按当前结构继续。`
+      : `Keeping sibling folders to ${MAX_SIBLINGS} or fewer is recommended; you can still continue.`)
+  }
+
+  return { errors, warnings }
 }
 
 function resolveEstimatedTarget(

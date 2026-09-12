@@ -1122,7 +1122,13 @@ export const useStore = create<State>((set, get) => ({
 
   renameNode(id, title) {
     const edits = get().structureEdits
-    const next = { ...edits, renames: { ...edits.renames, [id]: title } }
+    const isAdded = edits.added.some((node) => node.temporaryId === id)
+    const next: StructureEdits = isAdded
+      ? {
+          ...edits,
+          added: edits.added.map((node) => node.temporaryId === id ? { ...node, title } : node),
+        }
+      : { ...edits, renames: { ...edits.renames, [id]: title } }
     const draft = get().structureDraft
     set({
       structureEdits: next,
@@ -1156,7 +1162,7 @@ export const useStore = create<State>((set, get) => ({
       added: [...edits.added, {
         temporaryId: `tmp:user:${crypto.randomUUID()}`,
         parentCategoryId: null,
-        title: draft.locale === 'zh_CN' ? '新类型' : 'New type',
+        title: t('structureNewTypeDefault'),
       }],
     }
     set({
@@ -1195,7 +1201,7 @@ export const useStore = create<State>((set, get) => ({
     if (validation.errors.length > 0) return
 
     set({
-      busy: t('busyAnalyzing'),
+      busy: t('structureClassifying'),
       busyKind: 'classifyStructure',
       retryable: null,
       error: null,

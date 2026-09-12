@@ -16,7 +16,7 @@ import { ImportPanel } from '@/sidepanel/components/ImportPanel'
 import { ProgressPanel } from '@/sidepanel/components/ProgressPanel'
 import { SettingsPanel } from '@/sidepanel/components/SettingsPanel'
 import { modelTestKey, useStore, type ModelTest } from '@/sidepanel/store'
-import { EMPTY_EDITS } from '@/core/structure'
+import { EMPTY_EDITS, type StructureDraft } from '@/core/structure'
 import { DEFAULT_SETTINGS, activeLlm } from '@/storage/settings'
 import { withLlm } from '../fakes/settings'
 import type { BookmarkNode } from '@/core/ports'
@@ -31,6 +31,22 @@ import type { ApplyResult } from '@/engine/apply'
  */
 beforeEach(() => setLocale('en'))
 afterEach(() => setLocale('zh_CN'))
+
+function structureDraft(plan: OrganizePlan): StructureDraft {
+  return {
+    id: `draft:${plan.id}`, createdAt: plan.createdAt,
+    scopeRootIds: [...plan.scopeRootIds], destinationRootId: plan.scopeRootIds[0] ?? '1',
+    locale: 'zh_CN', llm: { baseUrl: 'https://example.test/v1', model: 'test-model' },
+    totalBookmarks: plan.rows.length,
+    bookmarkFingerprint: plan.rows.map((row) => ({ id: row.bookmarkId, url: row.url })),
+    candidates: plan.candidates, newFolders: [], renameFolders: [], folderMoves: [],
+    mergeRoot: plan.mergeRoot, tags: plan.tags, sourceTags: plan.tags,
+    estimatedAssignments: plan.rows.map((row) => ({
+      bookmarkId: row.bookmarkId, targetCategoryId: row.toCategoryId,
+    })),
+    rootLevel: 0, deepenCap: 20, warnings: [], rewriteGithubTitles: false,
+  }
+}
 
 /** CJK 表意文字，加上项目里实际用过的中文全角标点：： 。「 」 */
 const CHINESE_LEAK = /[一-鿿：。「」]/
@@ -179,7 +195,10 @@ describe('英文界面渲染守卫：步骤组件', () => {
   })
 
   it('StructureStep', () => {
-    useStore.setState({ plan: makePlan(), structureEdits: EMPTY_EDITS, step: 'structure' })
+    useStore.setState({
+      plan: null, structureDraft: structureDraft(makePlan()),
+      structureEdits: EMPTY_EDITS, step: 'structure', busy: null, busyKind: null,
+    })
     const { container } = render(<StructureStep />)
     // makePlan() 的候选目录标题本身是中文夹具数据（前端、其他），不是这份守卫要挡的应用文案——
     // 此前它们只以 <input value> 出现，不进 textContent；「合并到」下拉把同层标题列成了
@@ -192,6 +211,7 @@ describe('英文界面渲染守卫：步骤组件', () => {
     expect(within(githubRow).getByTitle('2 incoming')).toBeTruthy()
     expect(within(githubRow).getByRole('combobox', { name: 'Merge GitHub into' })).toBeTruthy()
     expect(within(screen.getByDisplayValue('GitHub').closest('li')!).getByDisplayValue('AI 工具')).toBeTruthy()
+    expect(screen.getByRole('button', { name: 'Confirm structure and classify' })).toBeTruthy()
   })
 
   it('StructureStep（合并模式：合并到输入框与「源目录会被删除」说明）', () => {
@@ -199,13 +219,14 @@ describe('英文界面渲染守卫：步骤组件', () => {
     // 合并说明是整条动线里唯一一处在删除发生之前点名源目录的文案，
     // 它同时要把名字用分隔符连起来——中文顿号漏到英文界面正是这份文件要挡的东西。
     useStore.setState({
-      plan: {
+      plan: null,
+      structureDraft: structureDraft({
         ...makePlan(),
         mergeRoot: {
           temporaryId: 'tmp:0', title: 'AI learning',
           sourceRootIds: ['10', '11'], sourceTitles: ['NiceG', 'b_llm'],
         },
-      },
+      }),
       structureEdits: EMPTY_EDITS, step: 'structure',
     })
     const { container } = render(<StructureStep />)

@@ -1155,6 +1155,27 @@
   "structureHint": {
     "message": "Rename or delete any folder you do not want, then continue to the move list. Numbering is reassigned automatically."
   },
+  "structureEstimateHint": {
+    "message": "These counts are estimates. Actual counts will be known after each bookmark is classified."
+  },
+  "structureAddType": {
+    "message": "Add type"
+  },
+  "structureNewTypeDefault": {
+    "message": "New type"
+  },
+  "structureConfirmAndClassify": {
+    "message": "Confirm structure and classify"
+  },
+  "structureClassifying": {
+    "message": "Classifying with the confirmed structure…"
+  },
+  "structureStaleDraft": {
+    "message": "The bookmark scope has changed. Please regenerate the structure."
+  },
+  "structureInvalid": {
+    "message": "Fix the folder structure before continuing."
+  },
   "structureMergeLabel": {
     "message": "Merge into"
   },

@@ -1155,6 +1155,27 @@
   "structureHint": {
     "message": "可以改名或删掉不想要的目录，确认后再查看逐条移动清单。编号会自动重排。"
   },
+  "structureEstimateHint": {
+    "message": "以下数量为预计值，实际数量将在逐条分类完成后确定。"
+  },
+  "structureAddType": {
+    "message": "新增类型"
+  },
+  "structureNewTypeDefault": {
+    "message": "新类型"
+  },
+  "structureConfirmAndClassify": {
+    "message": "确认结构并开始分类"
+  },
+  "structureClassifying": {
+    "message": "正在按确认后的结构分类…"
+  },
+  "structureStaleDraft": {
+    "message": "书签范围已变化，请重新生成结构。"
+  },
+  "structureInvalid": {
+    "message": "请先修正目录结构中的问题。"
+  },
   "structureMergeLabel": {
     "message": "合并到"
   },

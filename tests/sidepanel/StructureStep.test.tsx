@@ -1,9 +1,9 @@
-import { describe, it, expect, beforeEach } from 'vitest'
-import { render, screen } from '@testing-library/react'
+import { describe, it, expect, beforeEach, vi } from 'vitest'
+import { act, render, screen } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { StructureStep } from '@/sidepanel/steps/StructureStep'
 import { useStore } from '@/sidepanel/store'
-import { EMPTY_EDITS } from '@/core/structure'
+import { EMPTY_EDITS, type StructureDraft } from '@/core/structure'
 import type { CategoryCandidate, OrganizePlan } from '@/core/types'
 import { makePlan } from '../fakes/plan'
 
@@ -30,12 +30,52 @@ function setupPlan(specs: NodeSpec[]): void {
       createdFolders: candidates.length, renamedFolders: 0, renamedBookmarks: 0, lowConfidenceItems: 0,
     },
   }
-  useStore.setState({ plan, structureEdits: EMPTY_EDITS, step: 'structure' })
+  setupDraft(plan)
+}
+
+function draftFromPlan(plan: OrganizePlan): StructureDraft {
+  return {
+    id: `draft:${plan.id}`,
+    createdAt: plan.createdAt,
+    scopeRootIds: [...plan.scopeRootIds],
+    destinationRootId: plan.scopeRootIds[0] ?? '1',
+    locale: 'zh_CN',
+    llm: { baseUrl: 'https://example.test/v1', model: 'test-model' },
+    totalBookmarks: plan.rows.length,
+    bookmarkFingerprint: plan.rows.map((row) => ({ id: row.bookmarkId, url: row.url })),
+    candidates: plan.candidates,
+    newFolders: [],
+    renameFolders: [],
+    folderMoves: [],
+    mergeRoot: plan.mergeRoot,
+    tags: plan.tags,
+    sourceTags: plan.tags,
+    estimatedAssignments: plan.rows.map((row) => ({
+      bookmarkId: row.bookmarkId,
+      targetCategoryId: row.toCategoryId,
+    })),
+    rootLevel: 0,
+    deepenCap: 20,
+    warnings: [],
+    rewriteGithubTitles: false,
+  }
+}
+
+function setupDraft(plan: OrganizePlan = makePlan()): void {
+  useStore.setState({
+    plan: null,
+    structureDraft: draftFromPlan(plan),
+    structureEdits: EMPTY_EDITS,
+    structureValidation: { errors: [], warnings: [] },
+    step: 'structure',
+    busy: null,
+    busyKind: null,
+  })
 }
 
 describe('StructureStep', () => {
   beforeEach(() => {
-    useStore.setState({ plan: makePlan(), structureEdits: EMPTY_EDITS, step: 'structure' })
+    setupDraft()
   })
 
   it('渲染目录区，返回与查看清单按钮都在', () => {
@@ -43,7 +83,8 @@ describe('StructureStep', () => {
 
     expect(screen.getByTestId('structure-section')).toBeTruthy()
     expect(screen.getByRole('button', { name: '返回' })).toBeTruthy()
-    expect(screen.getByRole('button', { name: /查看移动清单/ })).toBeTruthy()
+    expect(screen.getByRole('button', { name: /确认结构并开始分类/ })).toBeTruthy()
+    expect(screen.getByText(/实际数量将在逐条分类完成后确定/)).toBeTruthy()
   })
 
   it('按层级展示目录，编号由位置算出', () => {
@@ -99,10 +140,66 @@ describe('StructureStep', () => {
     expect(screen.getByText('其他', { selector: 'span' })).toBeTruthy()
   })
 
-  it('点击继续进入 review', async () => {
+  it('新增类型只增加一级行，并放在「其他」之前', async () => {
     render(<StructureStep />)
-    await userEvent.click(screen.getByRole('button', { name: /查看移动清单/ }))
-    expect(useStore.getState().step).toBe('review')
+    await userEvent.click(screen.getByRole('button', { name: '新增类型' }))
+
+    const added = useStore.getState().structureEdits.added[0]!
+    expect(added.parentCategoryId).toBeNull()
+    const rows = [...screen.getByTestId('structure-section').querySelectorAll(':scope > ol > li')]
+    expect(rows.at(-2)?.querySelector('input')?.value).toBe('新类型')
+    expect(rows.at(-1)?.textContent).toContain('其他')
+    expect(screen.queryByRole('button', { name: /新增子目录|拖动/ })).toBeNull()
+  })
+
+  it('新增类型改名直接更新 added 标题并参与保留名校验', async () => {
+    render(<StructureStep />)
+    await userEvent.click(screen.getByRole('button', { name: '新增类型' }))
+    const input = screen.getByDisplayValue('新类型')
+    await userEvent.clear(input)
+    await userEvent.type(input, '其他')
+
+    expect(useStore.getState().structureEdits.added[0]!.title).toBe('其他')
+    expect(screen.getByText('不能新增保留的兜底目录名')).toBeTruthy()
+    expect((screen.getByRole('button', { name: /确认结构并开始分类/ }) as HTMLButtonElement).disabled).toBe(true)
+  })
+
+  it('空名称显示行内错误并禁用确认按钮', async () => {
+    render(<StructureStep />)
+    await userEvent.clear(screen.getByDisplayValue('GitHub'))
+
+    expect(screen.getByText('名称不能为空')).toBeTruthy()
+    expect((screen.getByRole('button', { name: /确认结构并开始分类/ }) as HTMLButtonElement).disabled).toBe(true)
+  })
+
+  it('超过建议的同层数量只提示警告，不阻断确认', () => {
+    setupPlan([
+      ...Array.from({ length: 12 }, (_, index) => ({ id: `tmp:${index + 1}`, title: `类型${index + 1}` })),
+      { id: 'tmp:fallback', title: '其他' },
+    ])
+    useStore.getState().addStructureNode()
+    render(<StructureStep />)
+
+    expect(screen.getByText(/建议不超过 12 个/)).toBeTruthy()
+    expect((screen.getByRole('button', { name: /确认结构并开始分类/ }) as HTMLButtonElement).disabled).toBe(false)
+  })
+
+  it('主按钮调用异步确认动作并在 busy 时禁用', async () => {
+    const original = useStore.getState().confirmStructure
+    const confirm = vi.fn(async () => {})
+    useStore.setState({ confirmStructure: confirm })
+    try {
+      const { rerender } = render(<StructureStep />)
+      await userEvent.click(screen.getByRole('button', { name: /确认结构并开始分类/ }))
+      expect(confirm).toHaveBeenCalledTimes(1)
+      expect(useStore.getState().step).toBe('structure')
+
+      act(() => useStore.setState({ busy: '正在分类', busyKind: 'classifyStructure' }))
+      rerender(<StructureStep />)
+      expect((screen.getByRole('button', { name: /确认结构并开始分类/ }) as HTMLButtonElement).disabled).toBe(true)
+    } finally {
+      act(() => useStore.setState({ confirmStructure: original }))
+    }
   })
 
   it('点击返回回到偏好页', async () => {
@@ -122,13 +219,13 @@ describe('StructureStep 合并根', () => {
   })
 
   it('显示合并到输入框，预填模型给的名字', () => {
-    useStore.setState({ plan: withMergeRoot(), structureEdits: EMPTY_EDITS, step: 'structure' })
+    setupDraft(withMergeRoot())
     render(<StructureStep />)
     expect(screen.getByDisplayValue('AI 学习')).toBeTruthy()
   })
 
   it('改名写入 structureEdits，key 是合并根的 temporaryId', async () => {
-    useStore.setState({ plan: withMergeRoot(), structureEdits: EMPTY_EDITS, step: 'structure' })
+    setupDraft(withMergeRoot())
     render(<StructureStep />)
     const input = screen.getByDisplayValue('AI 学习')
     await userEvent.clear(input)
@@ -137,13 +234,13 @@ describe('StructureStep 合并根', () => {
   })
 
   it('该输入框没有删除按钮', () => {
-    useStore.setState({ plan: withMergeRoot(), structureEdits: EMPTY_EDITS, step: 'structure' })
+    setupDraft(withMergeRoot())
     render(<StructureStep />)
     expect(screen.queryByRole('button', { name: '删除目录 AI 学习' })).toBeNull()
   })
 
   it('非合并模式不显示该输入框', () => {
-    useStore.setState({ plan: makePlan(), structureEdits: EMPTY_EDITS, step: 'structure' })
+    setupDraft()
     render(<StructureStep />)
     expect(screen.queryByText('合并到')).toBeNull()
   })
@@ -163,7 +260,7 @@ describe('StructureStep 合并会删掉哪些文件夹', () => {
   })
 
   it('点名将被清空删除的源文件夹，并说明可一键撤销', () => {
-    useStore.setState({ plan: withMergeRoot(), structureEdits: EMPTY_EDITS, step: 'structure' })
+    setupDraft(withMergeRoot())
     render(<StructureStep />)
     // 必须点到具体名字：抽象地说「源文件夹会被删除」，用户对不上是哪两个
     const notice = screen.getByText(/NiceG、b_llm/)
@@ -172,14 +269,14 @@ describe('StructureStep 合并会删掉哪些文件夹', () => {
   })
 
   it('中文界面下名单用顿号分隔，与结果页同一套写法', () => {
-    useStore.setState({ plan: withMergeRoot(), structureEdits: EMPTY_EDITS, step: 'structure' })
+    setupDraft(withMergeRoot())
     render(<StructureStep />)
     expect(screen.queryByText(/NiceG, b_llm/)).toBeNull()
     expect(screen.getByText(/NiceG、b_llm/)).toBeTruthy()
   })
 
   it('非合并模式不出现这段说明', () => {
-    useStore.setState({ plan: makePlan(), structureEdits: EMPTY_EDITS, step: 'structure' })
+    setupDraft()
     render(<StructureStep />)
     expect(screen.queryByText(/会被清空并删除/)).toBeNull()
   })
