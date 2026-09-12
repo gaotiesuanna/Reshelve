@@ -4,7 +4,13 @@ import type { Locale } from '@/core/locale'
 import type { ProgressEvent, ProgressPhase } from '@/background/events'
 import type { BookmarkNode } from '@/core/ports'
 import { applyPartialResult, renumberPlan, retargetRow } from '@/core/plan'
-import { applyStructureEdits, EMPTY_EDITS, type StructureEdits } from '@/core/structure'
+import {
+  EMPTY_EDITS,
+  validateStructureEdits,
+  type StructureDraft,
+  type StructureEdits,
+  type StructureValidation,
+} from '@/core/structure'
 import type { OrganizeMode } from '@/core/mode'
 import type { OrganizePlan, ScanResult } from '@/core/types'
 import { DEFAULT_TITLE_RULE_IDS } from '@/core/titles'
@@ -186,6 +192,7 @@ function replayEvents(
  */
 const BUSY_KIND_BY_TASK: Partial<Record<Request['kind'], State['busyKind']>> = {
   analyze: 'analyze',
+  classify_structure: 'classifyStructure',
   check_links: 'checkLinks',
   reclassify: 'reclassify',
   apply: 'apply',
@@ -200,6 +207,7 @@ type MessageKey = Parameters<typeof t>[0]
 
 const BUSY_LABEL_BY_TASK: Partial<Record<Request['kind'], MessageKey>> = {
   analyze: 'busyAnalyzing',
+  classify_structure: 'busyAnalyzing',
   check_links: 'busyCheckingLinks',
   reclassify: 'busyReclassifying',
   apply: 'busyApplying',
@@ -255,7 +263,9 @@ function openConnection(): ProgressConnection | null {
       fail(
         useStore.setState,
         t('errBackgroundRecycled'),
-        kind === 'scan' || kind === 'analyze' ? kind : null,
+        kind === 'scan' || kind === 'analyze'
+          ? kind
+          : kind === 'classifyStructure' ? 'classify_structure' : null,
       )
     },
   })
@@ -389,6 +399,8 @@ interface State {
   runSeq: number
   settings: Settings
   plan: OrganizePlan | null
+  structureDraft: StructureDraft | null
+  structureValidation: StructureValidation
   accepted: Set<string>
   /**
    * 标记「对这条建议不满意，要重新分类」的书签 id——与 accepted 是两条独立的轴。
@@ -402,7 +414,7 @@ interface State {
   undoAvailable: boolean
   busy: string | null
   /** 当前在跑哪一步，决定能不能取消。 */
-  busyKind: 'init' | 'scan' | 'analyze' | 'apply' | 'undo' | 'cleanup' | 'aggregate' | 'checkLinks' | 'reclassify' | 'moveBookmarks' | null
+  busyKind: 'init' | 'scan' | 'analyze' | 'classifyStructure' | 'apply' | 'undo' | 'cleanup' | 'aggregate' | 'checkLinks' | 'reclassify' | 'moveBookmarks' | null
   /**
    * 正在看的（或自己刚发起的）那轮后台任务的 id，来自任务广播与 get_task。
    *
@@ -425,7 +437,7 @@ interface State {
    * 状态上再跑一遍，可能把同一批移动做两次。它们的收场由各自的机制负责
    * （撤销、断点续做），不是由这个按钮糊过去（见 issues/24-retry-affordance.md）。
    */
-  retryable: 'scan' | 'analyze' | null
+  retryable: 'scan' | 'analyze' | 'classify_structure' | null
   error: string | null
   progress: Progress | null
   logs: LogLine[]
@@ -539,6 +551,7 @@ interface State {
   retry(): Promise<void>
   renameNode(id: string, title: string): void
   removeNode(id: string): void
+  addStructureNode(): void
   /**
    * 把一个目录合并进另一个目录——合并 = 删除 + 指定去处，两件事必须一起写。
    *
@@ -547,7 +560,7 @@ interface State {
    * 而不是让 resolve() 去兜——那会绕一圈回到同一个 id。
    */
   mergeNode(id: string, into: string): void
-  confirmStructure(): void
+  confirmStructure(): Promise<void>
   backToPreferences(): void
   toggleAccepted(bookmarkId: string): void
   /**
@@ -636,6 +649,31 @@ function syncLocale(settings: Settings): Locale {
   return locale
 }
 
+function restoredStructureState(
+  draft: StructureDraft,
+  edits: StructureEdits,
+): Pick<State, 'structureDraft' | 'structureEdits' | 'structureValidation' | 'plan' | 'step'> {
+  return {
+    structureDraft: draft,
+    structureEdits: edits,
+    structureValidation: validateStructureEdits(draft, edits, draft.locale),
+    plan: null,
+    step: 'structure',
+  }
+}
+
+function saveStructureEdits(draft: StructureDraft, edits: StructureEdits): void {
+  void send({
+    kind: 'save_structure_checkpoint',
+    checkpoint: {
+      draft,
+      edits,
+      state: 'awaiting_confirmation',
+      updatedAt: Date.now(),
+    },
+  })
+}
+
 export const useStore = create<State>((set, get) => ({
   step: 'scope',
   mode: 'organize',
@@ -646,6 +684,8 @@ export const useStore = create<State>((set, get) => ({
   runSeq: 0,
   settings: DEFAULT_SETTINGS,
   plan: null,
+  structureDraft: null,
+  structureValidation: { errors: [], warnings: [] },
   accepted: new Set(),
   reclassifyMarked: new Set(),
   applyResult: null,
@@ -759,35 +799,65 @@ export const useStore = create<State>((set, get) => ({
       ...replayed,
     }
     if (record.status === 'cancelled') {
-      // 主动取消不是错误，日志里已经有记录，不弹红条
-      return set(base)
+      // 主动取消不是错误，日志里已经有记录，不弹红条；结构分类仍可从草稿重试。
+      return set({ ...base, retryable: record.kind === 'classify_structure' ? 'classify_structure' : null })
     }
     if (record.status === 'interrupted') {
       // 复用「后台被中断」的词条：SW 被回收或扩展重载，已完成批次有缓存，重试很快
       set(base)
-      return fail(set, t('errBackgroundRecycled'), record.kind === 'analyze' ? 'analyze' : null)
+      return fail(
+        set,
+        t('errBackgroundRecycled'),
+        record.kind === 'analyze'
+          ? 'analyze'
+          : record.kind === 'classify_structure' ? 'classify_structure' : null,
+      )
     }
     if (record.status === 'error') {
       set(base)
-      return fail(set, record.error ?? t('sendErrNoResponse'), record.kind === 'analyze' ? 'analyze' : null)
+      return fail(
+        set,
+        record.error ?? t('sendErrNoResponse'),
+        record.kind === 'analyze'
+          ? 'analyze'
+          : record.kind === 'classify_structure' ? 'classify_structure' : null,
+      )
     }
     const res = record.result
     // journal 受损（done 却没有载荷）时按无事发生收场：busy 已清，日志还在
     if (res === undefined || !res.ok) return set(base)
     switch (res.kind) {
       case 'analyze': {
-        // Task 5 adopts structure drafts and drives confirmation; until then only final plans
-        // enter the existing review flow.
-        if (res.outcome !== 'plan') return set(base)
+        if (res.outcome === 'structure') {
+          return set({ ...base, ...restoredStructureState(res.draft, EMPTY_EDITS) })
+        }
         return set({
           ...base,
           plan: res.plan,
           // 与 analyze() 同一条默认：全选，放错比不放更可接受
           accepted: new Set(res.plan.rows.map((r) => r.bookmarkId)),
           reclassifyMarked: new Set(),
+          structureDraft: null,
+          structureValidation: { errors: [], warnings: [] },
           structureEdits: EMPTY_EDITS,
-          step: nextStepAfterAnalyze(res.plan.rebuildStructure),
+          step: 'review',
         })
+      }
+      case 'classify_structure': {
+        set({
+          ...base,
+          plan: res.plan,
+          accepted: new Set(res.plan.rows.map((row) => row.bookmarkId)),
+          reclassifyMarked: new Set(),
+          retryable: null,
+          error: null,
+          structureDraft: null,
+          structureEdits: EMPTY_EDITS,
+          structureValidation: { errors: [], warnings: [] },
+          step: 'review',
+        })
+        await send({ kind: 'clear_structure_checkpoint' })
+        return
       }
       case 'reclassify': {
         // 重开接回的场景：方案接回来、回到复核页；重分类的勾选语境已随旧面板消失
@@ -877,7 +947,28 @@ export const useStore = create<State>((set, get) => ({
     // 接回的方式与广播同一条路（adoptRunningTask / adoptFinishedTask）。
     const taskRes = await send({ kind: 'get_task' })
     const record = taskRes.ok && taskRes.kind === 'get_task' ? (taskRes.record ?? null) : null
-    if (record !== null) {
+    const checkpointRes = await send({ kind: 'get_structure_checkpoint' })
+    const checkpoint = checkpointRes.ok && checkpointRes.kind === 'get_structure_checkpoint'
+      ? (checkpointRes.checkpoint ?? null)
+      : null
+    const hasSuccessfulTerminalResult = record?.status === 'done' && record.result?.ok === true
+    if (hasSuccessfulTerminalResult) {
+      await get().adoptFinishedTask(record)
+    } else if (checkpoint !== null) {
+      if (record !== null && record.status !== 'running' && record.status !== 'cancelling') {
+        await get().adoptFinishedTask(record)
+      }
+      set({
+        ...restoredStructureState(checkpoint.draft, checkpoint.edits),
+        retryable: record?.kind === 'classify_structure' &&
+          record.status !== 'running' && record.status !== 'cancelling'
+          ? 'classify_structure'
+          : get().retryable,
+      })
+      if (record !== null && (record.status === 'running' || record.status === 'cancelling')) {
+        get().adoptRunningTask(record)
+      }
+    } else if (record !== null) {
       if (record.status === 'running' || record.status === 'cancelling') get().adoptRunningTask(record)
       else await get().adoptFinishedTask(record)
     }
@@ -944,6 +1035,12 @@ export const useStore = create<State>((set, get) => ({
 
   async analyze() {
     const run = get().runSeq
+    set({
+      structureDraft: null,
+      structureEdits: EMPTY_EDITS,
+      structureValidation: { errors: [], warnings: [] },
+    })
+    void send({ kind: 'clear_structure_checkpoint' })
     if (!get().titleOnly) {
       const granted = await ensureHostPermission(activeLlm(get().settings).baseUrl)
       if (isStale(get, set, run)) return
@@ -982,7 +1079,17 @@ export const useStore = create<State>((set, get) => ({
     }
     if (!res.ok) return fail(set, res.error, 'analyze')
     if (res.kind !== 'analyze') return set({ busy: null, busyKind: null })
-    if (res.outcome !== 'plan') return set({ busy: null, busyKind: null })
+    if (res.outcome === 'structure') {
+      return set({
+        ...restoredStructureState(res.draft, EMPTY_EDITS),
+        accepted: new Set(),
+        reclassifyMarked: new Set(),
+        retryable: null,
+        error: null,
+        busy: null,
+        busyKind: null,
+      })
+    }
     set({
       plan: res.plan,
       // 默认全选：不勾 = 书签留在原来那个散落的位置 = 彻底找不到；进了一个不太准的主题目录，
@@ -994,10 +1101,10 @@ export const useStore = create<State>((set, get) => ({
           : res.plan.rows.map((r) => r.bookmarkId),
       ),
       reclassifyMarked: new Set(),
+      structureDraft: null,
+      structureValidation: { errors: [], warnings: [] },
       structureEdits: EMPTY_EDITS,
-      // 走哪条路由后台判定并记在 plan 上，界面不再自己猜——
-      // 设置里已经没有那个开关了，猜出来的必然是错的
-      step: nextStepAfterAnalyze(res.plan.rebuildStructure),
+      step: 'review',
       busy: null,
       busyKind: null,
     })
@@ -1009,49 +1116,126 @@ export const useStore = create<State>((set, get) => ({
     // 清掉红条再重跑：让用户看得出这一次是新的一轮，而不是旧错误还挂着
     set({ error: null, retryable: null })
     if (kind === 'scan') return get().goScan()
+    if (kind === 'classify_structure') return get().confirmStructure()
     return get().analyze()
   },
 
   renameNode(id, title) {
     const edits = get().structureEdits
-    set({ structureEdits: { ...edits, renames: { ...edits.renames, [id]: title } } })
+    const next = { ...edits, renames: { ...edits.renames, [id]: title } }
+    const draft = get().structureDraft
+    set({
+      structureEdits: next,
+      structureValidation: draft === null
+        ? get().structureValidation
+        : validateStructureEdits(draft, next, draft.locale),
+    })
+    if (draft !== null) saveStructureEdits(draft, next)
   },
 
   removeNode(id) {
     const edits = get().structureEdits
     if (edits.removed.includes(id)) return
-    set({ structureEdits: { ...edits, removed: [...edits.removed, id] } })
+    const next = { ...edits, removed: [...edits.removed, id] }
+    const draft = get().structureDraft
+    set({
+      structureEdits: next,
+      structureValidation: draft === null
+        ? get().structureValidation
+        : validateStructureEdits(draft, next, draft.locale),
+    })
+    if (draft !== null) saveStructureEdits(draft, next)
+  },
+
+  addStructureNode() {
+    const draft = get().structureDraft
+    if (draft === null) return
+    const edits = get().structureEdits
+    const next: StructureEdits = {
+      ...edits,
+      added: [...edits.added, {
+        temporaryId: `tmp:user:${crypto.randomUUID()}`,
+        parentCategoryId: null,
+        title: draft.locale === 'zh_CN' ? '新类型' : 'New type',
+      }],
+    }
+    set({
+      structureEdits: next,
+      structureValidation: validateStructureEdits(draft, next, draft.locale),
+    })
+    saveStructureEdits(draft, next)
   },
 
   mergeNode(id, into) {
     // 合进自己没有意义，挡在这里而不是让 resolve 去兜——那会绕一圈回到同一个 id
     if (id === into) return
     const edits = get().structureEdits
+    const next: StructureEdits = {
+      ...edits,
+      removed: edits.removed.includes(id) ? edits.removed : [...edits.removed, id],
+      mergedInto: { ...edits.mergedInto, [id]: into },
+    }
+    const draft = get().structureDraft
     set({
-      structureEdits: {
-        ...edits,
-        // 合并 = 删除 + 指定去处，两件事一起写。只写一处会得到半截状态
-        removed: edits.removed.includes(id) ? edits.removed : [...edits.removed, id],
-        mergedInto: { ...edits.mergedInto, [id]: into },
-      },
+      structureEdits: next,
+      structureValidation: draft === null
+        ? get().structureValidation
+        : validateStructureEdits(draft, next, draft.locale),
     })
+    if (draft !== null) saveStructureEdits(draft, next)
   },
 
-  confirmStructure() {
-    const plan = get().plan
-    if (plan === null) return
-    const next = applyStructureEdits(plan, get().structureEdits, currentLocale())
+  async confirmStructure() {
+    const run = get().runSeq
+    const draft = get().structureDraft
+    if (draft === null) return
+    const edits = get().structureEdits
+    const validation = validateStructureEdits(draft, edits, draft.locale)
+    set({ structureValidation: validation })
+    if (validation.errors.length > 0) return
+
     set({
-      plan: next,
-      // 同 analyze()：默认全选，放错比不放更可接受
-      accepted: new Set(next.rows.map((r) => r.bookmarkId)),
-      reclassifyMarked: new Set(),
-      step: 'review',
+      busy: t('busyAnalyzing'),
+      busyKind: 'classifyStructure',
+      retryable: null,
+      error: null,
+      progress: null,
     })
+    const stopKeepalive = startKeepalive(ensureConnection())
+    const res = await sendTask(set, { kind: 'classify_structure', draft, edits }).finally(stopKeepalive)
+    if (isStale(get, set, run)) return
+    if (!res.ok && res.cancelled === true) {
+      return set({ busy: null, busyKind: null, error: null, retryable: 'classify_structure' })
+    }
+    if (!res.ok) return fail(set, res.error, 'classify_structure')
+    if (res.kind !== 'classify_structure') {
+      return set({ busy: null, busyKind: null, retryable: 'classify_structure' })
+    }
+
+    set({
+      plan: res.plan,
+      accepted: new Set(res.plan.rows.map((row) => row.bookmarkId)),
+      reclassifyMarked: new Set(),
+      structureDraft: null,
+      structureEdits: EMPTY_EDITS,
+      structureValidation: { errors: [], warnings: [] },
+      step: 'review',
+      busy: null,
+      busyKind: null,
+      retryable: null,
+      error: null,
+    })
+    await send({ kind: 'clear_structure_checkpoint' })
   },
 
   backToPreferences() {
-    set({ step: 'preferences', structureEdits: EMPTY_EDITS })
+    set({
+      step: 'preferences',
+      structureDraft: null,
+      structureEdits: EMPTY_EDITS,
+      structureValidation: { errors: [], warnings: [] },
+    })
+    void send({ kind: 'clear_structure_checkpoint' })
   },
 
   toggleAccepted(bookmarkId) {
@@ -1616,12 +1800,14 @@ export const useStore = create<State>((set, get) => ({
       // 让在途的扫描/分析知道自己已经过期，回来时别再写 store
       runSeq: get().runSeq + 1,
       step: 'scope', scan: null, plan: null, accepted: new Set(), reclassifyMarked: new Set(),
-      structureEdits: EMPTY_EDITS, modeOverride: null, titleOnly: false, titleRuleIds: [...DEFAULT_TITLE_RULE_IDS],
+      structureDraft: null, structureEdits: EMPTY_EDITS, structureValidation: { errors: [], warnings: [] },
+      modeOverride: null, titleOnly: false, titleRuleIds: [...DEFAULT_TITLE_RULE_IDS],
       applyResult: null, undoResult: null, error: null, retryable: null,
       pendingTaskId: null, moveSelection: new Set(),
     })
     // journal 里那份终态一并作废：重开面板不该再被旧结果拽回去。
     // 任务还在跑时后台会自己拒掉（见 sessions.ts 的 clear），发出去没有副作用。
     void send({ kind: 'clear_task' })
+    void send({ kind: 'clear_structure_checkpoint' })
   },
 }))

@@ -6,7 +6,7 @@ import {
 import { send } from '@/sidepanel/lib/send'
 import { currentLocale, setLocale, t } from '@/i18n'
 import { DEFAULT_SETTINGS, activeLlm } from '@/storage/settings'
-import { EMPTY_EDITS } from '@/core/structure'
+import { EMPTY_EDITS, type StructureDraft, type StructureEdits } from '@/core/structure'
 import { makePlan } from '../fakes/plan'
 import { withLlm } from '../fakes/settings'
 import type { ProgressEvent, TaskRecord } from '@/background/events'
@@ -25,6 +25,35 @@ const tree: BookmarkNode[] = [
     ]},
   ]},
 ]
+
+function makeStructureDraft(): StructureDraft {
+  const plan = makePlan()
+  return {
+    id: 'draft-1',
+    createdAt: 1,
+    scopeRootIds: [...plan.scopeRootIds],
+    destinationRootId: '1',
+    locale: 'zh_CN',
+    llm: { baseUrl: 'https://example.com/v1', model: 'test-model' },
+    totalBookmarks: plan.rows.length,
+    bookmarkFingerprint: plan.rows.map(({ bookmarkId, url }) => ({ id: bookmarkId, url })),
+    candidates: plan.candidates,
+    newFolders: [],
+    renameFolders: [],
+    folderMoves: [],
+    mergeRoot: plan.mergeRoot,
+    tags: plan.tags,
+    sourceTags: plan.tags,
+    estimatedAssignments: plan.rows.map(({ bookmarkId, toCategoryId }) => ({
+      bookmarkId,
+      targetCategoryId: toCategoryId,
+    })),
+    rootLevel: 0,
+    deepenCap: 2,
+    warnings: [],
+    rewriteGithubTitles: false,
+  }
+}
 
 describe('collectDescendantFolderIds', () => {
   it('只收集文件夹，不收集书签', () => {
@@ -146,49 +175,178 @@ describe('nextStepAfterAnalyze', () => {
 })
 
 describe('结构确认步骤', () => {
-  it('renameNode 与 removeNode 累积到 structureEdits', () => {
-    useStore.setState({ plan: makePlan(), structureEdits: { renames: {}, removed: [], mergedInto: {}, added: [] } })
+  beforeEach(() => {
+    vi.mocked(send).mockReset()
+    vi.mocked(send).mockResolvedValue({ ok: true, kind: 'save_structure_checkpoint' } as never)
+    useStore.setState({
+      step: 'structure', plan: null, structureDraft: makeStructureDraft(),
+      structureEdits: EMPTY_EDITS, structureValidation: { errors: [], warnings: [] },
+      accepted: new Set(), reclassifyMarked: new Set(), busy: null, busyKind: null,
+      retryable: null, error: null,
+    })
+  })
+
+  it('analyze 返回 structure 时存下 draft、清空旧编辑与 plan，并进入结构确认', async () => {
+    const draft = makeStructureDraft()
+    useStore.setState({
+      step: 'preferences',
+      plan: makePlan(),
+      titleOnly: true,
+      structureEdits: { renames: { 'tmp:1': '旧编辑' }, removed: [], mergedInto: {}, added: [] },
+    })
+    vi.mocked(send).mockImplementation((request: { kind: string }) =>
+      request.kind === 'analyze'
+        ? Promise.resolve({ ok: true, kind: 'analyze', outcome: 'structure', draft }) as never
+        : Promise.resolve({ ok: true }) as never)
+
+    await useStore.getState().analyze()
+
+    const state = useStore.getState()
+    expect(state.structureDraft).toBe(draft)
+    expect(state.structureEdits).toEqual(EMPTY_EDITS)
+    expect(state.plan).toBeNull()
+    expect(state.step).toBe('structure')
+  })
+
+  it.each([
+    { titleOnly: false, rebuildStructure: false },
+    { titleOnly: true, rebuildStructure: true },
+  ])('analyze 返回 plan 时 additive/title-only 都直接进入复核 %#', async ({ titleOnly, rebuildStructure }) => {
+    const plan = { ...makePlan(), titleOnly, rebuildStructure }
+    const chromeGlobal = globalThis as unknown as { chrome: { permissions: unknown } }
+    const originalPermissions = chromeGlobal.chrome.permissions
+    chromeGlobal.chrome.permissions = { contains: () => Promise.resolve(true) }
+    vi.mocked(send).mockImplementation((request: { kind: string }) =>
+      request.kind === 'analyze'
+        ? Promise.resolve({ ok: true, kind: 'analyze', outcome: 'plan', plan }) as never
+        : Promise.resolve({ ok: true }) as never)
+    useStore.setState({ step: 'preferences', titleOnly })
+
+    try {
+      await useStore.getState().analyze()
+    } finally {
+      chromeGlobal.chrome.permissions = originalPermissions
+    }
+
+    expect(useStore.getState().plan).toBe(plan)
+    expect(useStore.getState().step).toBe('review')
+  })
+
+  it('renameNode 与 removeNode 累积编辑并逐次保存完整 checkpoint', () => {
+    const draft = useStore.getState().structureDraft!
     useStore.getState().renameNode('tmp:1', '代码仓库')
     useStore.getState().removeNode('tmp:3')
     expect(useStore.getState().structureEdits).toEqual({
       renames: { 'tmp:1': '代码仓库' }, removed: ['tmp:3'], mergedInto: {}, added: [],
     })
-  })
-
-  it('confirmStructure 把编辑写进 plan 并进入 review', () => {
-    useStore.setState({
-      plan: makePlan(),
-      structureEdits: { renames: { 'tmp:1': '代码仓库' }, removed: [], mergedInto: {}, added: [] },
-      step: 'structure',
+    expect(vi.mocked(send)).toHaveBeenLastCalledWith({
+      kind: 'save_structure_checkpoint',
+      checkpoint: {
+        draft,
+        edits: { renames: { 'tmp:1': '代码仓库' }, removed: ['tmp:3'], mergedInto: {}, added: [] },
+        state: 'awaiting_confirmation',
+        updatedAt: expect.any(Number),
+      },
     })
-    useStore.getState().confirmStructure()
-    const state = useStore.getState()
-    expect(state.step).toBe('review')
-    expect(state.plan!.candidates.find((c) => c.id === 'tmp:1')!.path).toEqual(['代码仓库'])
   })
 
-  it('confirmStructure 后重新全选，不再看置信度——放错比不放更可接受', () => {
+  it('addStructureNode 生成用户一级类型并立即持久化', () => {
+    const randomUUID = vi.spyOn(globalThis.crypto, 'randomUUID')
+      .mockReturnValue('1234' as `${string}-${string}-${string}-${string}-${string}`)
+    try {
+      useStore.getState().addStructureNode()
+    } finally {
+      randomUUID.mockRestore()
+    }
+
+    expect(useStore.getState().structureEdits.added).toEqual([{
+      temporaryId: 'tmp:user:1234', parentCategoryId: null, title: '新类型',
+    }])
+    expect(vi.mocked(send)).toHaveBeenLastCalledWith(expect.objectContaining({
+      kind: 'save_structure_checkpoint',
+      checkpoint: expect.objectContaining({
+        edits: expect.objectContaining({
+          added: [{ temporaryId: 'tmp:user:1234', parentCategoryId: null, title: '新类型' }],
+        }),
+      }),
+    }))
+  })
+
+  it('非法编辑不发分类请求并留下校验错误', async () => {
+    useStore.getState().renameNode('tmp:1', '   ')
+    vi.mocked(send).mockClear()
+
+    await useStore.getState().confirmStructure()
+
+    expect(useStore.getState().structureValidation.errors.length).toBeGreaterThan(0)
+    expect(vi.mocked(send).mock.calls.some(([request]) => request.kind === 'classify_structure')).toBe(false)
+    expect(useStore.getState().step).toBe('structure')
+  })
+
+  it('确认时携带最新 draft/edits，成功采纳 plan、全选并清 checkpoint', async () => {
+    const draft = useStore.getState().structureDraft!
     const plan = makePlan()
     plan.rows[0]!.confidence = 0.3 // 就算是低置信度的行，也照样进 accepted
-    useStore.setState({ plan, structureEdits: { renames: {}, removed: [], mergedInto: {}, added: [] }, accepted: new Set() })
-    useStore.getState().confirmStructure()
-    const accepted = useStore.getState().accepted
-    expect(accepted.has(plan.rows[0]!.bookmarkId)).toBe(true)
-    expect(accepted.has(plan.rows[1]!.bookmarkId)).toBe(true)
+    useStore.getState().renameNode('tmp:1', '代码仓库')
+    const edits = useStore.getState().structureEdits
+    vi.mocked(send).mockImplementation((request: { kind: string }) => {
+      if (request.kind === 'classify_structure') {
+        expect(useStore.getState().step).toBe('structure')
+        expect(useStore.getState().busy).not.toBeNull()
+        return Promise.resolve({ ok: true, kind: 'classify_structure', plan }) as never
+      }
+      if (request.kind === 'clear_structure_checkpoint') {
+        expect(useStore.getState().plan).toBe(plan)
+        expect(useStore.getState().step).toBe('review')
+        return Promise.resolve({ ok: true, kind: 'clear_structure_checkpoint' }) as never
+      }
+      return Promise.resolve({ ok: true, kind: 'save_structure_checkpoint' }) as never
+    })
+
+    await useStore.getState().confirmStructure()
+
+    expect(vi.mocked(send).mock.calls.some(([request]) =>
+      request.kind === 'classify_structure'
+        && 'draft' in request && request.draft === draft
+        && 'edits' in request && request.edits === edits,
+    )).toBe(true)
+    expect([...useStore.getState().accepted]).toEqual(plan.rows.map((row) => row.bookmarkId))
+    expect(useStore.getState().structureDraft).toBeNull()
+    expect(vi.mocked(send).mock.calls.some(([request]) => request.kind === 'clear_structure_checkpoint')).toBe(true)
   })
 
-  it('backToPreferences 回到偏好页并清空结构编辑', () => {
-    useStore.setState({
-      step: 'structure',
-      structureEdits: { renames: { 'tmp:1': 'x' }, removed: [], mergedInto: {}, added: [] },
-    })
+  it.each([
+    { response: { ok: false, error: '分类失败' }, error: '分类失败' },
+    { response: { ok: false, error: '已取消', cancelled: true }, error: null },
+  ])('分类失败或取消保留草案与编辑供重试 %#', async ({ response, error }) => {
+    const draft = useStore.getState().structureDraft!
+    useStore.getState().renameNode('tmp:1', '代码仓库')
+    const edits = useStore.getState().structureEdits
+    vi.mocked(send).mockImplementation((request: { kind: string }) =>
+      request.kind === 'classify_structure'
+        ? Promise.resolve(response) as never
+        : Promise.resolve({ ok: true, kind: 'save_structure_checkpoint' }) as never)
+
+    await useStore.getState().confirmStructure()
+
+    expect(useStore.getState().structureDraft).toBe(draft)
+    expect(useStore.getState().structureEdits).toBe(edits)
+    expect(useStore.getState().step).toBe('structure')
+    expect(useStore.getState().retryable).toBe('classify_structure')
+    expect(useStore.getState().error).toBe(error)
+  })
+
+  it('backToPreferences 回到偏好页、清空草案并清 checkpoint', () => {
+    useStore.getState().renameNode('tmp:1', 'x')
+    vi.mocked(send).mockClear()
     useStore.getState().backToPreferences()
     expect(useStore.getState().step).toBe('preferences')
-    expect(useStore.getState().structureEdits).toEqual({ renames: {}, removed: [], mergedInto: {}, added: [] })
+    expect(useStore.getState().structureDraft).toBeNull()
+    expect(useStore.getState().structureEdits).toEqual(EMPTY_EDITS)
+    expect(vi.mocked(send)).toHaveBeenCalledWith({ kind: 'clear_structure_checkpoint' })
   })
 
   it('合并同时写 removed 与 mergedInto——两件事必须一起发生', () => {
-    useStore.setState({ structureEdits: EMPTY_EDITS })
     useStore.getState().mergeNode('tmp:1', 'tmp:2')
 
     const edits = useStore.getState().structureEdits
@@ -197,14 +355,12 @@ describe('结构确认步骤', () => {
   })
 
   it('合并到自己是无操作——不会把一个目录合进它自己', () => {
-    useStore.setState({ structureEdits: EMPTY_EDITS })
     useStore.getState().mergeNode('tmp:1', 'tmp:1')
 
     expect(useStore.getState().structureEdits.removed).toEqual([])
   })
 
   it('重复合并同一个目录时以最后一次为准', () => {
-    useStore.setState({ structureEdits: EMPTY_EDITS })
     useStore.getState().mergeNode('tmp:1', 'tmp:2')
     useStore.getState().mergeNode('tmp:1', 'tmp:3')
 
@@ -494,15 +650,17 @@ describe('放弃这一轮之后，在途结果不再落地', () => {
   })
 
   // 没人打断时一切照旧，别把正常路径也一起废掉
-  it('没有 reset 时结果正常落地', async () => {
+  it('没有 reset 时结构草稿正常落地', async () => {
+    const draft = makeStructureDraft()
     vi.mocked(send).mockImplementation((req: { kind: string }) =>
       req.kind === 'analyze'
-        ? (Promise.resolve({ ok: true, kind: 'analyze', outcome: 'plan', plan: makePlan() }) as never)
+        ? (Promise.resolve({ ok: true, kind: 'analyze', outcome: 'structure', draft }) as never)
         : (Promise.resolve({ ok: true }) as never))
 
     await useStore.getState().analyze()
     expect(useStore.getState().step).toBe('structure')
-    expect(useStore.getState().plan).not.toBeNull()
+    expect(useStore.getState().structureDraft).toBe(draft)
+    expect(useStore.getState().plan).toBeNull()
   })
 
   it('分析完成后默认全部勾选——放错比不放更可接受', async () => {
@@ -1265,6 +1423,7 @@ describe('后台任务的接回', () => {
     // zustand 是模块级单例，前一个用例留下的任务相关状态必须清干净
     useStore.setState({
       step: 'scope', scan: null, plan: null, accepted: new Set(), reclassifyMarked: new Set(),
+      structureDraft: null, structureValidation: { errors: [], warnings: [] }, structureEdits: EMPTY_EDITS,
       applyResult: null, undoResult: null, cleanupResult: null, aggregateResult: null,
       cleanupLinks: [], linkCheckState: 'idle', error: null, retryable: null,
       logs: [], logSeq: 0, progress: null, busy: null, busyKind: null,
@@ -1274,9 +1433,15 @@ describe('后台任务的接回', () => {
   })
 
   describe('init 恢复', () => {
-    function stubInit(getTaskRecord: TaskRecord | null): void {
+    function stubInit(
+      getTaskRecord: TaskRecord | null,
+      checkpoint: { draft: StructureDraft; edits: StructureEdits; state: 'awaiting_confirmation' | 'classifying'; updatedAt: number } | null = null,
+    ): void {
       vi.mocked(send).mockImplementation((req: { kind: string }) => {
         if (req.kind === 'get_task') return Promise.resolve({ ok: true, kind: 'get_task', record: getTaskRecord }) as never
+        if (req.kind === 'get_structure_checkpoint') {
+          return Promise.resolve({ ok: true, kind: 'get_structure_checkpoint', checkpoint }) as never
+        }
         if (req.kind === 'get_tree') return Promise.resolve({ ok: true, kind: 'get_tree', tree: [] }) as never
         if (req.kind === 'get_settings') {
           return Promise.resolve({ ok: true, kind: 'get_settings', settings: DEFAULT_SETTINGS }) as never
@@ -1307,7 +1472,7 @@ describe('后台任务的接回', () => {
     })
 
     it('有一轮跑完的 analyze：方案直接进复核页并默认全选', async () => {
-      const plan = makePlan()
+      const plan = { ...makePlan(), rebuildStructure: false }
       stubInit(taskRecord({
         status: 'done',
         result: { ok: true, kind: 'analyze', outcome: 'plan', plan },
@@ -1318,10 +1483,109 @@ describe('后台任务的接回', () => {
 
       const state = useStore.getState()
       expect(state.plan).toBe(plan)
-      expect(state.step).toBe(nextStepAfterAnalyze(plan.rebuildStructure))
+      expect(state.step).toBe('review')
       expect(state.busy).toBeNull()
       expect([...state.accepted]).toEqual(plan.rows.map((r) => r.bookmarkId))
     })
+
+    it('跑完的 rebuild design 结果恢复为结构确认态并清空编辑', async () => {
+      const draft = makeStructureDraft()
+      useStore.setState({
+        structureEdits: { renames: { 'tmp:1': '过期编辑' }, removed: [], mergedInto: {}, added: [] },
+      })
+      stubInit(taskRecord({
+        status: 'done',
+        result: { ok: true, kind: 'analyze', outcome: 'structure', draft },
+        finishedAt: 2,
+      }))
+
+      await useStore.getState().init()
+
+      const state = useStore.getState()
+      expect(state.structureDraft).toBe(draft)
+      expect(state.structureEdits).toEqual(EMPTY_EDITS)
+      expect(state.plan).toBeNull()
+      expect(state.step).toBe('structure')
+    })
+
+    it('没有可用任务结果时从 checkpoint 恢复 draft 与编辑', async () => {
+      const draft = makeStructureDraft()
+      const edits: StructureEdits = {
+        renames: { 'tmp:1': '代码' }, removed: ['tmp:3'], mergedInto: {}, added: [],
+      }
+      stubInit(taskRecord({ status: 'done', result: undefined, finishedAt: 2 }), {
+        draft, edits, state: 'awaiting_confirmation', updatedAt: 3,
+      })
+
+      await useStore.getState().init()
+
+      const state = useStore.getState()
+      expect(state.structureDraft).toBe(draft)
+      expect(state.structureEdits).toEqual(edits)
+      expect(state.step).toBe('structure')
+      expect(state.plan).toBeNull()
+    })
+
+    it('完成的 classify_structure 胜过旧 checkpoint，先进入复核再清 checkpoint', async () => {
+      const plan = makePlan()
+      const oldDraft = makeStructureDraft()
+      let planWhenCleared: ReturnType<typeof useStore.getState>['plan'] = null
+      stubInit(taskRecord({
+        kind: 'classify_structure', status: 'done',
+        result: { ok: true, kind: 'classify_structure', plan }, finishedAt: 4,
+      }), {
+        draft: oldDraft, edits: EMPTY_EDITS, state: 'classifying', updatedAt: 3,
+      })
+      vi.mocked(send).mockImplementation((request: { kind: string }) => {
+        if (request.kind === 'get_tree') return Promise.resolve({ ok: true, kind: 'get_tree', tree: [] }) as never
+        if (request.kind === 'get_settings') return Promise.resolve({ ok: true, kind: 'get_settings', settings: DEFAULT_SETTINGS }) as never
+        if (request.kind === 'get_undo_state') return Promise.resolve({ ok: true, kind: 'get_undo_state', available: false, createdAt: null }) as never
+        if (request.kind === 'get_task') return Promise.resolve({ ok: true, kind: 'get_task', record: taskRecord({
+          kind: 'classify_structure', status: 'done',
+          result: { ok: true, kind: 'classify_structure', plan }, finishedAt: 4,
+        }) }) as never
+        if (request.kind === 'get_structure_checkpoint') return Promise.resolve({
+          ok: true, kind: 'get_structure_checkpoint',
+          checkpoint: { draft: oldDraft, edits: EMPTY_EDITS, state: 'classifying', updatedAt: 3 },
+        }) as never
+        if (request.kind === 'clear_structure_checkpoint') {
+          planWhenCleared = useStore.getState().plan
+          return Promise.resolve({ ok: true, kind: 'clear_structure_checkpoint' }) as never
+        }
+        return Promise.resolve({ ok: true }) as never
+      })
+
+      await useStore.getState().init()
+
+      const state = useStore.getState()
+      expect(state.plan).toBe(plan)
+      expect([...state.accepted]).toEqual(plan.rows.map((row) => row.bookmarkId))
+      expect(state.step).toBe('review')
+      expect(planWhenCleared).toBe(plan)
+      expect(vi.mocked(send).mock.calls.some(([request]) => request.kind === 'clear_structure_checkpoint')).toBe(true)
+    })
+
+    it.each(['interrupted', 'error', 'cancelled'] as const)(
+      '%s 的 classify_structure 从 checkpoint 恢复且只重试分类',
+      async (status) => {
+        const draft = makeStructureDraft()
+        const edits: StructureEdits = {
+          renames: { 'tmp:1': '代码' }, removed: [], mergedInto: {}, added: [],
+        }
+        stubInit(taskRecord({
+          kind: 'classify_structure', status, error: status === 'error' ? '分类失败' : undefined, finishedAt: 4,
+        }), { draft, edits, state: 'classifying', updatedAt: 3 })
+
+        await useStore.getState().init()
+
+        const state = useStore.getState()
+        expect(state.structureDraft).toBe(draft)
+        expect(state.structureEdits).toEqual(edits)
+        expect(state.step).toBe('structure')
+        expect(state.plan).toBeNull()
+        expect(state.retryable).toBe('classify_structure')
+      },
+    )
 
     it('带着偏好步骤和勾选进来：补一次扫描，不停在范围页', async () => {
       const scan = {
