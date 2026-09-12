@@ -7,6 +7,7 @@ import { DEFAULT_SETTINGS } from '@/storage/settings'
 import { send } from '@/sidepanel/lib/send'
 import type { PanelRequest, Response } from '@/background/messages'
 import type { BookmarkNode } from '@/core/ports'
+import { EMPTY_EDITS, type StructureDraft } from '@/core/structure'
 
 vi.mock('@/sidepanel/lib/send', () => ({ send: vi.fn() }))
 
@@ -20,6 +21,21 @@ const tree: BookmarkNode[] = [
     ]},
   ]},
 ]
+
+const structureDraft: StructureDraft = {
+  id: 'draft-app', createdAt: 1, scopeRootIds: ['1'], destinationRootId: '1',
+  locale: 'zh_CN', llm: { baseUrl: 'https://x/v1', model: 'm' }, totalBookmarks: 1,
+  bookmarkFingerprint: [{ id: '100', url: 'https://react.dev' }],
+  candidates: [{ id: 'tmp:1', path: ['01 前端'] }],
+  newFolders: [{
+    temporaryId: 'tmp:1', parentId: '1', parentTemporaryId: null, title: '01 前端',
+  }],
+  renameFolders: [], folderMoves: [], mergeRoot: null,
+  tags: [{ bookmarkId: '100', primaryTopic: '前端', secondaryTopic: null }],
+  sourceTags: [{ bookmarkId: '100', primaryTopic: '前端', secondaryTopic: null }],
+  estimatedAssignments: [{ bookmarkId: '100', targetCategoryId: 'tmp:1' }],
+  rootLevel: 0, deepenCap: 1, warnings: [], rewriteGithubTitles: false,
+}
 
 /** init() 会连着发三条请求，全部按中文界面兜住，语言只由用例自己改。 */
 function stubSend(): void {
@@ -35,6 +51,29 @@ function stubSend(): void {
     return { ok: true, kind: 'save_settings' }
   })
 }
+
+describe('结构确认路由', () => {
+  it('step=structure 保持在草案页而不是提前进入复核页', async () => {
+    stubSend()
+    setLocale('zh_CN')
+    const init = useStore.getState().init
+    useStore.setState({
+      settingsOpen: false, mode: 'organize', step: 'structure', locale: 'zh_CN',
+      structureDraft, structureEdits: EMPTY_EDITS,
+      structureValidation: { errors: [], warnings: [] }, plan: null,
+      busy: null, error: null, init: async () => {},
+    })
+
+    const view = render(<App />)
+    try {
+      expect(await screen.findByRole('button', { name: '确认结构并开始分类' })).toBeDefined()
+      expect(screen.queryByText('应用所选')).toBeNull()
+    } finally {
+      view.unmount()
+      useStore.setState({ init })
+    }
+  })
+})
 
 describe('切语言后界面立刻跟着变', () => {
   afterEach(() => setLocale('zh_CN'))

@@ -438,7 +438,7 @@ export function retargetRow(plan: OrganizePlan, bookmarkId: string, targetId: st
   const isTemporary = plan.operations.some(
     (o) => o.type === 'create_folder' && o.temporaryId === targetId,
   )
-  // 与 buildPlan、applyStructureEdits 两处写 toPath 保持一致：合并模式下要带合并根前缀，
+  // 与 buildPlan 写 toPath 的规则保持一致：合并模式下要带合并根前缀，
   // 否则界面显示的路径会跟同一份列表里别的行（都带着前缀）对不上，还会因此自成一组
   const prefix = plan.mergeRoot === null ? [] : [plan.mergeRoot.title]
 

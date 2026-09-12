@@ -494,6 +494,15 @@ export async function classifyRebuildDraft(
   if (input.scan.bookmarks.length > 0 && failed.length === input.scan.bookmarks.length) {
     throw new RebuildClassificationError(t('errClassifyAllFailed', failed[0]!.reason))
   }
+  // 用户新增的一级目录只有真的收到书签才应进入最终计划。它与模型设计出的目录不同：
+  // 用户明确新增后即使只收到一条也要保留，但零命中时创建一个空目录没有任何可见收益。
+  const usedTargets = new Set(classifications.flatMap((classification) =>
+    classification.targetCategoryId === null ? [] : [classification.targetCategoryId]))
+  const emptyAddedIds = new Set(input.edits.added
+    .filter((added) => !usedTargets.has(added.temporaryId))
+    .map((added) => added.temporaryId))
+  const candidates = compiled.candidates.filter((candidate) => !emptyAddedIds.has(candidate.id))
+  const newFolders = compiled.newFolders.filter((folder) => !emptyAddedIds.has(folder.temporaryId))
   const warnings = [...compiled.validation.warnings]
   if (failed.length > 0) {
     warnings.push(t(
@@ -504,9 +513,9 @@ export async function classifyRebuildDraft(
   }
   appendMeasurementWarnings(
     warnings,
-    compiled.candidates,
+    candidates,
     classifications,
-    compiled.newFolders,
+    newFolders,
     input.locale,
     input.scan.bookmarks.length,
   )
@@ -521,9 +530,9 @@ export async function classifyRebuildDraft(
     scopeRootIds: input.draft.scopeRootIds,
     rebuildStructure: true,
     items: input.scan.bookmarks,
-    candidates: compiled.candidates,
+    candidates,
     classifications,
-    newFolders: compiled.newFolders,
+    newFolders,
     renameFolders: compiled.renameFolders,
     folderMoves: compiled.folderMoves,
     mergeRoot: compiled.mergeRoot ?? undefined,

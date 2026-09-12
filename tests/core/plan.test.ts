@@ -678,10 +678,10 @@ describe('retargetRow', () => {
     expect(move).toMatchObject({ toCategoryId: 'tmp:2', toTemporaryId: 'tmp:2' })
   })
 
-  // I3：buildPlan（plan.ts:134）与 applyStructureEdits（structure.ts:197）写 toPath 时都带着
-  // 合并根前缀，retargetRow 早先漏了这一处，合并模式下改投会丢掉前缀、跟同一份列表里
+  // I3：buildPlan 写 toPath 时带着合并根前缀，retargetRow 早先漏了这一处，
+  // 合并模式下改投会丢掉前缀、跟同一份列表里
   // 别的行（都带着前缀）对不上，还会因此自成一组。
-  it('合并模式下改投，toPath 仍带着合并根前缀——与 buildPlan、applyStructureEdits 两处写法一致', () => {
+  it('合并模式下改投，toPath 仍带着合并根前缀——与 buildPlan 写法一致', () => {
     const plan = {
       ...base(),
       mergeRoot: {

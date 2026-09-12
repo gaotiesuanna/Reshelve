@@ -10,7 +10,7 @@ import type { OrganizePlan, PlanRow } from '@/core/types'
 import type { ProgressEvent } from '@/background/events'
 import { MAX_SIBLINGS, stripNumberPrefix } from '@/core/tree'
 import type { OrganizeMode } from '@/core/mode'
-import { EMPTY_EDITS } from '@/core/structure'
+import { EMPTY_EDITS, type StructureEdits } from '@/core/structure'
 
 /**
  * Historical handler tests assert final rebuild plans. The product boundary is now two-stage,
@@ -66,6 +66,17 @@ const rebuildTree = [
 ]
 
 const REBUILD_IDS = ['100', '101', '102']
+
+const WORKFLOW_IDS = Array.from({ length: 36 }, (_, index) => String(200 + index))
+const workflowTree: TreeSpec[] = [
+  { id: '0', title: '', children: [
+    { id: '1', title: '书签栏', children: [
+      { id: '20', title: '待整理', children: WORKFLOW_IDS.map((id) => ({
+        id, title: `书签 ${id}`, url: `https://workflow.test/${id}`,
+      })) },
+    ] },
+  ] },
+]
 
 function setup(client?: LlmClient) {
   const fake = createFakeBookmarks(tree)
@@ -158,6 +169,120 @@ describe('handle', () => {
       draft: expect.objectContaining({ scopeRootIds: ['1'] }),
     })
     expect(complete).toHaveBeenCalledTimes(2)
+  })
+
+  it('rebuild never classifies before confirmation and classifies against the confirmed tree', async () => {
+    const preparePorts = async () => {
+      const fake = createFakeBookmarks(workflowTree)
+      const ports = { bookmarks: fake.api, storage: createFakeStorage() }
+      await saveSettings(ports, {
+        ...DEFAULT_SETTINGS,
+        ...withLlm({ baseUrl: 'https://x/v1', apiKey: 'sk-x', model: 'm' }),
+        removeEmptyFolders: false,
+        rewriteGithubTitles: false,
+      })
+      return ports
+    }
+    const ports = await preparePorts()
+    const classifyPrompts: string[] = []
+    let classificationTarget: 'split' | 'renamed-only' = 'split'
+    const complete = vi.fn(async (prompt: string) => {
+      if (prompt.includes('候选目录：')) {
+        classifyPrompts.push(prompt)
+        const bookmarkIds = [...prompt.matchAll(/"bookmark_id":\s*"([^"]+)"/g)]
+          .map((match) => match[1]!)
+        return { results: bookmarkIds.map((bookmark_id, index) => ({
+          bookmark_id,
+          target_category_id:
+            classificationTarget === 'split' && index % 2 === 1 ? 'tmp:user:fixed' : 'tmp:1',
+          confidence: 0.9,
+          reason: 'confirmed destination',
+        })) }
+      }
+      if (prompt.includes('标签清单：')) {
+        return { folders: [
+          { title: 'Alpha', topics: ['Alpha'], children: [] },
+          { title: 'Beta', topics: ['Beta'], children: [] },
+          { title: 'Gamma', topics: ['Gamma'], children: [] },
+        ] }
+      }
+      const bookmarkIds = [...prompt.matchAll(/"bookmark_id":\s*"([^"]+)"/g)]
+        .map((match) => match[1]!)
+      return { results: bookmarkIds.map((bookmark_id) => {
+        const group = Math.floor((Number(bookmark_id) - 200) / 12)
+        return {
+          bookmark_id,
+          primary_topic: ['Alpha', 'Beta', 'Gamma'][group]!,
+          secondary_topic: null,
+        }
+      }) }
+    })
+    const deps = { createClient: () => ({ complete }), now: () => 1 }
+
+    const analyzed = await handleRequest(
+      ports,
+      { kind: 'analyze', scopeRootIds: ['1'], modeOverride: 'rebuild' },
+      deps,
+    )
+    expect(analyzed).toMatchObject({ ok: true, kind: 'analyze', outcome: 'structure' })
+    expect(classifyPrompts).toEqual([])
+    expect(complete).toHaveBeenCalled()
+    if (!analyzed.ok || analyzed.kind !== 'analyze' || analyzed.outcome !== 'structure') return
+    expect(analyzed.draft.sourceTags).toEqual(WORKFLOW_IDS.map((bookmarkId, index) => ({
+      bookmarkId,
+      primaryTopic: ['Alpha', 'Beta', 'Gamma'][Math.floor(index / 12)]!,
+      secondaryTopic: null,
+    })))
+    expect(analyzed.draft.candidates.map((candidate) => candidate.path)).toEqual([
+      ['01 Alpha'], ['02 Beta'], ['03 Gamma'],
+    ])
+
+    const idFor = (title: string): string => analyzed.draft.candidates.find(
+      (candidate) => stripNumberPrefix(candidate.path.at(-1)!) === title,
+    )!.id
+    const alphaId = idFor('Alpha')
+    const betaId = idFor('Beta')
+    const gammaId = idFor('Gamma')
+    expect(alphaId).toBe('tmp:1')
+    const edits: StructureEdits = {
+      renames: { [alphaId]: 'Engineering' },
+      removed: [betaId, gammaId],
+      mergedInto: { [betaId]: alphaId },
+      added: [{ temporaryId: 'tmp:user:fixed', parentCategoryId: null, title: 'Fixed' }],
+    }
+
+    const classified = await handleRequest(
+      ports,
+      { kind: 'classify_structure', draft: analyzed.draft, edits },
+      deps,
+    )
+    expect(classified).toMatchObject({ ok: true, kind: 'classify_structure' })
+    expect(classifyPrompts.length).toBeGreaterThan(0)
+    for (const prompt of classifyPrompts) {
+      expect(prompt).toContain(`id=${alphaId} 目录=01 Engineering`)
+      expect(prompt).toContain('id=tmp:user:fixed 目录=02 Fixed')
+      expect(prompt).not.toContain(`id=${betaId} `)
+      expect(prompt).not.toContain(`id=${gammaId} `)
+    }
+    if (!classified.ok || classified.kind !== 'classify_structure') return
+    expect(new Set(classified.plan.rows.map((row) => row.toCategoryId)))
+      .toEqual(new Set([alphaId, 'tmp:user:fixed']))
+    expect(classified.plan.operations).toContainEqual(expect.objectContaining({
+      type: 'create_folder', temporaryId: 'tmp:user:fixed', title: '02 Fixed',
+    }))
+
+    classificationTarget = 'renamed-only'
+    const unusedPorts = await preparePorts()
+    const withoutUnusedAddition = await handleRequest(
+      unusedPorts,
+      { kind: 'classify_structure', draft: analyzed.draft, edits },
+      deps,
+    )
+    expect(withoutUnusedAddition).toMatchObject({ ok: true, kind: 'classify_structure' })
+    if (!withoutUnusedAddition.ok || withoutUnusedAddition.kind !== 'classify_structure') return
+    expect(withoutUnusedAddition.plan.operations).not.toContainEqual(expect.objectContaining({
+      type: 'create_folder', temporaryId: 'tmp:user:fixed',
+    }))
   })
 
   it('analyze 在 baseUrl 指向本机时放行空 Key——本机 Ollama 不校验 Key，那道门不该拦他', async () => {
