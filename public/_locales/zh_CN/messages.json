@@ -1112,6 +1112,15 @@
   "prefsStart": {
     "message": "开始 AI 分析"
   },
+  "prefsContinue": {
+    "message": "继续分析"
+  },
+  "prefsRestart": {
+    "message": "重新开始"
+  },
+  "prefsCancelledHint": {
+    "message": "上次分析已取消。继续会接着已完成的批次往下跑;重新开始会清掉这些结果,全部重新分类。"
+  },
   "prefsGithubOnlyStart": {
     "message": "预览标题改名"
   },

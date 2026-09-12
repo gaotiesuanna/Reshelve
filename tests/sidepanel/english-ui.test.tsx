@@ -197,7 +197,7 @@ describe('英文界面渲染守卫：步骤组件', () => {
   it('StructureStep', () => {
     useStore.setState({
       plan: null, structureDraft: structureDraft(makePlan()),
-      structureEdits: EMPTY_EDITS, step: 'structure', busy: null, busyKind: null,
+      structureEdits: EMPTY_EDITS, step: 'structure', busy: null, busyTask: null,
     })
     const { container } = render(<StructureStep />)
     // makePlan() 的候选目录标题本身是中文夹具数据（前端、其他），不是这份守卫要挡的应用文案——

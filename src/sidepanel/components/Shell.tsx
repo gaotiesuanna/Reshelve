@@ -1,5 +1,6 @@
 import type { ReactNode } from 'react'
 import { t } from '@/i18n'
+import { TASK_SPECS } from '@/background/task-specs'
 import { useStore, type AppMode, type Step } from '../store'
 import { isTabView, openAppInTab } from '../lib/openInTab'
 import { REPO_URL } from '../lib/about'
@@ -34,7 +35,7 @@ export function Shell({ children, organizeContent }: { children: ReactNode; orga
     mode,
     setMode,
     busy,
-    busyKind,
+    busyTask,
     error,
     retryable,
     retry,
@@ -48,6 +49,8 @@ export function Shell({ children, organizeContent }: { children: ReactNode; orga
     checkedIds,
   } = useStore()
   const tabView = isTabView()
+  // 取消按钮给不给，政策表说了算：后台真的在读这轮取消信号的请求才有按钮。
+  const cancellable = busyTask !== null && TASK_SPECS[busyTask].cancellable
   const content = (
     <>
       <header className={settingsOpen ? 'border-b border-index-line' : ''}>
@@ -148,7 +151,7 @@ export function Shell({ children, organizeContent }: { children: ReactNode; orga
                 busy={busy}
                 progress={progress}
                 logs={logs}
-                {...(busyKind === 'analyze' || busyKind === 'checkLinks' || busyKind === 'reclassify' || busyKind === 'classifyStructure'
+                {...(cancellable
                   ? { onCancel: () => void cancel() }
                   : {})}
               />

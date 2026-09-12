@@ -295,9 +295,9 @@ export function FolderPicker({
         </div>
       )}
 
-      {/* 文件夹树滚动框 */}
+      {/* 文件夹树(自然高度,随页面滚动) */}
       <div
-        className="max-h-72 overflow-y-auto rounded border border-index-line bg-index-canvas p-1"
+        className="rounded border border-index-line bg-index-canvas p-1"
         role="radiogroup"
         aria-label={label ?? t('moveDestinationLabel')}
       >

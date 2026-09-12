@@ -32,6 +32,7 @@ import type { Settings } from '@/storage/settings'
 import { DEFAULT_SETTINGS, activeLlm, endpointKey } from '@/storage/settings'
 import { send } from './lib/send'
 import type { Request, Response, TestFailure } from '@/background/messages'
+import { TASK_SPECS } from '@/background/task-specs'
 import type { TaskRecord } from '@/background/events'
 import { ensureAllHostsPermission, ensureHostPermission, hasHostPermission } from './lib/permissions'
 import { connectProgress, startKeepalive, type ProgressConnection } from './lib/progress'
@@ -53,7 +54,7 @@ function isStale(
   run: number,
 ): boolean {
   if (get().runSeq === run) return false
-  set({ busy: null, busyKind: null })
+  set({ busy: null, busyTask: null })
   return true
 }
 
@@ -74,7 +75,7 @@ export function nextStepAfterAnalyze(rebuildStructure: boolean): Step {
  * 漏参数会被 tsc 挡住，而不是静默继承上一轮的值。
  */
 function fail(set: (partial: Partial<State>) => void, error: string, retryable: State['retryable']): void {
-  set({ busy: null, busyKind: null, retryable, error })
+  set({ busy: null, busyTask: null, retryable, error })
 }
 
 /**
@@ -184,38 +185,76 @@ function replayEvents(
 }
 
 /**
- * 后台任务 kind 与界面 busy 状态的两张对照表。
- *
- * busyKind 驱动取消按钮（只有 analyze/checkLinks/reclassify 给按）与界面禁用，
- * 与各 action 自己 set 的取值保持同一套；import 有意映射 null，与 confirmImport
- * 的现状一致（导入有自己的进行时界面，不给取消）。
+ * 面板等待期间的 busy 文案：按请求 kind 从后台共读的政策表里取。
+ * 表里没有文案的 kind（秒回的）返回 null，调用方按需兜底。
  */
-const BUSY_KIND_BY_TASK: Partial<Record<Request['kind'], State['busyKind']>> = {
-  analyze: 'analyze',
-  classify_structure: 'classifyStructure',
-  check_links: 'checkLinks',
-  reclassify: 'reclassify',
-  apply: 'apply',
-  undo: 'undo',
-  import: null,
-  apply_cleanup: 'cleanup',
-  apply_aggregate: 'aggregate',
-  move_bookmarks: 'moveBookmarks',
+function busyText(kind: Request['kind']): string | null {
+  const label = TASK_SPECS[kind].busyLabel
+  return label === null ? null : t(label)
 }
 
-type MessageKey = Parameters<typeof t>[0]
+/**
+ * 长任务的统一开场：busy 文案与 busyTask 从同一个 kind 推出，永不失配。
+ * 各 action 自己的额外开场状态（日志清空、进度清零、linkCheckState…）走 before。
+ */
+function startTask(set: (partial: Partial<State>) => void, kind: Request['kind'], before: Partial<State> = {}): void {
+  set({ busy: busyText(kind), busyTask: kind, error: null, ...before })
+}
 
-const BUSY_LABEL_BY_TASK: Partial<Record<Request['kind'], MessageKey>> = {
-  analyze: 'busyAnalyzing',
-  classify_structure: 'busyAnalyzing',
-  check_links: 'busyCheckingLinks',
-  reclassify: 'busyReclassifying',
-  apply: 'busyApplying',
-  undo: 'busyUndoing',
-  import: 'busyImporting',
-  apply_cleanup: 'busyApplying',
-  apply_aggregate: 'busyAggregating',
-  move_bookmarks: 'busyMovingBookmarks',
+type OkResponse<K extends Request['kind']> = Extract<Response, { ok: true; kind: K }>
+
+interface TaskRun<K extends Request['kind']> {
+  kind: K
+  request: Request
+  /** 开跑时记下的 runSeq：reset() 顶掉它，迟到的结果就不许再写 store。 */
+  run: number
+  /** 失败收场落到 retryable 的那一步；不给就是 null（不给重试入口）。 */
+  retryableOnFail?: State['retryable']
+  /** 主动取消的额外收场（analyze 记 lastCancelled、confirmStructure 留 retryable）。缺省只收 busy。 */
+  onCancelled?: Partial<State>
+  /** 收到的 kind 对不上时的额外收场（confirmStructure 留 retryable）。缺省只收 busy。 */
+  onMismatch?: Partial<State>
+  /** 没能落地时的额外收场状态（取消与失败都要走：linkCheck 的检查状态回 idle）。 */
+  onAbort?: Partial<State>
+  /** 失败文案要再加工时给一个翻译器（moveBookmarks 的 moveError）。 */
+  failMessage?: (error: string) => string
+  onOk(res: OkResponse<K>): void | Promise<void>
+}
+
+/**
+ * 长任务的统一在途协议：keepalive、过期检查、取消、失败分类、kind 收窄，只此一份。
+ *
+ * 曾经这套 choreography 逐字誊在十个 action 里，还各自漏掉不同的行：undo / import /
+ * moveBookmarks 没接 keepalive 与进度通道（SW 空闲回收后进度事件整个丢掉——「运行日志
+ * 只有 1 条」的病根），apply / undo / import / runCleanup / runAggregate 不查过期
+ * （reset 的竞态里，迟到的落地把用户拽回结果页），check_links 被主动取消还会弹红条。
+ * 收进来之后新增一个长任务 = 填一张表，协议的正确性不再靠誊写。
+ */
+async function runTask<K extends Request['kind']>(
+  get: () => State,
+  set: (partial: Partial<State>) => void,
+  task: TaskRun<K>,
+): Promise<void> {
+  // 分析/分类要跑好几分钟，期间持续 ping，别让后台因空闲被回收；
+  // ensureConnection 顺手补上断了的红线，进度事件才有着落
+  const stopKeepalive = startKeepalive(ensureConnection())
+  try {
+    const res = await sendTask(set, task.request)
+    if (isStale(get, set, task.run)) return
+    // 主动取消不是错误，日志里已经有记录，不弹红条，也不算失败，不记可重试
+    if (!res.ok && res.cancelled === true) {
+      return set({ busy: null, busyTask: null, error: null, ...(task.onAbort ?? {}), ...(task.onCancelled ?? {}) })
+    }
+    if (!res.ok) {
+      if (task.onAbort !== undefined) set(task.onAbort)
+      return fail(set, task.failMessage !== undefined ? task.failMessage(res.error) : res.error, task.retryableOnFail ?? null)
+    }
+    if (res.kind !== task.kind) return set({ busy: null, busyTask: null, ...(task.onMismatch ?? {}) })
+    // 上一行的 kind 比对就是运行时的收窄保证；TS 对着泛型 K 推不出这份收窄
+    await task.onOk(res as OkResponse<K>)
+  } finally {
+    stopKeepalive()
+  }
 }
 
 /**
@@ -257,15 +296,13 @@ function openConnection(): ProgressConnection | null {
       // ensureConnection 就会以为还连着（这正是「运行日志只有 1 条」的成因）。
       connection = null
       if (useStore.getState().busy === null) return
-      // 按当时的 busyKind 填：这是这条文案唯一的来源，漏了它，端口断而 SW
+      // 按当时的 busyTask 填：这是这条文案唯一的来源，漏了它，端口断而 SW
       // 未死时用户连「请重试」这四个字都看不到（见 issues/24-retry-affordance.md §2）
-      const kind = useStore.getState().busyKind
+      const kind = useStore.getState().busyTask
       fail(
         useStore.setState,
         t('errBackgroundRecycled'),
-        kind === 'scan' || kind === 'analyze'
-          ? kind
-          : kind === 'classifyStructure' ? 'classify_structure' : null,
+        kind === 'scan' || kind === 'analyze' || kind === 'classify_structure' ? kind : null,
       )
     },
   })
@@ -413,8 +450,12 @@ interface State {
   undoResult: UndoResult | null
   undoAvailable: boolean
   busy: string | null
-  /** 当前在跑哪一步，决定能不能取消。 */
-  busyKind: 'init' | 'scan' | 'analyze' | 'classifyStructure' | 'apply' | 'undo' | 'cleanup' | 'aggregate' | 'checkLinks' | 'reclassify' | 'moveBookmarks' | null
+  /**
+   * 正在跑（或正在等）哪条请求，用的就是后台消息的 kind——不另造一套界面词汇。
+   * 能不能取消由 TASK_SPECS[kind].cancellable 决定；没有 in-flight 请求时是 null
+   * （init 读状态这类面板自己发起的等待只有 busy 文案、没有对应的请求 kind）。
+   */
+  busyTask: Request['kind'] | null
   /**
    * 正在看的（或自己刚发起的）那轮后台任务的 id，来自任务广播与 get_task。
    *
@@ -428,7 +469,7 @@ interface State {
   /**
    * 上一次失败的是哪一步，`null` 表示没有可重试的东西。
    *
-   * 不复用 `busyKind`——那个字段的语义是「**正在**跑哪一步」，用来决定能不能取消；
+   * 不复用 `busyTask`——那个字段的语义是「**正在**跑哪一步」，用来决定能不能取消；
    * 让它在失败后继续留着值，会把「在跑」和「跑挂了」两种状态混进同一个字段。
    *
    * **只认 scan 与 analyze**：这两步一个只读书签树、一个只产出方案，重跑零风险，
@@ -439,6 +480,15 @@ interface State {
    */
   retryable: 'scan' | 'analyze' | 'classify_structure' | null
   error: string | null
+  /**
+   * 上一轮 analyze 是被用户取消的——偏好页据此把「开始 AI 分析」换成
+   * 「继续分析 / 重新开始」两个按钮。
+   *
+   * 只记 analyze，不记 classify_structure：那一步取消后停在结构页，重按「确认」
+   * 本来就是续跑（缓存免费接上），不需要另一套按钮。持久缓存放着取消前已算好的
+   * 批次，所以「继续」就是原样重跑 analyze；「重新开始」得先清缓存，见 restartAnalyze。
+   */
+  lastCancelled: 'analyze' | null
   progress: Progress | null
   logs: LogLine[]
   logSeq: number
@@ -548,6 +598,8 @@ interface State {
   setTitleOnly(titleOnly: boolean): void
   setTitleRuleIds(titleRuleIds: string[]): void
   analyze(): Promise<void>
+  /** 「重新开始」：先清掉持久化的分类缓存，再原样跑一遍 analyze。 */
+  restartAnalyze(): Promise<void>
   retry(): Promise<void>
   renameNode(id: string, title: string): void
   removeNode(id: string): void
@@ -663,15 +715,8 @@ function restoredStructureState(
 }
 
 function saveStructureEdits(draft: StructureDraft, edits: StructureEdits): void {
-  void send({
-    kind: 'save_structure_checkpoint',
-    checkpoint: {
-      draft,
-      edits,
-      state: 'awaiting_confirmation',
-      updatedAt: Date.now(),
-    },
-  })
+  // 只报意图：checkpoint JSON（state、updatedAt）是后台结构工作流模块的实现细节。
+  void send({ kind: 'save_structure_edits', draft, edits })
 }
 
 export const useStore = create<State>((set, get) => ({
@@ -692,11 +737,12 @@ export const useStore = create<State>((set, get) => ({
   undoResult: null,
   undoAvailable: false,
   busy: null,
-  busyKind: null,
+  busyTask: null,
   pendingTaskId: null,
   ownPending: false,
   retryable: null,
   error: null,
+  lastCancelled: null,
   progress: null,
   logs: [],
   logSeq: 0,
@@ -781,10 +827,12 @@ export const useStore = create<State>((set, get) => ({
     const replayed = replayEvents(record.events, [], get().logSeq, null)
     set({
       pendingTaskId: record.id,
-      busy: t(BUSY_LABEL_BY_TASK[record.kind] ?? 'busyReading'),
-      busyKind: BUSY_KIND_BY_TASK[record.kind] ?? null,
+      busy: busyText(record.kind) ?? t('busyReading'),
+      busyTask: record.kind,
       retryable: null,
       error: null,
+      // 新的一轮已经跑起来了，本地这份「上次被取消」的旧账作废
+      lastCancelled: null,
       ...replayed,
     })
   },
@@ -795,7 +843,7 @@ export const useStore = create<State>((set, get) => ({
     const base = {
       pendingTaskId: null,
       busy: null,
-      busyKind: null,
+      busyTask: null,
       ...replayed,
     }
     if (record.status === 'cancelled') {
@@ -856,7 +904,7 @@ export const useStore = create<State>((set, get) => ({
           structureValidation: { errors: [], warnings: [] },
           step: 'review',
         })
-        await send({ kind: 'clear_structure_checkpoint' })
+        await send({ kind: 'clear_structure_workflow' })
         return
       }
       case 'reclassify': {
@@ -912,7 +960,7 @@ export const useStore = create<State>((set, get) => ({
         })
       }
       case 'move_bookmarks': {
-        set({ ...base, busy: null, busyKind: null, moveSelection: new Set() })
+        set({ ...base, busy: null, busyTask: null, moveSelection: new Set() })
         return void (await get().refreshTree())
       }
       default:
@@ -922,13 +970,13 @@ export const useStore = create<State>((set, get) => ({
 
   async cancel() {
     // 只标记取消，真正的收尾由正在进行的 analyze 自己完成
-    set({ busy: t('busyCancelling'), busyKind: null })
+    set({ busy: t('busyCancelling'), busyTask: null })
     await send({ kind: 'cancel' })
   },
 
   async init() {
     connection = openConnection()
-    set({ busy: t('busyReading'), busyKind: 'init', error: null })
+    set({ busy: t('busyReading'), busyTask: null, error: null })
     const treeRes = await send({ kind: 'get_tree' })
     const settingsRes = await send({ kind: 'get_settings' })
     const undoRes = await send({ kind: 'get_undo_state' })
@@ -940,31 +988,31 @@ export const useStore = create<State>((set, get) => ({
       locale: syncLocale(settings),
       undoAvailable: undoRes.ok && undoRes.kind === 'get_undo_state' ? undoRes.available : false,
       busy: null,
-      busyKind: null,
+      busyTask: null,
     })
     // 后台可能有一轮接得回来的任务：本面板上次关掉时在跑的、或另一个窗口开的、
     // 或跑完了还没人消费的。任务是全局的，这个面板是它的观察者，接不回来才算漏。
     // 接回的方式与广播同一条路（adoptRunningTask / adoptFinishedTask）。
     const taskRes = await send({ kind: 'get_task' })
     const record = taskRes.ok && taskRes.kind === 'get_task' ? (taskRes.record ?? null) : null
-    const checkpointRes = await send({ kind: 'get_structure_checkpoint' })
-    const checkpoint = checkpointRes.ok && checkpointRes.kind === 'get_structure_checkpoint'
-      ? (checkpointRes.checkpoint ?? null)
-      : null
+    // 结构工作流只问一句：后台拿任务记录把新鲜度对账做完，答「确认前/分类中/没有」。
+    const workflowRes = await send({ kind: 'get_structure_workflow' })
+    const workflow = workflowRes.ok && workflowRes.kind === 'get_structure_workflow'
+      ? workflowRes.workflow
+      : { state: 'idle' as const }
     const hasSuccessfulTerminalResult = record?.status === 'done' && record.result?.ok === true
-    const preserveStructureCheckpoint =
-      record?.status === 'done' && record.result?.ok === true &&
-      record.result.kind === 'analyze' && record.result.outcome === 'structure' &&
-      checkpoint?.state === 'awaiting_confirmation' &&
-      checkpoint.draft.id === record.result.draft.id
-    if (hasSuccessfulTerminalResult && !preserveStructureCheckpoint) {
+    // restore 只在「终态正是这份设计、还没被任何人消费」时才答 awaiting_confirmation，
+    // 所以 preserve 判断收敛成它的答案本身——draft.id 对账在后台模块里。
+    const preserveStructure =
+      workflow.state === 'awaiting_confirmation' && hasSuccessfulTerminalResult
+    if (hasSuccessfulTerminalResult && !preserveStructure) {
       await get().adoptFinishedTask(record)
-    } else if (checkpoint !== null) {
+    } else if (workflow.state !== 'idle') {
       if (record !== null && record.status !== 'running' && record.status !== 'cancelling') {
         await get().adoptFinishedTask(record)
       }
       set({
-        ...restoredStructureState(checkpoint.draft, checkpoint.edits),
+        ...restoredStructureState(workflow.draft, workflow.edits),
         retryable: record?.kind === 'classify_structure' &&
           record.status !== 'running' && record.status !== 'cancelling'
           ? 'classify_structure'
@@ -1003,22 +1051,28 @@ export const useStore = create<State>((set, get) => ({
   },
 
   async moveBookmarks(input) {
-    set({ busy: t('busyMovingBookmarks'), busyKind: 'moveBookmarks', error: null })
-    const res = await sendTask(set, { kind: 'move_bookmarks', input })
-    if (!res.ok) return fail(set, t('moveError', res.error), null)
-    if (res.kind !== 'move_bookmarks') return set({ busy: null, busyKind: null })
-    set({ busy: null, busyKind: null, moveSelection: new Set(), error: null })
-    if (!await get().refreshTree()) set({ error: t('moveRefreshError') })
+    const run = get().runSeq
+    startTask(set, 'move_bookmarks')
+    await runTask(get, set, {
+      kind: 'move_bookmarks',
+      request: { kind: 'move_bookmarks', input },
+      run,
+      failMessage: (error) => t('moveError', error),
+      onOk: async () => {
+        set({ busy: null, busyTask: null, moveSelection: new Set(), error: null })
+        if (!await get().refreshTree()) set({ error: t('moveRefreshError') })
+      },
+    })
   },
 
   async goScan() {
     const run = get().runSeq
-    set({ busy: t('busyScanning'), busyKind: 'scan', retryable: null, error: null, progress: null, logs: [] })
+    startTask(set, 'scan', { retryable: null, progress: null, logs: [] })
     const res = await send({ kind: 'scan', scopeRootIds: [...get().checkedIds] })
     if (isStale(get, set, run)) return
     if (!res.ok) return fail(set, res.error, 'scan')
-    if (res.kind !== 'scan') return set({ busy: null, busyKind: null })
-    set({ scan: res.scan, step: 'preferences', modeOverride: 'rebuild', titleOnly: false, titleRuleIds: [...DEFAULT_TITLE_RULE_IDS], busy: null, busyKind: null })
+    if (res.kind !== 'scan') return set({ busy: null, busyTask: null })
+    set({ scan: res.scan, step: 'preferences', modeOverride: 'rebuild', titleOnly: false, titleRuleIds: [...DEFAULT_TITLE_RULE_IDS], busy: null, busyTask: null })
   },
 
   async setSettings(settings) {
@@ -1045,7 +1099,7 @@ export const useStore = create<State>((set, get) => ({
       structureEdits: EMPTY_EDITS,
       structureValidation: { errors: [], warnings: [] },
     })
-    void send({ kind: 'clear_structure_checkpoint' })
+    void send({ kind: 'clear_structure_workflow' })
     if (!get().titleOnly) {
       const granted = await ensureHostPermission(activeLlm(get().settings).baseUrl)
       if (isStale(get, set, run)) return
@@ -1062,57 +1116,74 @@ export const useStore = create<State>((set, get) => ({
      * 这一行侧栏此刻就说得准：请求已经发出去了，后台的第一件事就是读书签树。
      */
     const logSeq = get().logSeq
-    set({
-      busy: t('busyAnalyzing'), busyKind: 'analyze', retryable: null, error: null, progress: null,
+    startTask(set, 'analyze', {
+      retryable: null, progress: null,
+      // 新一轮开始了，「上次被取消」的状态随之作废——按钮恢复成单个「开始 AI 分析」
+      lastCancelled: null,
       logs: appendLog([], { phase: 'scan', message: t('logAnalyzeStart') }, logSeq),
       logSeq: logSeq + 1,
     })
-    // 分析可能跑好几分钟，期间持续 ping，别让后台因空闲被回收
-    const stopKeepalive = startKeepalive(ensureConnection())
-    const res = await sendTask(set, {
+    await runTask(get, set, {
       kind: 'analyze',
-      scopeRootIds: [...get().checkedIds],
-      // null 表示没推翻，这时候一个字段都不带，后台自己判
-      modeOverride: get().modeOverride ?? undefined,
-      titleOnly: get().titleOnly || undefined,
-      ruleIds: get().titleOnly ? get().titleRuleIds : undefined,
-    }).finally(stopKeepalive)
-    if (isStale(get, set, run)) return
-    // 主动取消不是错误，日志里已经有记录，不弹红条，也不算失败，不记可重试
-    if (!res.ok && res.cancelled === true) {
-      return set({ busy: null, busyKind: null, error: null })
-    }
-    if (!res.ok) return fail(set, res.error, 'analyze')
-    if (res.kind !== 'analyze') return set({ busy: null, busyKind: null })
-    if (res.outcome === 'structure') {
-      return set({
-        ...restoredStructureState(res.draft, EMPTY_EDITS),
-        accepted: new Set(),
-        reclassifyMarked: new Set(),
-        retryable: null,
-        error: null,
-        busy: null,
-        busyKind: null,
-      })
-    }
-    set({
-      plan: res.plan,
-      // 默认全选：不勾 = 书签留在原来那个散落的位置 = 彻底找不到；进了一个不太准的主题目录，
-      // 至少还在逐层摸的范围内。放错比不放更可接受，所以默认接受、让标记去引导修正
-      // （见 issues/06-review-at-scale.md「决定 3」）。
-      accepted: new Set(
-        res.plan.titleOnly
-          ? res.plan.operations.flatMap((operation) => operation.type === 'rename_bookmark' ? [operation.bookmarkId] : [])
-          : res.plan.rows.map((r) => r.bookmarkId),
-      ),
-      reclassifyMarked: new Set(),
-      structureDraft: null,
-      structureValidation: { errors: [], warnings: [] },
-      structureEdits: EMPTY_EDITS,
-      step: 'review',
-      busy: null,
-      busyKind: null,
+      request: {
+        kind: 'analyze',
+        scopeRootIds: [...get().checkedIds],
+        // null 表示没推翻，这时候一个字段都不带，后台自己判
+        modeOverride: get().modeOverride ?? undefined,
+        titleOnly: get().titleOnly || undefined,
+        ruleIds: get().titleOnly ? get().titleRuleIds : undefined,
+      },
+      run,
+      retryableOnFail: 'analyze',
+      // 记住「上一轮是被取消的」：持久缓存里躺着这轮已经算好的批次，偏好页
+      // 据此给出「继续（免费接上）/ 重新开始（清缓存从头来）」两条路。
+      onCancelled: { lastCancelled: 'analyze' },
+      onOk: (res) => {
+        if (res.outcome === 'structure') {
+          return set({
+            ...restoredStructureState(res.draft, EMPTY_EDITS),
+            accepted: new Set(),
+            reclassifyMarked: new Set(),
+            retryable: null,
+            error: null,
+            busy: null,
+            busyTask: null,
+          })
+        }
+        set({
+          plan: res.plan,
+          // 默认全选：不勾 = 书签留在原来那个散落的位置 = 彻底找不到；进了一个不太准的主题目录，
+          // 至少还在逐层摸的范围内。放错比不放更可接受，所以默认接受、让标记去引导修正
+          // （见 issues/06-review-at-scale.md「决定 3」）。
+          accepted: new Set(
+            res.plan.titleOnly
+              ? res.plan.operations.flatMap((operation) => operation.type === 'rename_bookmark' ? [operation.bookmarkId] : [])
+              : res.plan.rows.map((r) => r.bookmarkId),
+          ),
+          reclassifyMarked: new Set(),
+          structureDraft: null,
+          structureValidation: { errors: [], warnings: [] },
+          structureEdits: EMPTY_EDITS,
+          step: 'review',
+          busy: null,
+          busyTask: null,
+        })
+      },
     })
+  },
+
+  /**
+   * 「重新开始」的前半步是把分类缓存清掉，再走原样的 analyze。
+   *
+   * 不清的话「重新开始」是个谎：持久缓存会让重跑免费沿用取消前已经算好的每一批，
+   * 用户想扔掉的旧结论原封不动地回来。清缓存失败就不往下跑了——带着旧缓存开跑
+   * 正是这条路要避免的事，红条交代原因。
+   */
+  async restartAnalyze() {
+    set({ error: null, retryable: null })
+    const res = await send({ kind: 'clear_classify_cache' })
+    if (!res.ok) return fail(set, res.error, null)
+    return get().analyze()
   },
 
   async retry() {
@@ -1205,38 +1276,31 @@ export const useStore = create<State>((set, get) => ({
     set({ structureValidation: validation })
     if (validation.errors.length > 0) return
 
-    set({
-      busy: t('structureClassifying'),
-      busyKind: 'classifyStructure',
-      retryable: null,
-      error: null,
-      progress: null,
+    startTask(set, 'classify_structure', { retryable: null, progress: null })
+    await runTask(get, set, {
+      kind: 'classify_structure',
+      request: { kind: 'classify_structure', draft, edits },
+      run,
+      retryableOnFail: 'classify_structure',
+      onCancelled: { retryable: 'classify_structure' },
+      onMismatch: { retryable: 'classify_structure' },
+      onOk: async (res) => {
+        set({
+          plan: res.plan,
+          accepted: new Set(res.plan.rows.map((row) => row.bookmarkId)),
+          reclassifyMarked: new Set(),
+          structureDraft: null,
+          structureEdits: EMPTY_EDITS,
+          structureValidation: { errors: [], warnings: [] },
+          step: 'review',
+          busy: null,
+          busyTask: null,
+          retryable: null,
+          error: null,
+        })
+        await send({ kind: 'clear_structure_workflow' })
+      },
     })
-    const stopKeepalive = startKeepalive(ensureConnection())
-    const res = await sendTask(set, { kind: 'classify_structure', draft, edits }).finally(stopKeepalive)
-    if (isStale(get, set, run)) return
-    if (!res.ok && res.cancelled === true) {
-      return set({ busy: null, busyKind: null, error: null, retryable: 'classify_structure' })
-    }
-    if (!res.ok) return fail(set, res.error, 'classify_structure')
-    if (res.kind !== 'classify_structure') {
-      return set({ busy: null, busyKind: null, retryable: 'classify_structure' })
-    }
-
-    set({
-      plan: res.plan,
-      accepted: new Set(res.plan.rows.map((row) => row.bookmarkId)),
-      reclassifyMarked: new Set(),
-      structureDraft: null,
-      structureEdits: EMPTY_EDITS,
-      structureValidation: { errors: [], warnings: [] },
-      step: 'review',
-      busy: null,
-      busyKind: null,
-      retryable: null,
-      error: null,
-    })
-    await send({ kind: 'clear_structure_checkpoint' })
   },
 
   backToPreferences() {
@@ -1246,7 +1310,7 @@ export const useStore = create<State>((set, get) => ({
       structureEdits: EMPTY_EDITS,
       structureValidation: { errors: [], warnings: [] },
     })
-    void send({ kind: 'clear_structure_checkpoint' })
+    void send({ kind: 'clear_structure_workflow' })
   },
 
   toggleAccepted(bookmarkId) {
@@ -1320,61 +1384,56 @@ export const useStore = create<State>((set, get) => ({
       // 这里的重试路径不一样——勾选框还留着，用户自己再点一次「重新分类选中项」就够了
       return fail(set, t('errHostPermission'), null)
     }
-    set({
-      busy: t('busyReclassifying'), busyKind: 'reclassify', retryable: null, error: null,
-      progress: null, logs: [],
-    })
-    // 跟 analyze 一样：这一步要花时间调模型，持续 ping 别让后台因空闲被回收
-    const stopKeepalive = startKeepalive(ensureConnection())
-    const res = await sendTask(set, { kind: 'reclassify', plan, bookmarkIds: marked }).finally(stopKeepalive)
-    if (isStale(get, set, run)) return
-    // 主动取消不是错误，日志里已经有记录，不弹红条，也不算失败
-    if (!res.ok && res.cancelled === true) {
-      return set({ busy: null, busyKind: null, error: null })
-    }
     // 失败时不清 reclassifyMarked——勾选框留着，用户不用重新选一遍，
-    // 点一下「重新分类选中项」就是完整的重试
-    if (!res.ok) return fail(set, res.error, null)
-    if (res.kind !== 'reclassify') return set({ busy: null, busyKind: null })
-    // 换到新目标的顺手标记 accepted——跟 setRowTarget 同一条判例：改了目标就当用户
-    // 认下了，这次目标是模型给的，但发起重新分类的是用户，同样算数。依然没有更好
-    // 选择的那些，模型没给出新东西，accepted 不动。
-    const oldTargetById = new Map(plan.rows.map((r) => [r.bookmarkId, r.toCategoryId]))
-    const markedSet = new Set(marked)
-    const nextAccepted = new Set(get().accepted)
-    for (const row of res.plan.rows) {
-      if (!markedSet.has(row.bookmarkId)) continue
-      if (row.toCategoryId !== oldTargetById.get(row.bookmarkId)) nextAccepted.add(row.bookmarkId)
-    }
-    set({
-      plan: res.plan,
-      accepted: nextAccepted,
-      // 只摘掉这次真正处理过的那些——不是无条件清空：处理期间界面按 busy 禁用了
-      // 输入，理论上不会有新的勾选混进来，但摘「这次带走的那批」比摘「当下那一整份」
-      // 更贴着这个函数实际做了什么。
-      reclassifyMarked: new Set([...get().reclassifyMarked].filter((id) => !markedSet.has(id))),
-      busy: null,
-      busyKind: null,
+    // 点一下「重新分类选中项」就是完整的重试（retryableOnFail 缺省 null 正合此意）
+    startTask(set, 'reclassify', { progress: null, logs: [] })
+    await runTask(get, set, {
+      kind: 'reclassify',
+      request: { kind: 'reclassify', plan, bookmarkIds: marked },
+      run,
+      onOk: (res) => {
+        // 换到新目标的顺手标记 accepted——跟 setRowTarget 同一条判例：改了目标就当用户
+        // 认下了，这次目标是模型给的，但发起重新分类的是用户，同样算数。依然没有更好
+        // 选择的那些，模型没给出新东西，accepted 不动。
+        const oldTargetById = new Map(plan.rows.map((r) => [r.bookmarkId, r.toCategoryId]))
+        const markedSet = new Set(marked)
+        const nextAccepted = new Set(get().accepted)
+        for (const row of res.plan.rows) {
+          if (!markedSet.has(row.bookmarkId)) continue
+          if (row.toCategoryId !== oldTargetById.get(row.bookmarkId)) nextAccepted.add(row.bookmarkId)
+        }
+        set({
+          plan: res.plan,
+          accepted: nextAccepted,
+          // 只摘掉这次真正处理过的那些——不是无条件清空：处理期间界面按 busy 禁用了
+          // 输入，理论上不会有新的勾选混进来，但摘「这次带走的那批」比摘「当下那一整份」
+          // 更贴着这个函数实际做了什么。
+          reclassifyMarked: new Set([...get().reclassifyMarked].filter((id) => !markedSet.has(id))),
+          busy: null,
+          busyTask: null,
+        })
+      },
     })
   },
 
   async apply() {
     const plan = get().plan
     if (plan === null) return
-    set({ busy: t('busyApplying'), busyKind: 'apply', error: null, progress: null, logs: [] })
-    const stopKeepalive = startKeepalive(ensureConnection())
+    const run = get().runSeq
     const accepted = get().accepted
-    // 按实际会落地的目录重排编号，避免出现 01、02、04 这样的空号
-    const res = await sendTask(set, {
+    startTask(set, 'apply', { progress: null, logs: [] })
+    await runTask(get, set, {
       kind: 'apply',
-      plan: renumberPlan(plan, accepted, get().scan?.folders ?? []),
-      accepted: [...accepted],
-    })
-      .finally(stopKeepalive)
-    // 不给重试入口：apply 失败时可能已经改了一部分书签，重跑有把同一批移动做两次的风险
-    // （收场靠断点续做，不是这个按钮，见 State.retryable 的注释）
-    if (!res.ok) return fail(set, res.error, null)
-    if (res.kind !== 'apply') return set({ busy: null, busyKind: null })
+      // 按实际会落地的目录重排编号，避免出现 01、02、04 这样的空号
+      request: {
+        kind: 'apply',
+        plan: renumberPlan(plan, accepted, get().scan?.folders ?? []),
+        accepted: [...accepted],
+      },
+      run,
+      // 不给重试入口：apply 失败时可能已经改了一部分书签，重跑有把同一批移动做两次的风险
+      // （收场靠断点续做，不是这个按钮，见 State.retryable 的注释）——retryableOnFail 缺省 null
+      onOk: async (res) => {
 
     // 还标着重新分类、没处理完的书签——这一次只是把已经确认的那部分落地，不算
     // 整轮结束：留在复核页，把方案里刚应用过的这些摘掉，接着处理剩下的（见
@@ -1413,7 +1472,7 @@ export const useStore = create<State>((set, get) => ({
         plan: applyPartialResult(plan, appliedIds, res.result.tempToReal),
         accepted: new Set([...get().accepted].filter((id) => !appliedIds.has(id))),
         undoAvailable: true,
-        busy: null, busyKind: null,
+        busy: null, busyTask: null,
       })
       await get().refreshTree()
       // renumberPlan 与候选表都要看当下真实的目录状态——这次应用可能新建、
@@ -1424,18 +1483,25 @@ export const useStore = create<State>((set, get) => ({
       return
     }
 
-    set({ applyResult: res.result, undoAvailable: true, step: 'result', busy: null, busyKind: null })
+    set({ applyResult: res.result, undoAvailable: true, step: 'result', busy: null, busyTask: null })
     await get().refreshTree()
+      },
+    })
   },
 
   async undo() {
-    set({ busy: t('busyUndoing'), busyKind: 'undo', error: null, progress: null, logs: [] })
-    const res = await sendTask(set, { kind: 'undo' })
-    // 不给重试入口：undo 失败时书签可能处于半撤销状态，重跑有二次改动的风险
-    if (!res.ok) return fail(set, res.error, null)
-    if (res.kind !== 'undo') return set({ busy: null, busyKind: null })
-    set({ undoResult: res.result, undoAvailable: false, busy: null, busyKind: null })
-    await get().refreshTree()
+    const run = get().runSeq
+    startTask(set, 'undo', { progress: null, logs: [] })
+    await runTask(get, set, {
+      kind: 'undo',
+      request: { kind: 'undo' },
+      run,
+      // 不给重试入口：undo 失败时书签可能处于半撤销状态，重跑有二次改动的风险
+      onOk: async (res) => {
+        set({ undoResult: res.result, undoAvailable: false, busy: null, busyTask: null })
+        await get().refreshTree()
+      },
+    })
   },
 
   readImportFile(name, text) {
@@ -1462,30 +1528,34 @@ export const useStore = create<State>((set, get) => ({
   async confirmImport() {
     const file = get().importFile
     if (file === null) return
-    set({ busy: t('busyImporting'), busyKind: null, error: null, progress: null, logs: [] })
+    const run = get().runSeq
+    startTask(set, 'import', { progress: null, logs: [] })
 
-    const res = await sendTask(set, {
+    await runTask(get, set, {
       kind: 'import',
-      nodes: file.preview.nodes,
-      targetName: file.preview.targetName,
-    })
-    // 不给重试入口：import 失败时可能已经写入了一部分书签，重跑有重复导入的风险；
-    // 这里显式写 null 还顺带堵上了 I3——上一次扫描失败留下的 'scan' 不会再借尸还魂
-    if (!res.ok) return fail(set, res.error, null)
-    if (res.kind !== 'import') return set({ busy: null })
-
-    set({
-      importDone: {
-        result: res.result,
-        blocked: file.preview.blocked,
+      request: {
+        kind: 'import',
+        nodes: file.preview.nodes,
         targetName: file.preview.targetName,
-        barTitle: file.preview.barTitle,
       },
-      importFile: null,
-      busy: null,
+      run,
+      // 不给重试入口：import 失败时可能已经写入了一部分书签，重跑有重复导入的风险；
+      // 显式 null 还顺带堵上了 I3——上一次扫描失败留下的 'scan' 不会再借尸还魂
+      onOk: async (res) => {
+        set({
+          importDone: {
+            result: res.result,
+            blocked: file.preview.blocked,
+            targetName: file.preview.targetName,
+            barTitle: file.preview.barTitle,
+          },
+          importFile: null,
+          busy: null,
+        })
+        // 新文件夹要立刻出现在上面的勾选树里，用户可以接着勾上做整理
+        await get().refreshTree()
+      },
     })
-    // 新文件夹要立刻出现在上面的勾选树里，用户可以接着勾上做整理
-    await get().refreshTree()
   },
 
   resetImport() {
@@ -1542,13 +1612,13 @@ export const useStore = create<State>((set, get) => ({
 
   async runCleanupScan() {
     const run = get().runSeq
-    set({ busy: t('busyScanning'), busyKind: 'cleanup', error: null, progress: null, logs: [] })
+    startTask(set, 'cleanup_scan', { progress: null, logs: [] })
     const res = await send({ kind: 'cleanup_scan' })
     if (isStale(get, set, run)) return
     // 不给可重试入口：retryable 只认 scan/analyze（见 State.retryable），
     // 清理扫描随便重跑没有风险，但没有专门的重试按钮基础设施，用户切回来再点一次就是重试
     if (!res.ok) return fail(set, res.error, null)
-    if (res.kind !== 'cleanup_scan') return set({ busy: null, busyKind: null })
+    if (res.kind !== 'cleanup_scan') return set({ busy: null, busyTask: null })
     set({
       cleanupScan: res.scan,
       cleanupKeep: {},
@@ -1558,7 +1628,7 @@ export const useStore = create<State>((set, get) => ({
       cleanupResult: null,
       aggregateResult: null,
       busy: null,
-      busyKind: null,
+      busyTask: null,
     })
   },
   async runStaleScan() {
@@ -1606,6 +1676,7 @@ export const useStore = create<State>((set, get) => ({
     // 书签栏是 tree 里第一个顶层节点的第一个子节点：那个顶层节点是根，浏览器从不让它显形
     const barId = get().tree[0]?.children?.[0]?.id ?? ''
     const { cleanupStaleMove, staleScan } = get()
+    const run = get().runSeq
     const staleMoveRootByBookmarkId: Record<string, string> = {}
     for (const id of cleanupStaleMove) {
       const rootId = staleScan?.scopeRootIdByBookmarkId[id]
@@ -1618,33 +1689,36 @@ export const useStore = create<State>((set, get) => ({
       staleMoveRootByBookmarkId,
       deleteFolderIds: [...get().cleanupFolders],
     }
-    set({ busy: t('busyApplying'), busyKind: 'cleanup', error: null, progress: null, logs: [] })
-    const stopKeepalive = startKeepalive(ensureConnection())
-    const res = await sendTask(set, {
+    startTask(set, 'apply_cleanup', { progress: null, logs: [] })
+    await runTask(get, set, {
       kind: 'apply_cleanup',
-      input: {
-        planId: `cleanup-${Date.now()}`,
-        scopeRootIds: scan.scopeRootIds,
-        selection,
-        staleMoveFolderTitle: t('cleanupStaleFolderTitle'),
-        deadFolderTitle: t('cleanupDeadFolderTitle'),
-        barId,
-        items: scan.items,
-        folders: scan.folders,
+      request: {
+        kind: 'apply_cleanup',
+        input: {
+          planId: `cleanup-${Date.now()}`,
+          scopeRootIds: scan.scopeRootIds,
+          selection,
+          staleMoveFolderTitle: t('cleanupStaleFolderTitle'),
+          deadFolderTitle: t('cleanupDeadFolderTitle'),
+          barId,
+          items: scan.items,
+          folders: scan.folders,
+        },
       },
-    }).finally(stopKeepalive)
-    // 不给重试入口：可能已经删掉一半，重跑有二次删除的风险（同 apply/undo）
-    if (!res.ok) return fail(set, res.error, null)
-    if (res.kind !== 'apply_cleanup') return set({ busy: null, busyKind: null })
-    set({ cleanupResult: res.result, busy: null, busyKind: null })
-    const undoRes = await send({ kind: 'get_undo_state' })
-    set({
-      undoAvailable: undoRes.ok && undoRes.kind === 'get_undo_state' ? undoRes.available : get().undoAvailable,
+      run,
+      // 不给重试入口：可能已经删掉一半，重跑有二次删除的风险（同 apply/undo）
+      onOk: async (res) => {
+        set({ cleanupResult: res.result, busy: null, busyTask: null })
+        const undoRes = await send({ kind: 'get_undo_state' })
+        set({
+          undoAvailable: undoRes.ok && undoRes.kind === 'get_undo_state' ? undoRes.available : get().undoAvailable,
+        })
+        // 补上 Task 6 漏掉的一步：不刷新的话，store 里的 tree 还是清理前那棵。
+        // 连着做第二次清理时，空目录预览走 emptyAfterRemoval(tree, ...) 用的就是这棵过期的
+        // tree，会按「已经删掉的书签还在」来算，报出一批根本不会变空的目录。
+        await get().refreshTree()
+      },
     })
-    // 补上 Task 6 漏掉的一步：不刷新的话，store 里的 tree 还是清理前那棵。
-    // 连着做第二次清理时，空目录预览走 emptyAfterRemoval(tree, ...) 用的就是这棵过期的
-    // tree，会按「已经删掉的书签还在」来算，报出一批根本不会变空的目录。
-    await get().refreshTree()
   },
 
   async runAggregate(input) {
@@ -1652,25 +1726,26 @@ export const useStore = create<State>((set, get) => ({
       ? input.destination.folderId !== ''
       : input.destination.segments.some((part) => part.trim() !== '')
     if (input.bookmarkIds.length === 0 || !hasDestination || input.folderTitle.trim() === '') return
-    set({ busy: t('busyAggregating'), busyKind: 'aggregate', error: null, progress: null, logs: [] })
-    const stopKeepalive = startKeepalive(ensureConnection())
-    const res = await sendTask(set, {
+    const run = get().runSeq
+    startTask(set, 'apply_aggregate', { progress: null, logs: [] })
+    await runTask(get, set, {
       kind: 'apply_aggregate',
-      input: { ...input, planId: `aggregate-${Date.now()}` },
-    }).finally(stopKeepalive)
-    if (!res.ok) return fail(set, res.error, null)
-    if (res.kind !== 'apply_aggregate') return set({ busy: null, busyKind: null })
-    if (res.result.status === 'failed') {
-      return fail(set, res.result.error ?? t('errAggregateFailed'), null)
-    }
-    set({ aggregateResult: res.result, busy: null, busyKind: null })
-    const undoRes = await send({ kind: 'get_undo_state' })
-    set({
-      undoAvailable: undoRes.ok && undoRes.kind === 'get_undo_state'
-        ? undoRes.available
-        : get().undoAvailable,
+      request: { kind: 'apply_aggregate', input: { ...input, planId: `aggregate-${Date.now()}` } },
+      run,
+      onOk: async (res) => {
+        if (res.result.status === 'failed') {
+          return fail(set, res.result.error ?? t('errAggregateFailed'), null)
+        }
+        set({ aggregateResult: res.result, busy: null, busyTask: null })
+        const undoRes = await send({ kind: 'get_undo_state' })
+        set({
+          undoAvailable: undoRes.ok && undoRes.kind === 'get_undo_state'
+            ? undoRes.available
+            : get().undoAvailable,
+        })
+        await get().refreshTree()
+      },
     })
-    await get().refreshTree()
   },
 
   toggleCleanupItem(id) {
@@ -1767,34 +1842,28 @@ export const useStore = create<State>((set, get) => ({
     const scan = get().cleanupScan
     if (scan === null) return
     const run = get().runSeq
-    set({
-      busy: t('busyCheckingLinks'), busyKind: 'checkLinks',
-      linkCheckState: 'running', error: null, progress: null,
-    })
-    // 一千条书签要查一分多钟，期间持续 ping，别让后台因空闲被回收——
-    // 与 analyze、apply 用的是同一条 keepalive
-    const stopKeepalive = startKeepalive(ensureConnection())
-    const res = await sendTask(set, {
+    startTask(set, 'check_links', { linkCheckState: 'running', progress: null })
+    await runTask(get, set, {
       kind: 'check_links',
-      targets: scan.items.map((item) => ({ bookmarkId: item.id, url: item.url })),
-    }).finally(stopKeepalive)
-    if (isStale(get, set, run)) return
-    if (!res.ok) {
-      set({ linkCheckState: 'idle' })
-      fail(set, res.error, null)
-      return
-    }
-    if (res.kind !== 'check_links') return
-    const interesting = res.results.filter((r) => r.verdict !== 'alive')
-    set({
-      busy: null, busyKind: null,
-      linkCheckState: 'done',
-      cleanupLinks: interesting,
-      // 确定失效默认勾上待删，可疑一条都不勾——分档的全部意义就在这个默认值上
-      cleanupChecked: new Set([
-        ...get().cleanupChecked,
-        ...interesting.filter((r) => r.verdict === 'dead').map((r) => r.bookmarkId),
-      ]),
+      request: {
+        kind: 'check_links',
+        targets: scan.items.map((item) => ({ bookmarkId: item.id, url: item.url })),
+      },
+      run,
+      onAbort: { linkCheckState: 'idle' },
+      onOk: (res) => {
+        const interesting = res.results.filter((r) => r.verdict !== 'alive')
+        set({
+          busy: null, busyTask: null,
+          linkCheckState: 'done',
+          cleanupLinks: interesting,
+          // 确定失效默认勾上待删，可疑一条都不勾——分档的全部意义就在这个默认值上
+          cleanupChecked: new Set([
+            ...get().cleanupChecked,
+            ...interesting.filter((r) => r.verdict === 'dead').map((r) => r.bookmarkId),
+          ]),
+        })
+      },
     })
   },
 
@@ -1813,12 +1882,12 @@ export const useStore = create<State>((set, get) => ({
       step: 'scope', scan: null, plan: null, accepted: new Set(), reclassifyMarked: new Set(),
       structureDraft: null, structureEdits: EMPTY_EDITS, structureValidation: { errors: [], warnings: [] },
       modeOverride: null, titleOnly: false, titleRuleIds: [...DEFAULT_TITLE_RULE_IDS],
-      applyResult: null, undoResult: null, error: null, retryable: null,
+      applyResult: null, undoResult: null, error: null, retryable: null, lastCancelled: null,
       pendingTaskId: null, moveSelection: new Set(),
     })
     // journal 里那份终态一并作废：重开面板不该再被旧结果拽回去。
     // 任务还在跑时后台会自己拒掉（见 sessions.ts 的 clear），发出去没有副作用。
     void send({ kind: 'clear_task' })
-    void send({ kind: 'clear_structure_checkpoint' })
+    void send({ kind: 'clear_structure_workflow' })
   },
 }))

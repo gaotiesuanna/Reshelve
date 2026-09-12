@@ -2,7 +2,7 @@ import { afterEach, describe, it, expect, vi } from 'vitest'
 import { handle as handleRequest, deepenBudget } from '@/background/handlers'
 import { createFakeBookmarks, type TreeSpec } from '../fakes/fake-bookmarks'
 import { createFakeStorage } from '../fakes/fake-storage'
-import { DEFAULT_SETTINGS, SETTINGS_KEY, activeLlm, loadCache, saveSettings, type Settings } from '@/storage/settings'
+import { DEFAULT_SETTINGS, SETTINGS_KEY, activeLlm, loadCache, saveCache, saveSettings, type Settings } from '@/storage/settings'
 import { currentLocale, setLocale, t } from '@/i18n'
 import { withLlm } from '../fakes/settings'
 import { LlmError, type LlmClient } from '@/llm/client'
@@ -757,6 +757,19 @@ describe('handle', () => {
       createClient: () => ({ complete }), now: () => 1, isCancelled: () => cancelled,
     })
     expect(await loadCache(ports)).not.toEqual(new Map())
+  })
+
+  it('clear_classify_cache 清空持久缓存——重新开始不再沿用取消前的旧结论', async () => {
+    const { ports, deps } = setup()
+    await saveCache(ports, new Map([
+      ['k', { url: 'https://react.dev', targetPath: ['react'], confidence: 0.9, reason: 'r' }],
+    ]))
+    expect((await loadCache(ports)).size).toBe(1)
+
+    const res = await handle(ports, { kind: 'clear_classify_cache' }, deps)
+
+    expect(res).toMatchObject({ ok: true, kind: 'clear_classify_cache' })
+    expect((await loadCache(ports)).size).toBe(0)
   })
 
   it('模型全部失败时返回 ok:false 并带上真实错误，而不是伪装成 0 条建议', async () => {

@@ -13,7 +13,7 @@ import type { TestFailure } from '@/llm/probe'
 import type { StaleScanResult } from '@/core/stale'
 import type { MoveBookmarksInput, MoveBookmarksResult } from '@/engine/moveBookmarks'
 import type { TaskRecord } from './events'
-import type { StructureCheckpoint, StructureDraft, StructureEdits } from '@/core/structure'
+import type { StructureDraft, StructureEdits, StructureWorkflowState } from '@/core/structure'
 
 /**
  * 失败分类跟着探针本身定义在 llm/probe.ts（那一层零浏览器依赖），这里再导出一次，
@@ -55,6 +55,11 @@ export type Request =
   | { kind: 'get_undo_state' }
   | { kind: 'import'; nodes: ExportNode[]; targetName: string }
   | { kind: 'cancel' }
+  /**
+   * 清空持久化的分类缓存。「重新开始」的前半步：取消后再跑 analyze 本来会命中
+   * 缓存、免费沿用取消前已经算好的那些批次，清掉才是真的从头来。
+   */
+  | { kind: 'clear_classify_cache' }
   /**
    * 当场验一次模型配置。必须走后台：这个功能对着的那次故障，形状是「浏览器普通标签页
    * 能打开那个域名、而扩展的请求失败」——从侧栏直接 fetch 去测会给出假绿灯。
@@ -107,6 +112,7 @@ export type Response =
   | { ok: true; kind: 'get_undo_state'; available: boolean; createdAt: number | null }
   | { ok: true; kind: 'import'; result: ImportResult }
   | { ok: true; kind: 'cancel' }
+  | { ok: true; kind: 'clear_classify_cache' }
   /** ms 是这一次请求真实的往返耗时，给用户一个「快不快」的直观印象。 */
   | { ok: true; kind: 'test_model'; ms: number }
   | { ok: true; kind: 'list_models'; models: string[] }
@@ -121,9 +127,9 @@ export type Response =
   /** 当前后台任务的完整记录（含在途进度与终态载荷）；没有就是 null。 */
   | { ok: true; kind: 'get_task'; record: TaskRecord | null }
   | { ok: true; kind: 'clear_task' }
-  | { ok: true; kind: 'get_structure_checkpoint'; checkpoint: StructureCheckpoint | null }
-  | { ok: true; kind: 'save_structure_checkpoint' }
-  | { ok: true; kind: 'clear_structure_checkpoint' }
+  | { ok: true; kind: 'get_structure_workflow'; workflow: StructureWorkflowState }
+  | { ok: true; kind: 'save_structure_edits' }
+  | { ok: true; kind: 'clear_structure_workflow' }
   /**
    * cancelled 为 true 表示用户主动取消，不是出错。
    * reason 只有 test_model 会带：失败时说清是哪一类，别的请求没有这个分类。
@@ -145,9 +151,9 @@ export type Response =
 export type ControlRequest =
   | { kind: 'get_task' }
   | { kind: 'clear_task' }
-  | { kind: 'get_structure_checkpoint' }
-  | { kind: 'save_structure_checkpoint'; checkpoint: StructureCheckpoint }
-  | { kind: 'clear_structure_checkpoint' }
+  | { kind: 'get_structure_workflow' }
+  | { kind: 'save_structure_edits'; draft: StructureDraft; edits: StructureEdits }
+  | { kind: 'clear_structure_workflow' }
   | { kind: 'open_app_tab'; mode: string; step: string; checkedIds: string[] }
 
 export type PanelRequest = Request | ControlRequest

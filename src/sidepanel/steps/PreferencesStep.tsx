@@ -71,6 +71,7 @@ export function PreferencesStep() {
   const {
     scan, settings, setSettings, analyze, busy, reset, modeOverride, setModeOverride, openSettings,
     tree, checkedIds, titleOnly, setTitleOnly, titleRuleIds, setTitleRuleIds,
+    lastCancelled, restartAnalyze,
   } = useStore()
   const locale = currentLocale()
   // 与后台是同一个纯函数——但前提是同一份扫描结果：书签在 goScan 之后、这次
@@ -320,6 +321,13 @@ export function PreferencesStep() {
             ——失效链接检查是本地清理里的功能、另一项权限，讲在这里只是把话拉长。 */}
       {/* px-3 跟分组正文对齐：分组内容缩进 12px，这段不缩的话左边缘比上面每一行都探出去一截 */}
       {!titleOnly && <p className="mt-3 px-3 text-xs leading-body text-index-muted">{t('prefsPermissionNotice')}</p>}
+      {/* 取消后的状态解释：两个按钮并存时，「继续」为什么快、「重新开始」扔掉了什么，
+          不说清楚的话用户只能靠猜。放在按钮正上方，视线不用挪就能对上号。 */}
+      {!titleOnly && !needModel && lastCancelled !== null && (
+        <div className="mt-3">
+          <InlineStatus tone="warning">{t('prefsCancelledHint')}</InlineStatus>
+        </div>
+      )}
       <StickyActionBar>
         <div className="flex gap-2">
           <SecondaryButton onClick={reset}>{t('prefsBack')}</SecondaryButton>
@@ -335,6 +343,19 @@ export function PreferencesStep() {
             <PrimaryButton className="flex-1" onClick={openSettings}>
               {t('prefsGoConfigure')}
             </PrimaryButton>
+          ) : lastCancelled !== null ? (
+            <>
+              <SecondaryButton disabled={busy !== null} onClick={() => void restartAnalyze()}>
+                {t('prefsRestart')}
+              </SecondaryButton>
+              <PrimaryButton
+                className="flex-1"
+                disabled={busy !== null}
+                onClick={() => void analyze()}
+              >
+                {t('prefsContinue')}
+              </PrimaryButton>
+            </>
           ) : (
             <PrimaryButton
               className="flex-1"

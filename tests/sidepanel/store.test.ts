@@ -6,7 +6,8 @@ import {
 import { send } from '@/sidepanel/lib/send'
 import { currentLocale, setLocale, t } from '@/i18n'
 import { DEFAULT_SETTINGS, activeLlm } from '@/storage/settings'
-import { EMPTY_EDITS, type StructureDraft, type StructureEdits } from '@/core/structure'
+import { EMPTY_EDITS, type StructureDraft, type StructureEdits, type StructureWorkflowState } from '@/core/structure'
+import type { CleanupScan } from '@/engine/cleanup'
 import { makePlan } from '../fakes/plan'
 import { withLlm } from '../fakes/settings'
 import type { ProgressEvent, TaskRecord } from '@/background/events'
@@ -177,11 +178,11 @@ describe('nextStepAfterAnalyze', () => {
 describe('结构确认步骤', () => {
   beforeEach(() => {
     vi.mocked(send).mockReset()
-    vi.mocked(send).mockResolvedValue({ ok: true, kind: 'save_structure_checkpoint' } as never)
+    vi.mocked(send).mockResolvedValue({ ok: true, kind: 'save_structure_edits' } as never)
     useStore.setState({
       step: 'structure', plan: null, structureDraft: makeStructureDraft(),
       structureEdits: EMPTY_EDITS, structureValidation: { errors: [], warnings: [] },
-      accepted: new Set(), reclassifyMarked: new Set(), busy: null, busyKind: null,
+      accepted: new Set(), reclassifyMarked: new Set(), busy: null, busyTask: null,
       retryable: null, error: null,
     })
   })
@@ -232,7 +233,7 @@ describe('结构确认步骤', () => {
     expect(useStore.getState().step).toBe('review')
   })
 
-  it('renameNode 与 removeNode 累积编辑并逐次保存完整 checkpoint', () => {
+  it('renameNode 与 removeNode 累积编辑并逐次保存（只报意图，不拼 checkpoint）', () => {
     const draft = useStore.getState().structureDraft!
     useStore.getState().renameNode('tmp:1', '代码仓库')
     useStore.getState().removeNode('tmp:3')
@@ -240,13 +241,9 @@ describe('结构确认步骤', () => {
       renames: { 'tmp:1': '代码仓库' }, removed: ['tmp:3'], mergedInto: {}, added: [],
     })
     expect(vi.mocked(send)).toHaveBeenLastCalledWith({
-      kind: 'save_structure_checkpoint',
-      checkpoint: {
-        draft,
-        edits: { renames: { 'tmp:1': '代码仓库' }, removed: ['tmp:3'], mergedInto: {}, added: [] },
-        state: 'awaiting_confirmation',
-        updatedAt: expect.any(Number),
-      },
+      kind: 'save_structure_edits',
+      draft,
+      edits: { renames: { 'tmp:1': '代码仓库' }, removed: ['tmp:3'], mergedInto: {}, added: [] },
     })
   })
 
@@ -263,11 +260,9 @@ describe('结构确认步骤', () => {
       temporaryId: 'tmp:user:1234', parentCategoryId: null, title: '新类型',
     }])
     expect(vi.mocked(send)).toHaveBeenLastCalledWith(expect.objectContaining({
-      kind: 'save_structure_checkpoint',
-      checkpoint: expect.objectContaining({
-        edits: expect.objectContaining({
-          added: [{ temporaryId: 'tmp:user:1234', parentCategoryId: null, title: '新类型' }],
-        }),
+      kind: 'save_structure_edits',
+      edits: expect.objectContaining({
+        added: [{ temporaryId: 'tmp:user:1234', parentCategoryId: null, title: '新类型' }],
       }),
     }))
   })
@@ -295,10 +290,10 @@ describe('结构确认步骤', () => {
         expect(useStore.getState().busy).not.toBeNull()
         return Promise.resolve({ ok: true, kind: 'classify_structure', plan }) as never
       }
-      if (request.kind === 'clear_structure_checkpoint') {
+      if (request.kind === 'clear_structure_workflow') {
         expect(useStore.getState().plan).toBe(plan)
         expect(useStore.getState().step).toBe('review')
-        return Promise.resolve({ ok: true, kind: 'clear_structure_checkpoint' }) as never
+        return Promise.resolve({ ok: true, kind: 'clear_structure_workflow' }) as never
       }
       return Promise.resolve({ ok: true, kind: 'save_structure_checkpoint' }) as never
     })
@@ -312,7 +307,7 @@ describe('结构确认步骤', () => {
     )).toBe(true)
     expect([...useStore.getState().accepted]).toEqual(plan.rows.map((row) => row.bookmarkId))
     expect(useStore.getState().structureDraft).toBeNull()
-    expect(vi.mocked(send).mock.calls.some(([request]) => request.kind === 'clear_structure_checkpoint')).toBe(true)
+    expect(vi.mocked(send).mock.calls.some(([request]) => request.kind === 'clear_structure_workflow')).toBe(true)
   })
 
   it.each([
@@ -343,7 +338,7 @@ describe('结构确认步骤', () => {
     expect(useStore.getState().step).toBe('preferences')
     expect(useStore.getState().structureDraft).toBeNull()
     expect(useStore.getState().structureEdits).toEqual(EMPTY_EDITS)
-    expect(vi.mocked(send)).toHaveBeenCalledWith({ kind: 'clear_structure_checkpoint' })
+    expect(vi.mocked(send)).toHaveBeenCalledWith({ kind: 'clear_structure_workflow' })
   })
 
   it('合并同时写 removed 与 mergedInto——两件事必须一起发生', () => {
@@ -495,7 +490,7 @@ describe('refreshTree 剪掉已经不存在的勾选', () => {
 describe('手动移动书签', () => {
   beforeEach(() => {
     vi.mocked(send).mockReset()
-    useStore.setState({ tree, moveSelection: new Set(['100']), busy: null, busyKind: null, error: null })
+    useStore.setState({ tree, moveSelection: new Set(['100']), busy: null, busyTask: null, error: null })
   })
 
   it('成功移动后清空书签选择并刷新树', async () => {
@@ -570,7 +565,7 @@ describe('放弃这一轮之后，在途结果不再落地', () => {
     useStore.setState({
       step: 'preferences', scan, plan: null, checkedIds: new Set(['1']),
       settings: { ...DEFAULT_SETTINGS, ...withLlm({ ...activeLlm(DEFAULT_SETTINGS), apiKey: 'sk-x' }) },
-      busy: null, busyKind: null, error: null, logs: [],
+      busy: null, busyTask: null, error: null, logs: [],
     })
   })
 
@@ -625,7 +620,7 @@ describe('放弃这一轮之后，在途结果不再落地', () => {
     await running
 
     expect(useStore.getState().busy).toBeNull()
-    expect(useStore.getState().busyKind).toBeNull()
+    expect(useStore.getState().busyTask).toBeNull()
   })
 
   it('扫描同理：在途时 reset，扫描回来不跳到偏好页', async () => {
@@ -779,7 +774,7 @@ describe('重新分类选中的建议', () => {
       step: 'review', plan, accepted: new Set(plan.rows.map((r) => r.bookmarkId)),
       reclassifyMarked: new Set(['g0']),
       settings: { ...DEFAULT_SETTINGS, ...withLlm({ ...activeLlm(DEFAULT_SETTINGS), apiKey: 'sk-x' }) },
-      busy: null, busyKind: null, error: null, logs: [],
+      busy: null, busyTask: null, error: null, logs: [],
     })
   })
   afterEach(() => {
@@ -921,7 +916,7 @@ describe('应用时还有标记重新分类的书签——只落地已接受的�
       accepted: new Set(['g0', 'g1', 'f0']),
       reclassifyMarked: new Set(['r0', 'o0']),
       settings: { ...DEFAULT_SETTINGS, ...withLlm({ ...activeLlm(DEFAULT_SETTINGS), apiKey: 'sk-x' }) },
-      busy: null, busyKind: null, error: null, applyResult: null, undoAvailable: false,
+      busy: null, busyTask: null, error: null, applyResult: null, undoAvailable: false,
     })
     vi.mocked(send).mockImplementation((req: { kind: string }) => {
       if (req.kind === 'apply') return Promise.resolve({ ok: true, kind: 'apply', result: applyResultStub() }) as never
@@ -1098,6 +1093,77 @@ describe('失败之后的重试', () => {
 
     await useStore.getState().analyze()
     expect(useStore.getState().retryable).toBeNull()
+    // 偏好页靠它把「开始」换成「继续 / 重新开始」两个按钮
+    expect(useStore.getState().lastCancelled).toBe('analyze')
+  })
+
+  it('取消后重新跑起一轮 analyze,lastCancelled 随之作废', async () => {
+    const chromeGlobal = globalThis as unknown as { chrome: { permissions: unknown } }
+    const originalPermissions = chromeGlobal.chrome.permissions
+    chromeGlobal.chrome.permissions = { contains: () => Promise.resolve(true) }
+    useStore.setState({
+      lastCancelled: 'analyze',
+      settings: { ...DEFAULT_SETTINGS, ...withLlm({ ...activeLlm(DEFAULT_SETTINGS), apiKey: 'sk-x' }) },
+    })
+    vi.mocked(send).mockImplementation((req: { kind: string }) =>
+      req.kind === 'analyze'
+        ? (Promise.resolve({ ok: true, kind: 'analyze', outcome: 'plan', plan: makePlan() }) as never)
+        : (Promise.resolve({ ok: true }) as never))
+    try {
+      await useStore.getState().analyze()
+    } finally {
+      chromeGlobal.chrome.permissions = originalPermissions
+    }
+    expect(useStore.getState().lastCancelled).toBeNull()
+    expect(useStore.getState().step).toBe('review')
+  })
+
+  it('restartAnalyze 先清分类缓存再分析', async () => {
+    const chromeGlobal = globalThis as unknown as { chrome: { permissions: unknown } }
+    const originalPermissions = chromeGlobal.chrome.permissions
+    chromeGlobal.chrome.permissions = { contains: () => Promise.resolve(true) }
+    useStore.setState({
+      settings: { ...DEFAULT_SETTINGS, ...withLlm({ ...activeLlm(DEFAULT_SETTINGS), apiKey: 'sk-x' }) },
+    })
+    const kinds: string[] = []
+    vi.mocked(send).mockImplementation((req: { kind: string }) => {
+      kinds.push(req.kind)
+      return req.kind === 'analyze'
+        ? (Promise.resolve({ ok: true, kind: 'analyze', outcome: 'plan', plan: makePlan() }) as never)
+        : (Promise.resolve({ ok: true }) as never)
+    })
+    try {
+      await useStore.getState().restartAnalyze()
+    } finally {
+      chromeGlobal.chrome.permissions = originalPermissions
+    }
+    expect(kinds[0]).toBe('clear_classify_cache')
+    expect(kinds).toContain('analyze')
+    expect(useStore.getState().step).toBe('review')
+  })
+
+  it('清缓存失败就不开跑——带着旧缓存的分析正是「重新开始」要避免的事', async () => {
+    const kinds: string[] = []
+    vi.mocked(send).mockImplementation((req: { kind: string }) => {
+      kinds.push(req.kind)
+      return req.kind === 'clear_classify_cache'
+        ? (Promise.resolve({ ok: false, error: '清缓存失败' }) as never)
+        : (Promise.resolve({ ok: true }) as never)
+    })
+    useStore.setState({ lastCancelled: 'analyze' })
+
+    await useStore.getState().restartAnalyze()
+
+    expect(useStore.getState().error).toBe('清缓存失败')
+    expect(kinds).not.toContain('analyze')
+    // 取消状态留着:这一轮没有真的重新开始,两个按钮不该消失
+    expect(useStore.getState().lastCancelled).toBe('analyze')
+  })
+
+  it('reset 之后不再记着上次取消', () => {
+    useStore.setState({ lastCancelled: 'analyze' })
+    useStore.getState().reset()
+    expect(useStore.getState().lastCancelled).toBeNull()
   })
 
   it('retry() 重跑失败的那一步', async () => {
@@ -1173,9 +1239,9 @@ describe('失败之后的重试', () => {
 
 /**
  * I2：errBackgroundRecycled 只有 onDisconnect 这一个来源，本票点名要求
- * 「按当时的 busyKind 填」——漏了它，端口断而 SW 未死时用户连「请重试」都看不到。
+ * 「按当时的 busyTask 填」——漏了它，端口断而 SW 未死时用户连「请重试」都看不到。
  */
-describe('长连接断开时按 busyKind 派生 retryable（I2）', () => {
+describe('长连接断开时按 busyTask 派生 retryable（I2）', () => {
   const chromeGlobal = globalThis as unknown as { chrome: Record<string, unknown> }
   const originalRuntime = chromeGlobal.chrome.runtime
 
@@ -1196,24 +1262,24 @@ describe('长连接断开时按 busyKind 派生 retryable（I2）', () => {
     return { disconnect: () => handler?.() }
   }
 
-  it('busyKind 是 analyze 时，给 retryable: analyze', async () => {
+  it('busyTask 是 analyze 时，给 retryable: analyze', async () => {
     const port = stubConnectingPort()
     vi.mocked(send).mockImplementation(() => Promise.resolve({ ok: true }) as never)
 
     await useStore.getState().init()
-    useStore.setState({ busy: '正在分析…', busyKind: 'analyze' })
+    useStore.setState({ busy: '正在分析…', busyTask: 'analyze' })
     port.disconnect()
 
     expect(useStore.getState().error).toBe(t('errBackgroundRecycled'))
     expect(useStore.getState().retryable).toBe('analyze')
   })
 
-  it('busyKind 是 apply 这类不可重试的步骤时，不给重试入口', async () => {
+  it('busyTask 是 apply 这类不可重试的步骤时，不给重试入口', async () => {
     const port = stubConnectingPort()
     vi.mocked(send).mockImplementation(() => Promise.resolve({ ok: true }) as never)
 
     await useStore.getState().init()
-    useStore.setState({ busy: '正在写入…', busyKind: 'apply' })
+    useStore.setState({ busy: '正在写入…', busyTask: 'apply' })
     port.disconnect()
 
     expect(useStore.getState().error).toBe(t('errBackgroundRecycled'))
@@ -1371,7 +1437,9 @@ describe('长连接断在空闲期时，下一次长任务前重连', () => {
       Promise.resolve(
         req.kind === 'analyze'
           ? { ok: true, kind: 'analyze', outcome: 'plan', plan: makePlan() }
-          : { ok: true, kind: req.kind, tree: [], settings: DEFAULT_SETTINGS, available: false },
+          : req.kind === 'get_structure_workflow'
+            ? { ok: true, kind: req.kind, workflow: { state: 'idle' } }
+            : { ok: true, kind: req.kind, tree: [], settings: DEFAULT_SETTINGS, available: false },
       ) as never,
     )
 
@@ -1379,7 +1447,7 @@ describe('长连接断在空闲期时，下一次长任务前重连', () => {
     expect(ports.count()).toBe(1)
 
     // 用户在范围页停留超过 30 秒，SW 被回收
-    useStore.setState({ busy: null, busyKind: null })
+    useStore.setState({ busy: null, busyTask: null })
     ports.latest().disconnect()
 
     await useStore.getState().analyze()
@@ -1398,7 +1466,9 @@ describe('长连接断在空闲期时，下一次长任务前重连', () => {
       Promise.resolve(
         req.kind === 'analyze'
           ? { ok: true, kind: 'analyze', outcome: 'plan', plan: makePlan() }
-          : { ok: true, kind: req.kind, tree: [], settings: DEFAULT_SETTINGS, available: false },
+          : req.kind === 'get_structure_workflow'
+            ? { ok: true, kind: req.kind, workflow: { state: 'idle' } }
+            : { ok: true, kind: req.kind, tree: [], settings: DEFAULT_SETTINGS, available: false },
       ) as never,
     )
 
@@ -1426,7 +1496,7 @@ describe('后台任务的接回', () => {
       structureDraft: null, structureValidation: { errors: [], warnings: [] }, structureEdits: EMPTY_EDITS,
       applyResult: null, undoResult: null, cleanupResult: null, aggregateResult: null,
       cleanupLinks: [], linkCheckState: 'idle', error: null, retryable: null,
-      logs: [], logSeq: 0, progress: null, busy: null, busyKind: null,
+      logs: [], logSeq: 0, progress: null, busy: null, busyTask: null,
       pendingTaskId: null, ownPending: false,
     })
     vi.mocked(send).mockReset()
@@ -1435,12 +1505,13 @@ describe('后台任务的接回', () => {
   describe('init 恢复', () => {
     function stubInit(
       getTaskRecord: TaskRecord | null,
-      checkpoint: { draft: StructureDraft; edits: StructureEdits; state: 'awaiting_confirmation' | 'classifying'; updatedAt: number } | null = null,
+      workflow: StructureWorkflowState = { state: 'idle' },
     ): void {
       vi.mocked(send).mockImplementation((req: { kind: string }) => {
         if (req.kind === 'get_task') return Promise.resolve({ ok: true, kind: 'get_task', record: getTaskRecord }) as never
-        if (req.kind === 'get_structure_checkpoint') {
-          return Promise.resolve({ ok: true, kind: 'get_structure_checkpoint', checkpoint }) as never
+        if (req.kind === 'get_structure_workflow') {
+          // 对账已上移到后台模块：这里 stub 的是对账后的最终答案
+          return Promise.resolve({ ok: true, kind: 'get_structure_workflow', workflow }) as never
         }
         if (req.kind === 'get_tree') return Promise.resolve({ ok: true, kind: 'get_tree', tree: [] }) as never
         if (req.kind === 'get_settings') {
@@ -1465,7 +1536,7 @@ describe('后台任务的接回', () => {
 
       const state = useStore.getState()
       expect(state.busy).toBe(t('busyAnalyzing'))
-      expect(state.busyKind).toBe('analyze')
+      expect(state.busyTask).toBe('analyze')
       expect(state.pendingTaskId).toBe('task-1')
       expect(state.logs.map((l) => l.message)).toEqual(['批次 1/3 完成'])
       expect(state.progress).toEqual({ phase: 'classify', done: 25, total: 75 })
@@ -1517,9 +1588,7 @@ describe('后台任务的接回', () => {
         status: 'done',
         result: { ok: true, kind: 'analyze', outcome: 'structure', draft },
         finishedAt: 2,
-      }), {
-        draft, edits, state: 'awaiting_confirmation', updatedAt: 3,
-      })
+      }), { state: 'awaiting_confirmation', draft, edits })
 
       await useStore.getState().init()
 
@@ -1534,7 +1603,7 @@ describe('后台任务的接回', () => {
         renames: { 'tmp:1': '代码' }, removed: ['tmp:3'], mergedInto: {}, added: [],
       }
       stubInit(taskRecord({ status: 'done', result: undefined, finishedAt: 2 }), {
-        draft, edits, state: 'awaiting_confirmation', updatedAt: 3,
+        state: 'awaiting_confirmation', draft, edits,
       })
 
       await useStore.getState().init()
@@ -1553,9 +1622,7 @@ describe('后台任务的接回', () => {
       stubInit(taskRecord({
         kind: 'classify_structure', status: 'done',
         result: { ok: true, kind: 'classify_structure', plan }, finishedAt: 4,
-      }), {
-        draft: oldDraft, edits: EMPTY_EDITS, state: 'classifying', updatedAt: 3,
-      })
+      }), { state: 'classifying', draft: oldDraft, edits: EMPTY_EDITS })
       vi.mocked(send).mockImplementation((request: { kind: string }) => {
         if (request.kind === 'get_tree') return Promise.resolve({ ok: true, kind: 'get_tree', tree: [] }) as never
         if (request.kind === 'get_settings') return Promise.resolve({ ok: true, kind: 'get_settings', settings: DEFAULT_SETTINGS }) as never
@@ -1564,13 +1631,13 @@ describe('后台任务的接回', () => {
           kind: 'classify_structure', status: 'done',
           result: { ok: true, kind: 'classify_structure', plan }, finishedAt: 4,
         }) }) as never
-        if (request.kind === 'get_structure_checkpoint') return Promise.resolve({
-          ok: true, kind: 'get_structure_checkpoint',
-          checkpoint: { draft: oldDraft, edits: EMPTY_EDITS, state: 'classifying', updatedAt: 3 },
+        if (request.kind === 'get_structure_workflow') return Promise.resolve({
+          ok: true, kind: 'get_structure_workflow',
+          workflow: { state: 'classifying', draft: oldDraft, edits: EMPTY_EDITS },
         }) as never
-        if (request.kind === 'clear_structure_checkpoint') {
+        if (request.kind === 'clear_structure_workflow') {
           planWhenCleared = useStore.getState().plan
-          return Promise.resolve({ ok: true, kind: 'clear_structure_checkpoint' }) as never
+          return Promise.resolve({ ok: true, kind: 'clear_structure_workflow' }) as never
         }
         return Promise.resolve({ ok: true }) as never
       })
@@ -1582,7 +1649,7 @@ describe('后台任务的接回', () => {
       expect([...state.accepted]).toEqual(plan.rows.map((row) => row.bookmarkId))
       expect(state.step).toBe('review')
       expect(planWhenCleared).toBe(plan)
-      expect(vi.mocked(send).mock.calls.some(([request]) => request.kind === 'clear_structure_checkpoint')).toBe(true)
+      expect(vi.mocked(send).mock.calls.some(([request]) => request.kind === 'clear_structure_workflow')).toBe(true)
     })
 
     it.each(['interrupted', 'error', 'cancelled'] as const)(
@@ -1594,7 +1661,7 @@ describe('后台任务的接回', () => {
         }
         stubInit(taskRecord({
           kind: 'classify_structure', status, error: status === 'error' ? '分类失败' : undefined, finishedAt: 4,
-        }), { draft, edits, state: 'classifying', updatedAt: 3 })
+        }), { state: 'classifying', draft, edits })
 
         await useStore.getState().init()
 
@@ -1679,12 +1746,12 @@ describe('后台任务的接回', () => {
 
       const state = useStore.getState()
       expect(state.busy).toBe(t('busyCheckingLinks'))
-      expect(state.busyKind).toBe('checkLinks')
+      expect(state.busyTask).toBe('check_links')
       expect(state.pendingTaskId).toBe('task-1')
     })
 
     it('发起面板收到 started 只记 id，不覆盖自己设好的 busy', () => {
-      useStore.setState({ ownPending: true, busy: '自己设的', busyKind: 'analyze' })
+      useStore.setState({ ownPending: true, busy: '自己设的', busyTask: 'analyze' })
       useStore.getState().noteTaskStarted(taskRecord())
 
       expect(useStore.getState().busy).toBe('自己设的')
@@ -1704,7 +1771,7 @@ describe('后台任务的接回', () => {
     })
 
     it('发起面板收到 finished 跳过——自己的 send 会收场，广播对它是重复的', () => {
-      useStore.setState({ pendingTaskId: 'task-1', ownPending: true, busy: '正在应用…', busyKind: 'apply' })
+      useStore.setState({ pendingTaskId: 'task-1', ownPending: true, busy: '正在应用…', busyTask: 'apply' })
       useStore.getState().noteTaskFinished(taskRecord({
         kind: 'apply', status: 'done', finishedAt: 2,
         result: { ok: true, kind: 'apply', result: {} as never },
@@ -1741,5 +1808,78 @@ describe('后台任务的接回', () => {
 
     expect(useStore.getState().pendingTaskId).toBeNull()
     expect(vi.mocked(send)).toHaveBeenCalledWith({ kind: 'clear_task' })
+  })
+})
+
+describe('runTask 的统一收场', () => {
+  beforeEach(() => {
+    vi.mocked(send).mockReset()
+    useStore.setState({
+      step: 'scope', plan: null, accepted: new Set(), reclassifyMarked: new Set(),
+      scan: null, applyResult: null, undoResult: null, undoAvailable: false,
+      cleanupScan: null, cleanupLinks: [], linkCheckState: 'idle',
+      busy: null, busyTask: null, error: null, retryable: null,
+    })
+  })
+
+  it('check_links 被主动取消：不弹红条，检查状态回 idle', async () => {
+    // startLinkCheck 开头要问 host 权限，jsdom 里没有 chrome.permissions
+    const chromeGlobal = globalThis as unknown as { chrome: { permissions: unknown } }
+    const originalPermissions = chromeGlobal.chrome.permissions
+    chromeGlobal.chrome.permissions = { contains: () => Promise.resolve(true) }
+    try {
+      const scan = {
+        scopeRootIds: ['1'],
+        items: [{ id: 'b1', title: 'A', url: 'https://a.dev' }],
+        folders: [], duplicates: [],
+      } as unknown as CleanupScan
+      useStore.setState({ cleanupScan: scan })
+      vi.mocked(send).mockImplementation((req: { kind: string }) =>
+        req.kind === 'check_links'
+          ? Promise.resolve({ ok: false, error: '用户取消', cancelled: true }) as never
+          : Promise.resolve({ ok: true, kind: req.kind }) as never)
+
+      await useStore.getState().startLinkCheck()
+
+      const state = useStore.getState()
+      // 主动取消不是错误：日志里已有记录，红条只会吓人
+      expect(state.error).toBeNull()
+      expect(state.retryable).toBeNull()
+      expect(state.linkCheckState).toBe('idle')
+      expect(state.busy).toBeNull()
+      expect(state.busyTask).toBeNull()
+      expect(state.cleanupLinks).toEqual([])
+    } finally {
+      chromeGlobal.chrome.permissions = originalPermissions
+    }
+  })
+
+  it('apply 在途时 reset：迟到的落地被丢弃，不再把人拽回结果页', async () => {
+    const plan = makePlan()
+    useStore.setState({
+      plan,
+      accepted: new Set(plan.rows.map((row) => row.bookmarkId)),
+    })
+    let resolveApply!: (value: unknown) => void
+    vi.mocked(send).mockImplementation((req: { kind: string }) => {
+      if (req.kind === 'apply') {
+        return new Promise((resolve) => { resolveApply = resolve }) as never
+      }
+      return Promise.resolve({ ok: true, kind: req.kind, tree: [] }) as never
+    })
+
+    const applying = useStore.getState().apply()
+    await vi.waitFor(() => expect(resolveApply).toBeDefined())
+
+    // 用户在方案落地途中点了「重新开始」：runSeq 已被顶掉
+    useStore.getState().reset()
+    resolveApply({ ok: true, kind: 'apply', result: { status: 'completed' } })
+    await applying
+
+    const state = useStore.getState()
+    expect(state.step).toBe('scope')
+    expect(state.applyResult).toBeNull()
+    expect(state.busy).toBeNull()
+    expect(state.busyTask).toBeNull()
   })
 })

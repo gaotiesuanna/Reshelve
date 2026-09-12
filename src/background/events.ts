@@ -54,7 +54,7 @@ export interface TaskRecord {
   kind: Request['kind']
   startedAt: number
   status: TaskStatus
-  /** 取消按钮给不给按：analyze / classify_structure / check_links / reclassify 之外都不给（与 CANCELLABLE 一致）。 */
+  /** 取消按钮给不给按：以 task-specs.ts 里这一 kind 的 cancellable 为准（worker 在 task.begin 时申报）。 */
   cancellable: boolean
   /**
    * 最近的事件环形缓冲，上限见 task-journal 的 MAX_TASK_EVENTS。

@@ -69,7 +69,7 @@ function setupDraft(plan: OrganizePlan = makePlan()): void {
     structureValidation: { errors: [], warnings: [] },
     step: 'structure',
     busy: null,
-    busyKind: null,
+    busyTask: null,
   })
 }
 
@@ -194,7 +194,7 @@ describe('StructureStep', () => {
       expect(confirm).toHaveBeenCalledTimes(1)
       expect(useStore.getState().step).toBe('structure')
 
-      act(() => useStore.setState({ busy: '正在分类', busyKind: 'classifyStructure' }))
+      act(() => useStore.setState({ busy: '正在分类', busyTask: 'classify_structure' }))
       rerender(<StructureStep />)
       expect((screen.getByRole('button', { name: /确认结构并开始分类/ }) as HTMLButtonElement).disabled).toBe(true)
     } finally {

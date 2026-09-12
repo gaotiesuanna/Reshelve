@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeEach, vi } from 'vitest'
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest'
 import { render, screen, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { PreferencesStep } from '@/sidepanel/steps/PreferencesStep'
@@ -565,6 +565,70 @@ describe('PreferencesStep 没配模型时的出路', () => {
     expect(screen.getByRole('button', { name: '先去配置模型' })).toBeTruthy()
     expect(screen.getByText('还没配置模型')).toBeTruthy()
     expect(screen.queryByText(/gpt-4o-mini/)).toBeNull()
+  })
+})
+
+/**
+ * 取消不该把用户扔回「要么从头再来、要么没得选」的境地：持久缓存里躺着取消前
+ * 已经算好的批次，原样重跑就是续做；真想全部重来的人需要一条能清掉旧结论的路。
+ * 这组用例钉住取消后的按钮形态与两条路各自的走向。
+ */
+describe('PreferencesStep 上次分析被取消之后', () => {
+  // store 是文件级单例，取消状态不清会泄漏进后面的用例
+  afterEach(() => useStore.setState({ lastCancelled: null }))
+
+  function arrangeCancelled() {
+    setup(messyScan)
+    const analyze = vi.fn(async () => {})
+    const restartAnalyze = vi.fn(async () => {})
+    useStore.setState({
+      // 按钮组只出现在「模型已配好」的分支里，没配时先去配置模型那条路不变
+      settings: { ...DEFAULT_SETTINGS, ...withLlm({ ...activeLlm(DEFAULT_SETTINGS), apiKey: 'sk-configured' }) },
+      lastCancelled: 'analyze' as const,
+      analyze, restartAnalyze,
+    })
+    return { analyze, restartAnalyze }
+  }
+
+  it('「开始 AI 分析」换成「继续分析 / 重新开始」，并说明两条路的区别', () => {
+    arrangeCancelled()
+    render(<PreferencesStep />)
+
+    expect(screen.queryByRole('button', { name: '开始 AI 分析' })).toBeNull()
+    expect(screen.getByRole('button', { name: '继续分析' })).toBeTruthy()
+    expect(screen.getByRole('button', { name: '重新开始' })).toBeTruthy()
+    expect(screen.getByText(/上次分析已取消/)).toBeTruthy()
+  })
+
+  it('没取消过的普通状态仍是单个开始按钮，没有提示条', () => {
+    setup(messyScan)
+    useStore.setState({
+      settings: { ...DEFAULT_SETTINGS, ...withLlm({ ...activeLlm(DEFAULT_SETTINGS), apiKey: 'sk-configured' }) },
+      lastCancelled: null,
+    })
+    render(<PreferencesStep />)
+
+    expect(screen.getByRole('button', { name: '开始 AI 分析' })).toBeTruthy()
+    expect(screen.queryByRole('button', { name: '继续分析' })).toBeNull()
+    expect(screen.queryByRole('button', { name: '重新开始' })).toBeNull()
+    expect(screen.queryByText(/上次分析已取消/)).toBeNull()
+  })
+
+  it('「继续分析」原样重跑 analyze——缓存免费接上已完成的批次', async () => {
+    const { analyze } = arrangeCancelled()
+    render(<PreferencesStep />)
+
+    await userEvent.click(screen.getByRole('button', { name: '继续分析' }))
+    expect(analyze).toHaveBeenCalledTimes(1)
+  })
+
+  it('「重新开始」走先清缓存再分析的那条路', async () => {
+    const { restartAnalyze, analyze } = arrangeCancelled()
+    render(<PreferencesStep />)
+
+    await userEvent.click(screen.getByRole('button', { name: '重新开始' }))
+    expect(restartAnalyze).toHaveBeenCalledTimes(1)
+    expect(analyze).not.toHaveBeenCalled()
   })
 })
 

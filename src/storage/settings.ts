@@ -317,3 +317,8 @@ export async function saveCache(ports: Ports, cache: Map<string, CachedClassific
   // 把它调小做实验时不该踩这个坑。
   await ports.storage.set(CACHE_KEY, entries.slice(Math.max(0, entries.length - MAX_CACHE_ENTRIES)))
 }
+
+/** 「重新开始」用：上一次的结论全部作废，重跑时一条都不许沿用。 */
+export async function clearCache(ports: Ports): Promise<void> {
+  await ports.storage.remove(CACHE_KEY)
+}

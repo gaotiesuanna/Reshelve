@@ -1112,6 +1112,15 @@
   "prefsStart": {
     "message": "Start AI analysis"
   },
+  "prefsContinue": {
+    "message": "Continue analysis"
+  },
+  "prefsRestart": {
+    "message": "Start over"
+  },
+  "prefsCancelledHint": {
+    "message": "The last analysis was cancelled. Continue picks up from the batches already classified; Start over clears them and asks the model again from scratch."
+  },
   "prefsGithubOnlyStart": {
     "message": "Preview title renames"
   },

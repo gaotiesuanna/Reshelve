@@ -67,6 +67,16 @@ export interface StructureCheckpoint {
   updatedAt: number
 }
 
+/**
+ * 「结构工作流现在走到哪了」的唯一答案：确认前的设计（带着用户编辑）、已确认
+ * 正在分类、或什么都没有。任务记录的新鲜度对账发生在产出一侧，调用方拿到
+ * 即可用，不必再拿任务记录核对。
+ */
+export type StructureWorkflowState =
+  | { state: 'idle' }
+  | { state: 'awaiting_confirmation'; draft: StructureDraft; edits: StructureEdits }
+  | { state: 'classifying'; draft: StructureDraft; edits: StructureEdits }
+
 export interface StructureValidation {
   errors: Array<{ nodeId: string | null; code: string; message: string }>
   warnings: string[]

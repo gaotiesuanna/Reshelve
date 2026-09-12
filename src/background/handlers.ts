@@ -30,7 +30,7 @@ import { probeModel } from '@/llm/probe'
 import { classifyBookmarks } from '@/llm/classify'
 import { nameNewTopics } from '@/llm/folders'
 import {
-  DEFAULT_SETTINGS, activeLlm, loadCache, loadSettings, saveCache, saveSettings,
+  DEFAULT_SETTINGS, activeLlm, clearCache, loadCache, loadSettings, saveCache, saveSettings,
   findEndpoint,
 } from '@/storage/settings'
 import { findBookmarksBar } from '@/core/import'
@@ -778,6 +778,11 @@ export async function handle(
       // 取消标记由 service worker 持有，这里只是让消息类型闭合
       case 'cancel':
         return { ok: true, kind: 'cancel' }
+
+      case 'clear_classify_cache': {
+        await clearCache(ports)
+        return { ok: true, kind: 'clear_classify_cache' }
+      }
 
       case 'test_model': {
         // 用真的客户端发一个最小 schema 的请求。不在这里挡「模型没配好」：设置页的

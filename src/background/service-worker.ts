@@ -5,13 +5,9 @@ import { PROGRESS_PORT, type TaskStreamMessage } from './events'
 import { handle } from './handlers'
 import { createTaskHub } from './sessions'
 import type { PanelRequest, Request, Response } from './messages'
+import { TASK_SPECS } from './task-specs'
 import type { TaskStorage } from './task-journal'
-import { EMPTY_EDITS } from '@/core/structure'
-import {
-  clearStructureCheckpoint,
-  readStructureCheckpoint,
-  writeStructureCheckpoint,
-} from './structure-checkpoint'
+import { createStructureWorkflow } from './structure-workflow'
 
 // 启动打点：MV3 的 service worker 会被浏览器回收。
 // 若分析过程中这行日志再次出现，说明 worker 被杀过，在途请求会以
@@ -47,6 +43,7 @@ const sessionStorage: TaskStorage = {
 }
 
 const task = createTaskHub(sessionStorage)
+const structureWorkflow = createStructureWorkflow(sessionStorage)
 
 // 冷启动自愈：journal 里若还躺着 running/cancelling，说明上一任 SW 死在了半路
 // （被浏览器回收或扩展重载），在途请求必断——补写 interrupted 终态。
@@ -81,40 +78,9 @@ function closeKeepaliveDoc(): void {
 }
 
 /**
- * 必须独占后台的请求。判准是「会不会动全局单例」，不是「跑得久不久」。
- *
- * analyze / check_links 是长任务，这好理解。真正容易漏的是后面这些：apply、undo、
- * import、apply_cleanup、apply_aggregate 全都在改**同一棵书签树**，而落地操作与 undo
- * 还共用 engine/snapshot.ts 里唯一那个 SNAPSHOT_KEY——两个窗口同时落地，后写的快照会把
- * 先写的整个盖掉，于是先落地那一次**再也撤销不回去**。这比进度串台严重得多。
- *
- * analyze 也必须挡住 apply：分析产出的方案是对着某一刻的书签树算的，
- * 另一个窗口在这中间把树改了，那份方案落地时指向的 id 已经不是原来那个东西。
- *
- * reclassify 同样挡住：它跟 analyze 一样要读写分类缓存（loadCache/saveCache 整块
- * 读写，见 storage/settings.ts），两个窗口同时读改写会互相覆盖对方刚写下的条目。
- * 它不动书签树，但缓存也是要保护的全局单例。
- * classify_structure 同样写分类缓存，并且必须冻结用户确认过的候选树，不能与另一轮
- * 分析或分类交错。
- *
- * 没进来的都是只读或瞬时的（get_tree、scan、cleanup_scan、test_model、list_models…），
- * 并发跑没有互相破坏的余地，挡住它们只会让另一个窗口连书签树都读不了。
+ * 每种请求的独占 / 可取消政策收在 task-specs.ts 一张表里（两个进程共读），
+ * 这里只消费：判独占、向 task.begin 申报这轮吃不吃取消信号。
  */
-const EXCLUSIVE: ReadonlySet<Request['kind']> = new Set([
-  'analyze', 'classify_structure', 'check_links', 'apply', 'undo', 'import', 'apply_cleanup', 'apply_aggregate', 'reclassify', 'move_bookmarks',
-])
-
-/**
- * 独占任务里**吃取消信号**的那几种。
- *
- * 与 EXCLUSIVE 分开是必须的：apply / undo / import / apply_cleanup / apply_aggregate 从不读
- * isCancelled、不收 signal，界面也不给它们取消按钮。把它们一并当成可取消，
- * 换来的是「点了取消 → 日志说正在取消 → 它照样跑完」这种骗人的三连。
- * classify_structure 与 analyze 一样把 signal 传给 LLM 请求，因此属于可取消任务。
- */
-const CANCELLABLE: ReadonlySet<Request['kind']> = new Set([
-  'analyze', 'classify_structure', 'check_links', 'reclassify',
-])
 
 chrome.runtime.onConnect.addListener((port) => {
   // 连接名不带身份：任务本来就是全局的，每条连接都订阅同一份广播。
@@ -180,33 +146,35 @@ chrome.runtime.onMessage.addListener((message: PanelRequest, _sender, sendRespon
     return true
   }
 
-  if (message.kind === 'get_structure_checkpoint') {
-    void readStructureCheckpoint(sessionStorage).then(
-      (checkpoint) => sendResponse({ ok: true, kind: 'get_structure_checkpoint', checkpoint }),
+  if (message.kind === 'get_structure_workflow') {
+    // 对账要拿最新任务记录：新鲜度（checkpoint 是否已被终态消费）由模块内部核对，
+    // 面板只收一个可直接用的答案。
+    void task.record().then((record) => structureWorkflow.restore(record)).then(
+      (workflow) => sendResponse({ ok: true, kind: 'get_structure_workflow', workflow }),
       (error: unknown) => sendResponse({ ok: false, error: String(error) }),
     )
     return true
   }
 
-  if (message.kind === 'save_structure_checkpoint') {
-    void writeStructureCheckpoint(sessionStorage, message.checkpoint).then(
-      () => sendResponse({ ok: true, kind: 'save_structure_checkpoint' }),
+  if (message.kind === 'save_structure_edits') {
+    void structureWorkflow.saveEdits(message.draft, message.edits).then(
+      () => sendResponse({ ok: true, kind: 'save_structure_edits' }),
       (error: unknown) => sendResponse({ ok: false, error: String(error) }),
     )
     return true
   }
 
-  if (message.kind === 'clear_structure_checkpoint') {
-    void clearStructureCheckpoint(sessionStorage).then(
-      () => sendResponse({ ok: true, kind: 'clear_structure_checkpoint' }),
+  if (message.kind === 'clear_structure_workflow') {
+    void structureWorkflow.clear().then(
+      () => sendResponse({ ok: true, kind: 'clear_structure_workflow' }),
       (error: unknown) => sendResponse({ ok: false, error: String(error) }),
     )
     return true
   }
 
   const request = message as Request
-  const exclusive = EXCLUSIVE.has(request.kind)
-  if (exclusive && !task.begin(request.kind, CANCELLABLE.has(request.kind))) {
+  const spec = TASK_SPECS[request.kind]
+  if (spec.exclusive && !task.begin(request.kind, spec.cancellable)) {
     // 说清楚比静默排队强：用户看得见是「后台有一轮在跑」，而不是自己这边没反应。
     // 这一步是**在动手之前**回绝的，一个书签都没碰，所以再点一次是安全的——
     // 与 apply/undo 那几处「失败了不给重试入口」不是一回事，那些是可能已经改了一半。
@@ -214,21 +182,17 @@ chrome.runtime.onMessage.addListener((message: PanelRequest, _sender, sendRespon
     return false
   }
   // 认领成功才请保活文档进场；用 begin 的结果当闸，被拒的请求不留痕迹
-  if (exclusive) ensureKeepaliveDoc()
+  if (spec.exclusive) ensureKeepaliveDoc()
 
   // 两道闸都要：task.signal 只回答「当前这轮可不可取消」，回答不了
   // 「眼下这条请求**是不是**那一轮」。少了 exclusive 这一道，同一个窗口在分析途中
   // 发的 get_settings 会拿到分析那一轮的 signal，用户点取消时它跟着莫名其妙地断掉。
-  const signal = exclusive ? task.signal() : undefined
+  const signal = spec.exclusive ? task.signal() : undefined
 
   void (async () => {
     if (request.kind === 'classify_structure') {
-      await writeStructureCheckpoint(sessionStorage, {
-        draft: request.draft,
-        edits: request.edits,
-        state: 'classifying',
-        updatedAt: Date.now(),
-      })
+      // 开跑前先落盘：SW 若在分类途中被回收，用户的编辑只存在 checkpoint 里
+      await structureWorkflow.startClassifying(request.draft, request.edits)
     }
 
     const response = await handle(createChromePorts(), request, {
@@ -239,12 +203,7 @@ chrome.runtime.onMessage.addListener((message: PanelRequest, _sender, sendRespon
     })
 
     if (response.ok && response.kind === 'analyze' && response.outcome === 'structure') {
-      await writeStructureCheckpoint(sessionStorage, {
-        draft: response.draft,
-        edits: EMPTY_EDITS,
-        state: 'awaiting_confirmation',
-        updatedAt: Date.now(),
-      })
+      await structureWorkflow.recordDesign(response.draft)
     }
 
     task.end(response)

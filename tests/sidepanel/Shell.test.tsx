@@ -7,7 +7,7 @@ import { useStore } from '@/sidepanel/store'
 
 beforeEach(() => {
   useStore.setState({
-    step: 'scope', mode: 'organize', settingsOpen: false, busy: null, busyKind: null,
+    step: 'scope', mode: 'organize', settingsOpen: false, busy: null, busyTask: null,
     error: null, progress: null, logs: [],
   })
 })
@@ -57,7 +57,7 @@ describe('Shell 设置入口', () => {
 
   // 分析要跑好几分钟，中途想改设置是常事；关掉设置页后进度必须还在
   it('整理进行中也能开设置，busy 状态不受影响', async () => {
-    useStore.setState({ busy: '正在分析…', busyKind: 'analyze' })
+    useStore.setState({ busy: '正在分析…', busyTask: 'analyze' })
     render(<Shell organizeContent={<div>步骤内容</div>}>{null}</Shell>)
     await userEvent.click(screen.getByRole('button', { name: '设置' }))
     expect(useStore.getState().busy).toBe('正在分析…')
@@ -81,7 +81,7 @@ describe('Shell 进度取消', () => {
   it('结构分类进行中显示取消按钮并调用 cancel', async () => {
     const cancel = vi.fn()
     useStore.setState({
-      busy: '正在按确认后的结构分类…', busyKind: 'classifyStructure', cancel,
+      busy: '正在按确认后的结构分类…', busyTask: 'classify_structure', cancel,
     })
     render(<Shell organizeContent={<div>步骤内容</div>}>{null}</Shell>)
 
@@ -210,7 +210,7 @@ describe('Shell 模式切换', () => {
 
   // busy 是单槽，切过去也什么都干不了，还会让人以为切换失灵，所以忙的时候禁用
   it('忙的时候四个模式按钮都禁用', () => {
-    useStore.setState({ busy: '正在分析…', busyKind: 'analyze' })
+    useStore.setState({ busy: '正在分析…', busyTask: 'analyze' })
     render(<Shell organizeContent={<div>步骤内容</div>}>{null}</Shell>)
     expect((screen.getByRole('tab', { name: 'AI 整理' }) as HTMLButtonElement).disabled).toBe(true)
     expect((screen.getByRole('tab', { name: '本地清理' }) as HTMLButtonElement).disabled).toBe(true)

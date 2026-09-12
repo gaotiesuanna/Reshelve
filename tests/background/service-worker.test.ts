@@ -1,7 +1,8 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest'
 import { PROGRESS_PORT, type TaskRecord, type TaskStreamMessage } from '@/background/events'
 import { TASK_KEY } from '@/background/task-journal'
-import { STRUCTURE_CHECKPOINT_KEY } from '@/background/structure-checkpoint'
+/** 结构工作流的存储键：现在是后台模块的实现细节，测试为了验证「回复前先落盘」仍然要看它。 */
+const STRUCTURE_CHECKPOINT_KEY = 'reshelve:structure-checkpoint'
 import type { PanelRequest, Response } from '@/background/messages'
 import type { HandlerDeps } from '@/background/handlers'
 import type { StructureCheckpoint, StructureDraft, StructureEdits } from '@/core/structure'
@@ -198,19 +199,18 @@ describe('结构确认检查点', () => {
     })
   })
 
-  it('save_structure_checkpoint replaces the complete edits and timestamp', async () => {
+  it('save_structure_edits 只带意图：面板不再拼 checkpoint，state 与 updatedAt 由后台定', async () => {
     sessionBag.set(STRUCTURE_CHECKPOINT_KEY, structureCheckpoint({
       edits: { ...edits, removed: ['old-category'] },
       updatedAt: 50,
     }))
-    const replacement = structureCheckpoint({
-      edits: { ...edits, renames: { categoryB: 'Reference' } },
-      updatedAt: 200,
-    })
 
-    expect(await sendAsync({ kind: 'save_structure_checkpoint', checkpoint: replacement }))
-      .toEqual({ ok: true, kind: 'save_structure_checkpoint' })
-    expect(sessionBag.get(STRUCTURE_CHECKPOINT_KEY)).toEqual(replacement)
+    expect(await sendAsync({ kind: 'save_structure_edits', draft, edits: { ...edits, renames: { categoryB: 'Reference' } } }))
+      .toEqual({ ok: true, kind: 'save_structure_edits' })
+    expect(sessionBag.get(STRUCTURE_CHECKPOINT_KEY)).toEqual(structureCheckpoint({
+      edits: { ...edits, renames: { categoryB: 'Reference' } },
+      updatedAt: expect.any(Number),
+    }))
   })
 
   it('classify_structure writes classifying before invoking handle', async () => {
@@ -273,16 +273,17 @@ describe('结构确认检查点', () => {
     })
   })
 
-  it('checkpoint controls work without claiming or entering the exclusive task slot', async () => {
+  it('workflow intents work without claiming or entering the exclusive task slot', async () => {
     send({ kind: 'analyze', scopeRootIds: ['1'] })
-    const checkpoint = structureCheckpoint()
 
-    expect(await sendAsync({ kind: 'save_structure_checkpoint', checkpoint }))
-      .toEqual({ ok: true, kind: 'save_structure_checkpoint' })
-    expect(await sendAsync({ kind: 'get_structure_checkpoint' }))
-      .toEqual({ ok: true, kind: 'get_structure_checkpoint', checkpoint })
-    expect(await sendAsync({ kind: 'clear_structure_checkpoint' }))
-      .toEqual({ ok: true, kind: 'clear_structure_checkpoint' })
+    expect(await sendAsync({ kind: 'save_structure_edits', draft, edits }))
+      .toEqual({ ok: true, kind: 'save_structure_edits' })
+    expect(await sendAsync({ kind: 'get_structure_workflow' }))
+      .toEqual({ ok: true, kind: 'get_structure_workflow', workflow: { state: 'awaiting_confirmation', draft, edits } })
+    expect(await sendAsync({ kind: 'clear_structure_workflow' }))
+      .toEqual({ ok: true, kind: 'clear_structure_workflow' })
+    expect(await sendAsync({ kind: 'get_structure_workflow' }))
+      .toEqual({ ok: true, kind: 'get_structure_workflow', workflow: { state: 'idle' } })
     expect(handle).toHaveBeenCalledTimes(1)
   })
 
