@@ -1508,6 +1508,26 @@ describe('后台任务的接回', () => {
       expect(state.step).toBe('structure')
     })
 
+    it('成功的 structure analyze 若有同一 draft 的 checkpoint，恢复用户编辑', async () => {
+      const draft = makeStructureDraft()
+      const edits: StructureEdits = {
+        renames: { 'tmp:1': '用户改名' }, removed: ['tmp:3'], mergedInto: {}, added: [],
+      }
+      stubInit(taskRecord({
+        status: 'done',
+        result: { ok: true, kind: 'analyze', outcome: 'structure', draft },
+        finishedAt: 2,
+      }), {
+        draft, edits, state: 'awaiting_confirmation', updatedAt: 3,
+      })
+
+      await useStore.getState().init()
+
+      expect(useStore.getState().structureDraft).toBe(draft)
+      expect(useStore.getState().structureEdits).toEqual(edits)
+      expect(useStore.getState().step).toBe('structure')
+    })
+
     it('没有可用任务结果时从 checkpoint 恢复 draft 与编辑', async () => {
       const draft = makeStructureDraft()
       const edits: StructureEdits = {

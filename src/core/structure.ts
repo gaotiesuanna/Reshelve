@@ -180,9 +180,13 @@ export function validateStructureEdits(
   const byId = new Map(draft.candidates.map((candidate) => [candidate.id, candidate]))
   const parentOf = buildParentMap(draft.candidates)
   const additions = edits.added ?? []
+  const removed = removedCandidateIds(draft, edits)
+  const activeAdditions = additions.filter((added) => !removed.has(added.temporaryId))
 
   for (const [nodeId, title] of Object.entries(edits.renames)) {
-    if (title.trim() === '') errors.push(structureError(nodeId, 'blank_name', locale))
+    if (!removed.has(nodeId) && title.trim() === '') {
+      errors.push(structureError(nodeId, 'blank_name', locale))
+    }
   }
 
   const seenIds = new Set(draft.candidates.map((candidate) => candidate.id))
@@ -206,18 +210,21 @@ export function validateStructureEdits(
     }
   }
 
+  const addedById = new Map(additions.map((added) => [added.temporaryId, added]))
   for (const [sourceId, destinationId] of Object.entries(edits.mergedInto)) {
-    const source = byId.get(sourceId)
-    const destination = byId.get(destinationId)
-    if (source === undefined) {
+    const sourceExists = byId.has(sourceId) || addedById.has(sourceId)
+    const destinationExists = byId.has(destinationId) || addedById.has(destinationId)
+    if (!sourceExists) {
       errors.push(structureError(sourceId, 'unknown_merge_source', locale))
       continue
     }
-    if (destination === undefined) {
+    if (!destinationExists) {
       errors.push(structureError(destinationId, 'unknown_merge_destination', locale))
       continue
     }
-    if ((parentOf.get(sourceId) ?? null) !== (parentOf.get(destinationId) ?? null)) {
+    const sourceParent = parentOf.get(sourceId) ?? null
+    const destinationParent = parentOf.get(destinationId) ?? null
+    if (sourceParent !== destinationParent) {
       errors.push(structureError(sourceId, 'cross_parent_merge', locale))
     }
   }
@@ -237,9 +244,8 @@ export function validateStructureEdits(
   }
   for (const nodeId of cycleNodes) errors.push(structureError(nodeId, 'merge_cycle', locale))
 
-  const removed = removedCandidateIds(draft, edits)
   const remaining = draft.candidates.filter((candidate) => !removed.has(candidate.id))
-  if (remaining.length === 0 && additions.length === 0) {
+  if (remaining.length === 0 && activeAdditions.length === 0) {
     errors.push(structureError(null, 'empty_structure', locale))
   }
 
@@ -260,10 +266,10 @@ export function validateStructureEdits(
   for (const candidate of remaining) {
     registerName(parentOf.get(candidate.id) ?? null, candidate.id, editedTitle(candidate, edits))
   }
-  for (const added of additions) registerName(null, added.temporaryId, added.title)
+  for (const added of activeAdditions) registerName(null, added.temporaryId, added.title)
 
   const topLevelCount = remaining.filter((candidate) => candidate.path.length === 1).length
-    + additions.length
+    + activeAdditions.length
   const warnings = [...draft.warnings]
   if (topLevelCount > MAX_SIBLINGS) {
     warnings.push(locale === 'zh_CN'
@@ -301,6 +307,7 @@ export function applyStructureEditsToDraft(
   const validation = validateStructureEdits(draft, edits, locale)
   const additions = edits.added ?? []
   const removed = removedCandidateIds(draft, edits)
+  const activeAdditions = additions.filter((added) => !removed.has(added.temporaryId))
   const mergeRoot = draft.mergeRoot === null
     ? null
     : {
@@ -315,7 +322,7 @@ export function applyStructureEditsToDraft(
   const firstFallbackIndex = survivingOriginals.findIndex(
     (candidate) => candidate.id === originalFallbackId,
   )
-  const addedCandidates: CategoryCandidate[] = additions.map((added) => ({
+  const addedCandidates: CategoryCandidate[] = activeAdditions.map((added) => ({
     id: added.temporaryId,
     path: [stripNumberPrefix(added.title.trim())],
   }))
@@ -326,7 +333,7 @@ export function applyStructureEditsToDraft(
     ...survivingOriginals.slice(insertionIndex),
   ]
   const orderedById = new Map(orderedCandidates.map((candidate) => [candidate.id, candidate]))
-  const addedIds = new Set(additions.map((added) => added.temporaryId))
+  const addedIds = new Set(activeAdditions.map((added) => added.temporaryId))
 
   const topIds = orderedCandidates
     .filter((candidate) => candidate.path.length === 1)
@@ -364,7 +371,7 @@ export function applyStructureEditsToDraft(
   const originalNewFolderById = new Map(
     draft.newFolders.map((folder) => [folder.temporaryId, folder]),
   )
-  const addedById = new Map(additions.map((added) => [added.temporaryId, added]))
+  const addedById = new Map(activeAdditions.map((added) => [added.temporaryId, added]))
   const mergeRootFolder =
     mergeRoot === null ? undefined : originalNewFolderById.get(mergeRoot.temporaryId)
   const categoryNewFolders = candidates.flatMap((candidate): NewFolderSpec[] => {
@@ -391,10 +398,33 @@ export function applyStructureEditsToDraft(
     const path = pathById.get(folder.folderId)
     return path === undefined ? [] : [{ ...folder, newTitle: path.at(-1)! }]
   })
+  const renameFolderIds = new Set(renameFolders.map((folder) => folder.folderId))
+  for (const candidate of survivingOriginals) {
+    const renamed = edits.renames[candidate.id]
+    if (
+      renamed === undefined || renamed.trim() === '' ||
+      renameFolderIds.has(candidate.id) ||
+      draft.newFolders.some((folder) => folder.temporaryId === candidate.id)
+    ) continue
+    const path = pathById.get(candidate.id)
+    if (path === undefined) continue
+    renameFolders.push({
+      folderId: candidate.id,
+      oldTitle: stripNumberPrefix(candidate.path.at(-1)!),
+      newTitle: path.at(-1)!,
+    })
+    renameFolderIds.add(candidate.id)
+  }
   const folderMoves = draft.folderMoves
     .filter((move) => !removed.has(move.folderId))
     .map((move) => ({ ...move }))
-  const candidateIds = new Set(draft.candidates.map((candidate) => candidate.id))
+  // Estimates may still point at a source that was removed by a merge. Keep all
+  // known ids for chain resolution, then let `removed` turn a deleted endpoint
+  // into an unassigned bookmark.
+  const candidateIds = new Set([
+    ...draft.candidates.map((candidate) => candidate.id),
+    ...additions.map((added) => added.temporaryId),
+  ])
   const estimatedAssignments = draft.estimatedAssignments.map((assignment) => ({
     bookmarkId: assignment.bookmarkId,
     targetCategoryId: resolveEstimatedTarget(
