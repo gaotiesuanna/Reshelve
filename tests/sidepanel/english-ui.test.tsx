@@ -531,6 +531,7 @@ describe('英文界面渲染守卫：跨步骤共用组件', () => {
   it('ProgressPanel（折叠态）', () => {
     const { container } = render(
       <ProgressPanel
+        status="running"
         busy="Analyzing…"
         progress={{ phase: 'classify', done: 320, total: 923 }}
         logs={[
@@ -546,6 +547,7 @@ describe('英文界面渲染守卫：跨步骤共用组件', () => {
   it('ProgressPanel（展开态）', async () => {
     const { container } = render(
       <ProgressPanel
+        status="running"
         busy="Analyzing…"
         progress={null}
         logs={[

@@ -6,7 +6,7 @@ import { isTabView, openAppInTab } from '../lib/openInTab'
 import { REPO_URL } from '../lib/about'
 import { AlertIcon, ChevronLeftIcon, GithubIcon } from './icons'
 import { IndexNavigation, type IndexNavigationItem } from './IndexNavigation'
-import { ProgressPanel } from './ProgressPanel'
+import { ProgressPanel, type ProgressStatus } from './ProgressPanel'
 import { SettingsPanel } from './SettingsPanel'
 import { StepIndex, type StepIndexItem } from './StepIndex'
 
@@ -42,6 +42,11 @@ export function Shell({ children, organizeContent }: { children: ReactNode; orga
     progress,
     logs,
     cancel,
+    scan,
+    plan,
+    structureDraft,
+    applyResult,
+    undoResult,
     settingsOpen,
     openSettings,
     closeSettings,
@@ -51,6 +56,19 @@ export function Shell({ children, organizeContent }: { children: ReactNode; orga
   const tabView = isTabView()
   // 取消按钮给不给，政策表说了算：后台真的在读这轮取消信号的请求才有按钮。
   const cancellable = busyTask !== null && TASK_SPECS[busyTask].cancellable
+  const progressStatus: ProgressStatus | null = busy !== null
+    ? 'running'
+    : error !== null
+      ? 'failed'
+      : mode === 'organize' && step === 'structure' && structureDraft !== null
+        ? 'waiting'
+        : mode === 'organize' && step === 'review' && plan !== null
+          ? 'completed'
+          : mode === 'organize' && step === 'result' && (applyResult !== null || undoResult !== null)
+            ? 'completed'
+            : mode === 'organize' && step === 'preferences' && scan !== null
+              ? 'completed'
+              : null
   const content = (
     <>
       <header className={settingsOpen ? 'border-b border-index-line' : ''}>
@@ -148,10 +166,10 @@ export function Shell({ children, organizeContent }: { children: ReactNode; orga
                 等于别的页在替清理页说话。 */}
             {(mode === 'organize' || (mode === 'cleanup' && cleanupScan === null)) && (
               <ProgressPanel
+                status={progressStatus}
                 busy={busy}
                 progress={progress}
                 logs={logs}
-                error={error}
                 {...(cancellable
                   ? { onCancel: () => void cancel() }
                   : {})}

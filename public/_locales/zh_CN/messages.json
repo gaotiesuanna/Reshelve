@@ -707,6 +707,9 @@
   "progressRunning": {
     "message": "进行中"
   },
+  "progressWaiting": {
+    "message": "等待确认"
+  },
   "progressCompleted": {
     "message": "已完成"
   },

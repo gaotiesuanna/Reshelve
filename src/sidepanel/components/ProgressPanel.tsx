@@ -4,14 +4,15 @@ import { plural, t } from '@/i18n'
 import type { LogLine, Progress } from '../store'
 
 interface Props {
+  status: ProgressStatus | null
   busy: string | null
   progress: Progress | null
   logs: LogLine[]
-  /** 整轮任务的终态错误；日志里的单批失败不等于整轮失败。 */
-  error?: string | null
   /** 传入时显示取消按钮；只有可中断的步骤才传。 */
   onCancel?: () => void
 }
+
+export type ProgressStatus = 'running' | 'waiting' | 'completed' | 'failed'
 
 const LEVEL_CLASS = {
   info: 'text-neutral-500',
@@ -21,17 +22,19 @@ const LEVEL_CLASS = {
 
 const STATUS_LABELS = {
   running: 'progressRunning',
+  waiting: 'progressWaiting',
   completed: 'progressCompleted',
   failed: 'progressFailed',
 } as const
 
 const STATUS_CLASS = {
   running: 'text-neutral-600',
+  waiting: 'text-amber-700',
   completed: 'text-green-700',
   failed: 'text-red-700',
 } as const
 
-export function ProgressPanel({ busy, progress, logs, error = null, onCancel }: Props) {
+export function ProgressPanel({ status, busy, progress, logs, onCancel }: Props) {
   const [expanded, setExpanded] = useState(false)
   const autoExpanded = useRef(false)
   const bottom = useRef<HTMLDivElement>(null)
@@ -61,22 +64,14 @@ export function ProgressPanel({ busy, progress, logs, error = null, onCancel }: 
     if (expanded) bottom.current?.scrollIntoView?.({ block: 'nearest' })
   }, [expanded, logs])
 
-  const status = busy !== null
-    ? 'running'
-    : error !== null
-      ? 'failed'
-      : logs.length > 0 || progress !== null
-        ? 'completed'
-        : null
-
   if (status === null) return null
 
   const latest = logs[logs.length - 1]
   const percent =
     progress !== null && progress.total > 0
-      ? busy !== null
-        ? Math.min(99, Math.round((progress.done / progress.total) * 100))
-        : Math.round((progress.done / progress.total) * 100)
+      ? status === 'completed'
+        ? Math.round((progress.done / progress.total) * 100)
+        : Math.min(99, Math.round((progress.done / progress.total) * 100))
       : null
 
   return (
@@ -88,7 +83,9 @@ export function ProgressPanel({ busy, progress, logs, error = null, onCancel }: 
             className="h-3 w-3 shrink-0 animate-spin rounded-full border border-neutral-300 border-t-neutral-600"
           />
         ) : (
-          <span aria-hidden className="w-3 shrink-0 text-center font-semibold">{status === 'failed' ? '!' : '✓'}</span>
+          <span aria-hidden className="w-3 shrink-0 text-center font-semibold">
+            {status === 'failed' ? '!' : status === 'waiting' ? '…' : '✓'}
+          </span>
         )}
         <span className="shrink-0 font-medium">{t(STATUS_LABELS[status])}</span>
         {busy !== null && <span>{busy}</span>}

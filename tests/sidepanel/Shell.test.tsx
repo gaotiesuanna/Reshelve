@@ -3,6 +3,7 @@ import { render, screen, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { Shell } from '@/sidepanel/components/Shell'
 import { useStore } from '@/sidepanel/store'
+import type { StructureDraft } from '@/core/structure'
 
 
 beforeEach(() => {
@@ -316,5 +317,21 @@ describe('Shell 的进度条按模式各管各的', () => {
     render(<Shell organizeContent={<div>步骤内容</div>}><div>浏览内容</div></Shell>)
     expect(screen.getByText('浏览内容')).toBeDefined()
     expect(screen.queryByText(/2 组重复/)).toBeNull()
+  })
+
+  it('结构草稿已生成但最终分类尚未开始时显示等待确认', () => {
+    useStore.setState({
+      step: 'structure',
+      structureDraft: {} as unknown as StructureDraft,
+      plan: null,
+      busy: null,
+      error: null,
+      progress: { phase: 'tags', done: 57, total: 57 },
+      logs: [cleanupLog],
+    })
+    render(<Shell organizeContent={<div>结构编辑器</div>}>{null}</Shell>)
+
+    expect(screen.getByText('等待确认')).toBeDefined()
+    expect(screen.queryByText('已完成')).toBeNull()
   })
 })

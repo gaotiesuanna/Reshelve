@@ -707,6 +707,9 @@
   "progressRunning": {
     "message": "In progress"
   },
+  "progressWaiting": {
+    "message": "Awaiting confirmation"
+  },
   "progressCompleted": {
     "message": "Completed"
   },

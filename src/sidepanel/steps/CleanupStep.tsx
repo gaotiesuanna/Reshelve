@@ -5,7 +5,7 @@ import type { DuplicateGroup } from '@/core/duplicates'
 import type { BookmarkItem } from '@/core/types'
 import { StaleCleanupSection } from '../components/StaleCleanupSection'
 import { AggregateCleanupSection } from '../components/AggregateCleanupSection'
-import { ProgressPanel } from '../components/ProgressPanel'
+import { ProgressPanel, type ProgressStatus } from '../components/ProgressPanel'
 import { useStore } from '../store'
 /**
  * 一条待处理的书签摊开三样：标题、完整 URL、完整路径。
@@ -247,6 +247,13 @@ export function CleanupStep() {
   const dead = cleanupLinks.filter((l) => l.verdict === 'dead')
   const suspect = cleanupLinks.filter((l) => l.verdict === 'suspect')
   const total = cleanupSelection.delete.size + cleanupSelection.move.size + cleanupSelection.staleMove.size + cleanupFolders.size
+  const progressStatus: ProgressStatus | null = busy !== null
+    ? 'running'
+    : error !== null
+      ? 'failed'
+      : cleanupScan !== null
+        ? 'completed'
+        : null
 
   return (
     <div>
@@ -454,10 +461,10 @@ export function CleanupStep() {
       )}
       {(tab === 'duplicates' || busy !== null) && (
         <ProgressPanel
+          status={progressStatus}
           busy={busy}
           progress={progress}
           logs={logs}
-          error={error}
           {...(busyTask === 'check_links' ? { onCancel: () => void cancel() } : {})}
         />
       )}
