@@ -45,7 +45,7 @@ function staleFolderIds(node: StaleFolderNode): string[] {
 }
 
 function StaleBookmarkRow({ entry }: { entry: StaleBookmark }) {
-  const { cleanupChecked, cleanupStaleMove, toggleStaleDelete, toggleStaleMove } = useStore()
+  const { cleanupSelection, toggleStaleDelete, toggleStaleMove } = useStore()
   const { item, bucket, lastUsedAt } = entry
   return (
     <li className="min-w-0">
@@ -85,7 +85,7 @@ function StaleBookmarkRow({ entry }: { entry: StaleBookmark }) {
         <label className="flex items-center gap-1 text-xs leading-caption text-neutral-600">
           <input
             type="checkbox"
-            checked={cleanupChecked.has(item.id)}
+            checked={cleanupSelection.delete.has(item.id)}
             aria-label={`${t('cleanupStaleActionDelete')} ${item.title}`}
             onChange={() => toggleStaleDelete(item.id)}
           />
@@ -94,7 +94,7 @@ function StaleBookmarkRow({ entry }: { entry: StaleBookmark }) {
         <label className="flex items-center gap-1 text-xs leading-caption text-neutral-600">
           <input
             type="checkbox"
-            checked={cleanupStaleMove.has(item.id)}
+            checked={cleanupSelection.staleMove.has(item.id)}
             aria-label={`${t('cleanupStaleActionMove')} ${item.title}`}
             onChange={() => toggleStaleMove(item.id)}
           />
@@ -110,13 +110,13 @@ function StaleBookmarkRow({ entry }: { entry: StaleBookmark }) {
  * 完整路径不再跟在标题后面。URL、日期、删除/移动都收进展开区。
  */
 function StaleFolderRow({ node, depth }: { node: StaleFolderNode; depth: number }) {
-  const { cleanupChecked, cleanupStaleMove, setStaleDeleteMany } = useStore()
+  const { cleanupSelection, setStaleDeleteMany } = useStore()
   const [open, setOpen] = useState(depth < FOLDER_AUTO_OPEN_DEPTH)
   const fullPath = `/${node.path.join('/')}/`
   const ids = staleFolderIds(node)
-  const selectedCount = ids.filter((id) => cleanupChecked.has(id) || cleanupStaleMove.has(id)).length
-  const someDeleting = ids.some((id) => cleanupChecked.has(id))
-  const allDeleting = ids.length > 0 && ids.every((id) => cleanupChecked.has(id))
+  const selectedCount = ids.filter((id) => cleanupSelection.delete.has(id) || cleanupSelection.staleMove.has(id)).length
+  const someDeleting = ids.some((id) => cleanupSelection.delete.has(id))
+  const allDeleting = ids.length > 0 && ids.every((id) => cleanupSelection.delete.has(id))
 
   return (
     <li>

@@ -546,8 +546,13 @@ interface State {
   aggregateResult: AggregateResult | null
   /** 每组重复项当前选中保留哪条，键是 DuplicateGroup.key。缺省时回落到 group.keepId。 */
   cleanupKeep: Record<string, string>
-  /** 被勾中待删的书签 id，跨重复项的所有组共用一个集合。 */
-  cleanupChecked: Set<string>
+  /**
+   * 清理页书签的三档勾选：待删 / 移到失效链接文件夹 / 移到待清理文件夹。
+   * 一条书签同一时刻至多待在一档——互斥由 updateCleanupSelection 一处保证，
+   * 各处只报意图。（空目录 cleanupFolders 与每组保留谁 cleanupKeep 不在这份
+   * 互斥里：目录与书签是两个域，保留选择是另一条轴。）
+   */
+  cleanupSelection: { delete: Set<string>; move: Set<string>; staleMove: Set<string> }
   /** 被勾中待删的空目录 id。 */
   cleanupFolders: Set<string>
   /** 已经查出来的链接结果，只留 dead 与 suspect 两档——alive 的没什么可给用户看的。 */
@@ -558,10 +563,7 @@ interface State {
    * - `running` / `done`：查过程与结果。
    */
   linkCheckState: 'idle' | 'denied' | 'running' | 'done'
-  /** 选了「移到失效链接文件夹」的死链。与 cleanupChecked（选删除）互斥。 */
-  cleanupMove: Set<string>
-  /** 选了「移到待清理文件夹」的长期未点击书签。与 cleanupChecked 互斥。 */
-  cleanupStaleMove: Set<string>
+
   /** 当前范围内长期未点击书签的扫描结果。 */
   staleScan: StaleScanResult | null
   /** 长期未点击书签的读取与分类状态。 */
@@ -673,7 +675,14 @@ interface State {
   toggleCleanupItem(id: string): void
   setCleanupKeep(groupKey: string, id: string): void
   toggleCleanupMove(id: string): void
-  toggleCleanupStaleMove(id: string): void
+  updateCleanupSelection(patch: {
+    deleteAdds?: string[]
+    deleteRemoves?: string[]
+    moveAdds?: string[]
+    moveRemoves?: string[]
+    staleMoveAdds?: string[]
+    staleMoveRemoves?: string[]
+  }): void
   toggleStaleDelete(id: string): void
   /** 整个文件夹一次性勾/清「删除」；开启时同互斥规则，把这些书签从「移走」里挪出来。 */
   setStaleDeleteMany(ids: readonly string[], on: boolean): void
@@ -712,6 +721,96 @@ function restoredStructureState(
     plan: null,
     step: 'structure',
   }
+}
+
+/**
+ * 复核页的默认勾选——发起（analyze / confirmStructure）与接回（adoptFinishedTask）
+ * 共用的同一条规则。移动方案默认全选（不勾 = 书签留在原地 = 彻底找不到，见
+ * issues/06-review-at-scale.md「决定 3」）；titleOnly 方案的行不在 rows 里——
+ * buildPlan 只从分类 items 造 rows，标题改名全部躺在 operations 的
+ * rename_bookmark 里，得单独从 operations 收。曾经接回那条路只抄了 rows 半句，
+ * titleOnly 方案接回时一条建议都不勾。
+ */
+function defaultAccepted(plan: OrganizePlan): Set<string> {
+  return new Set(
+    plan.titleOnly
+      ? plan.operations.flatMap((operation) => operation.type === 'rename_bookmark' ? [operation.bookmarkId] : [])
+      : plan.rows.map((r) => r.bookmarkId),
+  )
+}
+
+/** 终态任务落在哪一步可重试：只认 analyze 与 classify_structure（见 State.retryable）。 */
+function retryableForKind(kind: Request['kind']): State['retryable'] {
+  return kind === 'analyze' || kind === 'classify_structure' ? kind : null
+}
+
+/** 撤销可用性的唯一读取点：落地后想知道「现在还能不能撤销」就走这里。 */
+async function refreshUndoState(
+  get: () => State,
+  set: (partial: Partial<State>) => void,
+): Promise<void> {
+  const undoRes = await send({ kind: 'get_undo_state' })
+  set({
+    undoAvailable: undoRes.ok && undoRes.kind === 'get_undo_state' ? undoRes.available : get().undoAvailable,
+  })
+}
+
+/** 链接检查结果的落地：发起（startLinkCheck）与接回（adoptFinishedTask）共用。 */
+function landLinkResults(interesting: LinkResult[]): void {
+  useStore.setState({ linkCheckState: 'done', cleanupLinks: interesting })
+  // 确定失效默认勾上待删，可疑一条都不勾——分档的全部意义就在这个默认值上。
+  // 走 reducer：死链若已被勾了「移走」，勾删的那一下会把它从另一档摘掉。
+  useStore.getState().updateCleanupSelection({
+    deleteAdds: interesting.filter((r) => r.verdict === 'dead').map((r) => r.bookmarkId),
+  })
+}
+
+/**
+ * analyze 终态的落地：结构设计回结构页、方案回复核页。extra 由调用方带上
+ * 各自的包装状态（发起方是 busy 收场，接回方是广播 replay）。
+ */
+function landAnalyzeResult(
+  res: { ok: true; kind: 'analyze'; outcome: 'plan'; plan: OrganizePlan } | { ok: true; kind: 'analyze'; outcome: 'structure'; draft: StructureDraft },
+  extra: Partial<State>,
+): void {
+  if (res.outcome === 'structure') {
+    useStore.setState({
+      ...restoredStructureState(res.draft, EMPTY_EDITS),
+      accepted: new Set(),
+      reclassifyMarked: new Set(),
+      retryable: null,
+      error: null,
+      ...extra,
+    })
+    return
+  }
+  useStore.setState({
+    plan: res.plan,
+    accepted: defaultAccepted(res.plan),
+    reclassifyMarked: new Set(),
+    structureDraft: null,
+    structureValidation: { errors: [], warnings: [] },
+    structureEdits: EMPTY_EDITS,
+    step: 'review',
+    ...extra,
+  })
+}
+
+/** 结构分类完成后的方案落地：确认与接回两条路共用（都清结构工作流）。 */
+async function landClassifyPlan(plan: OrganizePlan, extra: Partial<State>): Promise<void> {
+  useStore.setState({
+    plan,
+    accepted: defaultAccepted(plan),
+    reclassifyMarked: new Set(),
+    structureDraft: null,
+    structureEdits: EMPTY_EDITS,
+    structureValidation: { errors: [], warnings: [] },
+    step: 'review',
+    retryable: null,
+    error: null,
+    ...extra,
+  })
+  await send({ kind: 'clear_structure_workflow' })
 }
 
 function saveStructureEdits(draft: StructureDraft, edits: StructureEdits): void {
@@ -762,12 +861,10 @@ export const useStore = create<State>((set, get) => ({
   cleanupScan: null,
   cleanupResult: null,
   cleanupKeep: {},
+  cleanupSelection: { delete: new Set(), move: new Set(), staleMove: new Set() },
   aggregateResult: null,
-  cleanupChecked: new Set(),
   cleanupFolders: new Set(),
-  cleanupMove: new Set(),
   cleanupLinks: [],
-  cleanupStaleMove: new Set(),
   staleScan: null,
   staleState: 'idle',
   staleError: null,
@@ -853,58 +950,21 @@ export const useStore = create<State>((set, get) => ({
     if (record.status === 'interrupted') {
       // 复用「后台被中断」的词条：SW 被回收或扩展重载，已完成批次有缓存，重试很快
       set(base)
-      return fail(
-        set,
-        t('errBackgroundRecycled'),
-        record.kind === 'analyze'
-          ? 'analyze'
-          : record.kind === 'classify_structure' ? 'classify_structure' : null,
-      )
+      return fail(set, t('errBackgroundRecycled'), retryableForKind(record.kind))
     }
     if (record.status === 'error') {
       set(base)
-      return fail(
-        set,
-        record.error ?? t('sendErrNoResponse'),
-        record.kind === 'analyze'
-          ? 'analyze'
-          : record.kind === 'classify_structure' ? 'classify_structure' : null,
-      )
+      return fail(set, record.error ?? t('sendErrNoResponse'), retryableForKind(record.kind))
     }
     const res = record.result
     // journal 受损（done 却没有载荷）时按无事发生收场：busy 已清，日志还在
     if (res === undefined || !res.ok) return set(base)
     switch (res.kind) {
       case 'analyze': {
-        if (res.outcome === 'structure') {
-          return set({ ...base, ...restoredStructureState(res.draft, EMPTY_EDITS) })
-        }
-        return set({
-          ...base,
-          plan: res.plan,
-          // 与 analyze() 同一条默认：全选，放错比不放更可接受
-          accepted: new Set(res.plan.rows.map((r) => r.bookmarkId)),
-          reclassifyMarked: new Set(),
-          structureDraft: null,
-          structureValidation: { errors: [], warnings: [] },
-          structureEdits: EMPTY_EDITS,
-          step: 'review',
-        })
+        return landAnalyzeResult(res, base)
       }
       case 'classify_structure': {
-        set({
-          ...base,
-          plan: res.plan,
-          accepted: new Set(res.plan.rows.map((row) => row.bookmarkId)),
-          reclassifyMarked: new Set(),
-          retryable: null,
-          error: null,
-          structureDraft: null,
-          structureEdits: EMPTY_EDITS,
-          structureValidation: { errors: [], warnings: [] },
-          step: 'review',
-        })
-        await send({ kind: 'clear_structure_workflow' })
+        await landClassifyPlan(res.plan, base)
         return
       }
       case 'reclassify': {
@@ -927,10 +987,7 @@ export const useStore = create<State>((set, get) => ({
       case 'apply_cleanup': {
         set({ ...base, cleanupResult: res.result })
         await get().refreshTree()
-        const undoRes = await send({ kind: 'get_undo_state' })
-        set({
-          undoAvailable: undoRes.ok && undoRes.kind === 'get_undo_state' ? undoRes.available : get().undoAvailable,
-        })
+        await refreshUndoState(get, set)
         return
       }
       case 'apply_aggregate': {
@@ -947,17 +1004,9 @@ export const useStore = create<State>((set, get) => ({
         return
       }
       case 'check_links': {
-        // 与 startLinkCheck 的收场同一套：只留 dead 与 suspect，确定失效默认勾上
-        const interesting = res.results.filter((r) => r.verdict !== 'alive')
-        return set({
-          ...base,
-          linkCheckState: 'done',
-          cleanupLinks: interesting,
-          cleanupChecked: new Set([
-            ...get().cleanupChecked,
-            ...interesting.filter((r) => r.verdict === 'dead').map((r) => r.bookmarkId),
-          ]),
-        })
+        // 与 startLinkCheck 的收场同一套（见 landLinkResults）。
+        landLinkResults(res.results.filter((r) => r.verdict !== 'alive'))
+        return
       }
       case 'move_bookmarks': {
         set({ ...base, busy: null, busyTask: null, moveSelection: new Set() })
@@ -1139,35 +1188,7 @@ export const useStore = create<State>((set, get) => ({
       // 据此给出「继续（免费接上）/ 重新开始（清缓存从头来）」两条路。
       onCancelled: { lastCancelled: 'analyze' },
       onOk: (res) => {
-        if (res.outcome === 'structure') {
-          return set({
-            ...restoredStructureState(res.draft, EMPTY_EDITS),
-            accepted: new Set(),
-            reclassifyMarked: new Set(),
-            retryable: null,
-            error: null,
-            busy: null,
-            busyTask: null,
-          })
-        }
-        set({
-          plan: res.plan,
-          // 默认全选：不勾 = 书签留在原来那个散落的位置 = 彻底找不到；进了一个不太准的主题目录，
-          // 至少还在逐层摸的范围内。放错比不放更可接受，所以默认接受、让标记去引导修正
-          // （见 issues/06-review-at-scale.md「决定 3」）。
-          accepted: new Set(
-            res.plan.titleOnly
-              ? res.plan.operations.flatMap((operation) => operation.type === 'rename_bookmark' ? [operation.bookmarkId] : [])
-              : res.plan.rows.map((r) => r.bookmarkId),
-          ),
-          reclassifyMarked: new Set(),
-          structureDraft: null,
-          structureValidation: { errors: [], warnings: [] },
-          structureEdits: EMPTY_EDITS,
-          step: 'review',
-          busy: null,
-          busyTask: null,
-        })
+        landAnalyzeResult(res, { retryable: null, error: null, busy: null, busyTask: null })
       },
     })
   },
@@ -1285,20 +1306,7 @@ export const useStore = create<State>((set, get) => ({
       onCancelled: { retryable: 'classify_structure' },
       onMismatch: { retryable: 'classify_structure' },
       onOk: async (res) => {
-        set({
-          plan: res.plan,
-          accepted: new Set(res.plan.rows.map((row) => row.bookmarkId)),
-          reclassifyMarked: new Set(),
-          structureDraft: null,
-          structureEdits: EMPTY_EDITS,
-          structureValidation: { errors: [], warnings: [] },
-          step: 'review',
-          busy: null,
-          busyTask: null,
-          retryable: null,
-          error: null,
-        })
-        await send({ kind: 'clear_structure_workflow' })
+        await landClassifyPlan(res.plan, { busy: null, busyTask: null })
       },
     })
   },
@@ -1622,10 +1630,11 @@ export const useStore = create<State>((set, get) => ({
     set({
       cleanupScan: res.scan,
       cleanupKeep: {},
-      cleanupChecked: defaultChecked(res.scan.duplicates),
+      cleanupSelection: {
+        delete: defaultChecked(res.scan.duplicates), move: new Set(), staleMove: new Set(),
+      },
       cleanupFolders: new Set(),
-      cleanupStaleMove: new Set(),
-      cleanupResult: null,
+          cleanupResult: null,
       aggregateResult: null,
       busy: null,
       busyTask: null,
@@ -1675,17 +1684,17 @@ export const useStore = create<State>((set, get) => ({
     if (scan === null) return
     // 书签栏是 tree 里第一个顶层节点的第一个子节点：那个顶层节点是根，浏览器从不让它显形
     const barId = get().tree[0]?.children?.[0]?.id ?? ''
-    const { cleanupStaleMove, staleScan } = get()
+    const { cleanupSelection, staleScan } = get()
     const run = get().runSeq
     const staleMoveRootByBookmarkId: Record<string, string> = {}
-    for (const id of cleanupStaleMove) {
+    for (const id of cleanupSelection.staleMove) {
       const rootId = staleScan?.scopeRootIdByBookmarkId[id]
       if (rootId !== undefined) staleMoveRootByBookmarkId[id] = rootId
     }
     const selection: CleanupSelection = {
-      deleteBookmarkIds: [...get().cleanupChecked],
-      moveBookmarkIds: [...get().cleanupMove],
-      staleMoveBookmarkIds: [...cleanupStaleMove],
+      deleteBookmarkIds: [...cleanupSelection.delete],
+      moveBookmarkIds: [...cleanupSelection.move],
+      staleMoveBookmarkIds: [...cleanupSelection.staleMove],
       staleMoveRootByBookmarkId,
       deleteFolderIds: [...get().cleanupFolders],
     }
@@ -1709,10 +1718,7 @@ export const useStore = create<State>((set, get) => ({
       // 不给重试入口：可能已经删掉一半，重跑有二次删除的风险（同 apply/undo）
       onOk: async (res) => {
         set({ cleanupResult: res.result, busy: null, busyTask: null })
-        const undoRes = await send({ kind: 'get_undo_state' })
-        set({
-          undoAvailable: undoRes.ok && undoRes.kind === 'get_undo_state' ? undoRes.available : get().undoAvailable,
-        })
+        await refreshUndoState(get, set)
         // 补上 Task 6 漏掉的一步：不刷新的话，store 里的 tree 还是清理前那棵。
         // 连着做第二次清理时，空目录预览走 emptyAfterRemoval(tree, ...) 用的就是这棵过期的
         // tree，会按「已经删掉的书签还在」来算，报出一批根本不会变空的目录。
@@ -1737,26 +1743,52 @@ export const useStore = create<State>((set, get) => ({
           return fail(set, res.result.error ?? t('errAggregateFailed'), null)
         }
         set({ aggregateResult: res.result, busy: null, busyTask: null })
-        const undoRes = await send({ kind: 'get_undo_state' })
-        set({
-          undoAvailable: undoRes.ok && undoRes.kind === 'get_undo_state'
-            ? undoRes.available
-            : get().undoAvailable,
-        })
+        await refreshUndoState(get, set)
         await get().refreshTree()
       },
     })
   },
 
-  toggleCleanupItem(id) {
-    const checked = new Set(get().cleanupChecked)
-    const staleMove = new Set(get().cleanupStaleMove)
-    if (checked.has(id)) checked.delete(id)
-    else {
-      checked.add(id)
-      staleMove.delete(id)
+  /**
+   * 三档勾选的互斥 reducer，全部清理勾选的必经之路：加进哪一档，就把它从
+   * 另外两档摘掉。原先这条规则誊在六个 toggle 里两两互写（链接结果落地那条
+   * 甚至漏了——死链默认勾删时不清另一档，一条书签能同时待在「待删」和
+   * 「移走」两档里），收进来之后只此一份。
+   */
+  updateCleanupSelection(patch) {
+    const inSet = (ids: string[] | undefined): Set<string> => new Set(ids ?? [])
+    const sel = {
+      delete: new Set(get().cleanupSelection.delete),
+      move: new Set(get().cleanupSelection.move),
+      staleMove: new Set(get().cleanupSelection.staleMove),
     }
-    set({ cleanupChecked: checked, cleanupStaleMove: staleMove })
+    for (const id of inSet(patch.deleteAdds)) {
+      sel.delete.add(id)
+      sel.move.delete(id)
+      sel.staleMove.delete(id)
+    }
+    for (const id of inSet(patch.deleteRemoves)) sel.delete.delete(id)
+    for (const id of inSet(patch.moveAdds)) {
+      sel.move.add(id)
+      sel.delete.delete(id)
+      sel.staleMove.delete(id)
+    }
+    for (const id of inSet(patch.moveRemoves)) sel.move.delete(id)
+    for (const id of inSet(patch.staleMoveAdds)) {
+      sel.staleMove.add(id)
+      sel.delete.delete(id)
+      sel.move.delete(id)
+    }
+    for (const id of inSet(patch.staleMoveRemoves)) sel.staleMove.delete(id)
+    set({ cleanupSelection: sel })
+  },
+
+  toggleCleanupItem(id) {
+    if (get().cleanupSelection.delete.has(id)) {
+      useStore.getState().updateCleanupSelection({ deleteRemoves: [id] })
+    } else {
+      useStore.getState().updateCleanupSelection({ deleteAdds: [id] })
+    }
   },
 
   setCleanupKeep(groupKey, id) {
@@ -1764,14 +1796,12 @@ export const useStore = create<State>((set, get) => ({
     if (group === undefined) return
     const oldKeep = get().cleanupKeep[groupKey] ?? group.keepId
     if (oldKeep === id) return
-    const checked = new Set(get().cleanupChecked)
     // 只在新保留项本来就被勾着待删时才联动：那才说明这一组是「勾选待删」的状态——
     // normalized 组默认整组不勾，这时候换保留项不该把旧保留项凭空勾上
-    if (checked.has(id)) {
-      checked.delete(id)
-      checked.add(oldKeep)
+    if (get().cleanupSelection.delete.has(id)) {
+      useStore.getState().updateCleanupSelection({ deleteRemoves: [id], deleteAdds: [oldKeep] })
     }
-    set({ cleanupKeep: { ...get().cleanupKeep, [groupKey]: id }, cleanupChecked: checked })
+    set({ cleanupKeep: { ...get().cleanupKeep, [groupKey]: id } })
   },
 
   toggleCleanupFolder(id) {
@@ -1781,57 +1811,33 @@ export const useStore = create<State>((set, get) => ({
     set({ cleanupFolders: folders })
   },
   toggleCleanupMove: (id) => {
-    const move = new Set(get().cleanupMove)
-    const checked = new Set(get().cleanupChecked)
-    const staleMove = new Set(get().cleanupStaleMove)
-    if (move.has(id)) move.delete(id)
-    else {
-      move.add(id)
-      // 一条链接不可能既删掉又移走，勾上一个就把另一个摘掉
-      checked.delete(id)
-      staleMove.delete(id)
+    if (get().cleanupSelection.move.has(id)) {
+      useStore.getState().updateCleanupSelection({ moveRemoves: [id] })
+    } else {
+      useStore.getState().updateCleanupSelection({ moveAdds: [id] })
     }
-    set({ cleanupMove: move, cleanupChecked: checked, cleanupStaleMove: staleMove })
   },
 
   toggleStaleDelete: (id) => {
-    const checked = new Set(get().cleanupChecked)
-    const staleMove = new Set(get().cleanupStaleMove)
-    if (checked.has(id)) checked.delete(id)
-    else {
-      checked.add(id)
-      staleMove.delete(id)
+    if (get().cleanupSelection.delete.has(id)) {
+      useStore.getState().updateCleanupSelection({ deleteRemoves: [id] })
+    } else {
+      useStore.getState().updateCleanupSelection({ deleteAdds: [id] })
     }
-    set({ cleanupChecked: checked, cleanupStaleMove: staleMove })
   },
 
   setStaleDeleteMany: (ids, on) => {
-    const checked = new Set(get().cleanupChecked)
-    const staleMove = new Set(get().cleanupStaleMove)
-    for (const id of ids) {
-      if (on) {
-        checked.add(id)
-        staleMove.delete(id)
-      } else {
-        checked.delete(id)
-      }
-    }
-    set({ cleanupChecked: checked, cleanupStaleMove: staleMove })
+    const list = [...ids]
+    if (on) useStore.getState().updateCleanupSelection({ deleteAdds: list })
+    else useStore.getState().updateCleanupSelection({ deleteRemoves: list })
   },
 
   toggleStaleMove: (id) => {
-    const staleMove = new Set(get().cleanupStaleMove)
-    const checked = new Set(get().cleanupChecked)
-    if (staleMove.has(id)) staleMove.delete(id)
-    else {
-      staleMove.add(id)
-      checked.delete(id)
+    if (get().cleanupSelection.staleMove.has(id)) {
+      useStore.getState().updateCleanupSelection({ staleMoveRemoves: [id] })
+    } else {
+      useStore.getState().updateCleanupSelection({ staleMoveAdds: [id] })
     }
-    set({ cleanupStaleMove: staleMove, cleanupChecked: checked })
-  },
-
-  toggleCleanupStaleMove: (id) => {
-    get().toggleStaleMove(id)
   },
 
   startLinkCheck: async () => {
@@ -1852,17 +1858,8 @@ export const useStore = create<State>((set, get) => ({
       run,
       onAbort: { linkCheckState: 'idle' },
       onOk: (res) => {
-        const interesting = res.results.filter((r) => r.verdict !== 'alive')
-        set({
-          busy: null, busyTask: null,
-          linkCheckState: 'done',
-          cleanupLinks: interesting,
-          // 确定失效默认勾上待删，可疑一条都不勾——分档的全部意义就在这个默认值上
-          cleanupChecked: new Set([
-            ...get().cleanupChecked,
-            ...interesting.filter((r) => r.verdict === 'dead').map((r) => r.bookmarkId),
-          ]),
-        })
+        set({ busy: null, busyTask: null })
+        landLinkResults(res.results.filter((r) => r.verdict !== 'alive'))
       },
     })
   },

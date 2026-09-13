@@ -5,6 +5,7 @@ import type { BookmarkItem, TagResult } from '@/core/types'
 import type { LlmClient } from './client'
 import { logBatch, logBatchFailed, logBatchOutputs, logBatchPartFailed, logBatchSplit } from './logs'
 import { tagsPrompt } from './prompts'
+import { runLlmBatch, type BatchTally } from './batches'
 
 export type { TagResult }
 
@@ -60,19 +61,6 @@ function buildPrompt(locale: Locale, items: BookmarkItem[]): string {
   ].join('\n')
 }
 
-/**
- * 一批的重试次数，与 classify.ts 的 MAX_RETRIES 同一口径。
- *
- * 这条路上原先一次重试都没有：网关抖一下返回 500，整批 25 条书签当场判成
- * NO_TOPIC、退出目录设计，而 client.ts 早就把 5xx / 429 标成了 retryable，
- * 只是没人读那个字段。
- */
-const MAX_RETRIES = 2
-
-function flagged(error: unknown, key: 'retryable' | 'truncated' | 'timedOut'): boolean {
-  return (error as Record<string, unknown> | null)?.[key] === true
-}
-
 export interface ExtractOptions {
   batchSize?: number
   concurrency?: number
@@ -115,81 +103,48 @@ async function runExtraction(
    * - 超时（LlmError.timedOut）且一批多于一条——同一批再问三次只会再死三次，
    *   同样拆开。只拆一层：半批再超时走普通重试后认栽，避免死端点上二分到单条。
    */
+  /**
+   * 问一批，返回 bookmark_id → primary_topic（null = 没问到：模型漏返回，
+   * 或拆批后那一半没救）。重试、拆批的口径在 llm/batches.ts 一份：
+   * 可重试的退避再问、截断对半拆、超时只拆一层。
+   */
   async function ask(
     batch: BookmarkItem[],
     index: number,
-    tally: { attempts: number },
+    tally: BatchTally,
     timeoutSplit = true,
-  ): Promise<Map<string, string>> {
-    let lastError: unknown
-    for (let attempt = 0; attempt <= MAX_RETRIES; attempt++) {
-      tally.attempts++
-      try {
-        const raw = (await client.complete(buildOnePrompt(batch), SCHEMA)) as {
-          results?: Array<{ bookmark_id: string; primary_topic: string }>
-        }
-        return new Map((raw.results ?? []).map((r) => [r.bookmark_id, r.primary_topic]))
-      } catch (error) {
-        lastError = error
-        // 只进开发者控制台，不必双语。
-        console.error('[Reshelve] 标签抽取失败：', error)
-        // 取消之后一个新请求都不再发。少了这一句，用户点完取消要眼看着「正在取消」
-        // 再等三个请求加 1.5 秒退避才结束，而那三次注定全部失败。
-        if (options.isCancelled?.() === true) break
-        const willSplit = batch.length > 1 && (
-          flagged(error, 'truncated') || (flagged(error, 'timedOut') && timeoutSplit)
-        )
-        if (willSplit) break
-        if (!flagged(error, 'retryable')) break
-        if (attempt < MAX_RETRIES) {
-          await new Promise((resolve) => setTimeout(resolve, 2 ** attempt * 500))
-        }
-      }
-    }
-    if (options.isCancelled?.() !== true && batch.length > 1) {
-      if (flagged(lastError, 'truncated')) {
-        return split(batch, index, lastError, tally, 'truncated', true)
-      }
-      if (timeoutSplit && flagged(lastError, 'timedOut')) {
-        return split(batch, index, lastError, tally, 'timeout', false)
-      }
-    }
-    throw lastError
-  }
-
-  async function split(
-    batch: BookmarkItem[],
-    index: number,
-    cause: unknown,
-    tally: { attempts: number },
-    splitCause: 'truncated' | 'timeout',
-    childTimeoutSplit: boolean,
-  ): Promise<Map<string, string>> {
-    options.onLog?.(logBatchSplit(locale, label, index, batches.length, batch.length, splitCause), 'warn')
-    const mid = Math.ceil(batch.length / 2)
-    const merged = new Map<string, string>()
-    const failures: Array<{ size: number; detail: string }> = []
-    // 顺序问而不是并发：外层已经有 concurrency 个 worker 在跑，
-    // 一批刚被截断/超时说明这条线正吃力，没必要再往上叠一倍请求。
-    for (const half of [batch.slice(0, mid), batch.slice(mid)]) {
-      // 拆到一半用户点了取消：把原错误交回去，剩下那半不再问
-      if (options.isCancelled?.() === true) throw cause
-      try {
-        for (const [id, topic] of await ask(half, index, tally, childTimeoutSplit)) merged.set(id, topic)
-      } catch (error) {
-        failures.push({ size: half.length, detail: String(error) })
-      }
-    }
-    // 两半全军覆没就把原错误交回去，由调用方统一记一条「整批失败」——
-    // 那种情形下再补两条「拆开后仍失败」只是把同一件事说三遍。
-    if (merged.size === 0 && failures.length === 2) throw cause
-    for (const failure of failures) {
-      options.onLog?.(
-        logBatchPartFailed(locale, label, index, batches.length, failure.size, failure.detail),
-        'error',
-      )
-    }
-    return merged
+  ): Promise<Map<string, string | null>> {
+    const tuples = await runLlmBatch(
+      {
+        client,
+        buildPrompt: buildOnePrompt,
+        schema: SCHEMA,
+        parse: (raw, b) => {
+          const byId = new Map(
+            ((raw as { results?: Array<{ bookmark_id: string; primary_topic: string }> }).results ?? [])
+              .map((r) => [r.bookmark_id, r.primary_topic]),
+          )
+          return b.map((item) => [item.id, byId.get(item.id) ?? null] as const)
+        },
+        // 拆开后仍没救的那一半 = 没问到：worker 的 ?? NO_TOPIC / ?? '' 兜底照常生效
+        fallback: (item) => [item.id, null] as const,
+        isCancelled: options.isCancelled,
+        onError: (error) => {
+          // 只进开发者控制台，不必双语。
+          console.error('[Reshelve] 标签抽取失败：', error)
+        },
+      },
+      batch,
+      {
+        tally,
+        timeoutSplit,
+        onSplit: (size, cause) =>
+          options.onLog?.(logBatchSplit(locale, label, index, batches.length, size, cause), 'warn'),
+        onHalfFailed: (size, error) =>
+          options.onLog?.(logBatchPartFailed(locale, label, index, batches.length, size, error), 'error'),
+      },
+    )
+    return new Map(tuples)
   }
 
   async function worker(): Promise<void> {

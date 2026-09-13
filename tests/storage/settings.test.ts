@@ -2,6 +2,7 @@ import { describe, it, expect } from 'vitest'
 import {
   SETTINGS_KEY, loadSettings, saveSettings, loadCache, saveCache, DEFAULT_SETTINGS,
   MAX_CACHE_ENTRIES, PRESETS, DEFAULT_MODEL, endpointKey, activeLlm, ensureActive,
+  applyPreset, removeEndpoint, replaceEndpoint,
   type Endpoint, type Settings,
 } from '@/storage/settings'
 import { isLocalBaseUrl, isModelConfigured } from '@/llm/config'
@@ -585,5 +586,109 @@ describe('从单套配置迁移', () => {
       modelHistory: [{ baseUrl: 'https://x/v1', model: 'a' }],
     })
     expect(await loadSettings(p)).toEqual(DEFAULT_SETTINGS)
+  })
+})
+
+describe('端点表操作的 invariant（从 SettingsPanel 收编）', () => {
+  const remote = (baseUrl: string, apiKey: string, models: string[]): Endpoint => (
+    { baseUrl, apiKey, models }
+  )
+
+  describe('replaceEndpoint', () => {
+    it('改的是 active 所在的端点：active 跟着地址走，模型名不变', () => {
+      const settings: Settings = {
+        ...DEFAULT_SETTINGS,
+        endpoints: [remote('https://a.dev', 'k1', ['m1'])],
+        active: { baseUrl: 'https://a.dev', model: 'm1' },
+      }
+      const next = replaceEndpoint(settings, 0, remote('https://b.dev', 'k1', ['m1']))
+      expect(next.endpoints[0]!.baseUrl).toBe('https://b.dev')
+      expect(next.active).toEqual({ baseUrl: 'https://b.dev', model: 'm1' })
+    })
+
+    it('改的不是 active 那条：active 原样不动', () => {
+      const settings: Settings = {
+        ...DEFAULT_SETTINGS,
+        endpoints: [remote('https://a.dev', 'k1', ['m1']), remote('https://b.dev', 'k2', ['m2'])],
+        active: { baseUrl: 'https://a.dev', model: 'm1' },
+      }
+      const next = replaceEndpoint(settings, 1, remote('https://c.dev', 'k2', ['m2']))
+      expect(next.active).toEqual({ baseUrl: 'https://a.dev', model: 'm1' })
+      expect(next.endpoints[1]!.baseUrl).toBe('https://c.dev')
+    })
+
+    it('改完之后 active 那对不再可用（Key 被清掉）：ensureActive 落到能用的组合', () => {
+      const settings: Settings = {
+        ...DEFAULT_SETTINGS,
+        endpoints: [remote('https://a.dev', '', ['m1']), remote('https://b.dev', 'k2', ['m2'])],
+        active: { baseUrl: 'https://a.dev', model: 'm1' },
+      }
+      const next = replaceEndpoint(settings, 1, remote('https://b.dev', 'k2', ['m2', 'm3']))
+      expect(next.active).toEqual({ baseUrl: 'https://b.dev', model: 'm2' })
+    })
+  })
+
+  describe('removeEndpoint', () => {
+    it('删掉的正好是在用的那条：active 落到剩下第一条**能用**的组合', () => {
+      const settings: Settings = {
+        ...DEFAULT_SETTINGS,
+        endpoints: [remote('https://a.dev', 'k1', ['m1']), remote('https://b.dev', 'k2', ['m2'])],
+        active: { baseUrl: 'https://a.dev', model: 'm1' },
+      }
+      const next = removeEndpoint(settings, 0)
+      expect(next.endpoints.map((e) => e.baseUrl)).toEqual(['https://b.dev'])
+      expect(next.active).toEqual({ baseUrl: 'https://b.dev', model: 'm2' })
+    })
+
+    it('删掉的不是 active 那条：active 原样不动', () => {
+      const settings: Settings = {
+        ...DEFAULT_SETTINGS,
+        endpoints: [remote('https://a.dev', 'k1', ['m1']), remote('https://b.dev', 'k2', ['m2'])],
+        active: { baseUrl: 'https://a.dev', model: 'm1' },
+      }
+      const next = removeEndpoint(settings, 1)
+      expect(next.active).toEqual({ baseUrl: 'https://a.dev', model: 'm1' })
+    })
+
+    it('一条不剩：active 清空，界面回到「还没配置模型」', () => {
+      const settings: Settings = {
+        ...DEFAULT_SETTINGS,
+        endpoints: [remote('https://a.dev', 'k1', ['m1'])],
+        active: { baseUrl: 'https://a.dev', model: 'm1' },
+      }
+      const next = removeEndpoint(settings, 0)
+      expect(next.endpoints).toEqual([])
+      expect(next.active).toEqual({ baseUrl: '', model: '' })
+    })
+  })
+
+  describe('applyPreset', () => {
+    it('新 baseUrl：新增一条端点；Key 没填之前预设的模型名不摆上去', () => {
+      const settings: Settings = { ...DEFAULT_SETTINGS }
+      const next = applyPreset(settings, { baseUrl: 'https://zhipu.dev', model: 'glm' })
+      expect(next.endpoints.find((e) => e.baseUrl === 'https://zhipu.dev')).toEqual(
+        { baseUrl: 'https://zhipu.dev', apiKey: '', models: [] },
+      )
+    })
+
+    it('已有同 baseUrl：只把预设模型并进去，Key 一个字都不动', () => {
+      const settings: Settings = {
+        ...DEFAULT_SETTINGS,
+        endpoints: [remote('https://zhipu.dev', '已有Key', ['glm-old'])],
+      }
+      const next = applyPreset(settings, { baseUrl: 'https://zhipu.dev', model: 'glm-new' })
+      const hit = next.endpoints.find((e) => e.baseUrl === 'https://zhipu.dev')!
+      expect(hit.apiKey).toBe('已有Key')
+      expect(hit.models).toEqual(['glm-old', 'glm-new'])
+    })
+
+    it('预设模型已经在列表里：不重复添加', () => {
+      const settings: Settings = {
+        ...DEFAULT_SETTINGS,
+        endpoints: [remote('https://zhipu.dev', 'k', ['glm'])],
+      }
+      const next = applyPreset(settings, { baseUrl: 'https://zhipu.dev', model: 'glm' })
+      expect(next.endpoints[0]!.models).toEqual(['glm'])
+    })
   })
 })

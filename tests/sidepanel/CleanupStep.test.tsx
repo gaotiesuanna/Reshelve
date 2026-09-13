@@ -121,10 +121,8 @@ beforeEach(() => {
     aggregateResult: null,
     cleanupKeep: {},
     // exact 组的默认勾选：除保留项之外全勾上
-    cleanupChecked: new Set(['101', '120']),
+    cleanupSelection: { delete: new Set(['101', '120']), move: new Set(), staleMove: new Set() },
     cleanupFolders: new Set(),
-    cleanupMove: new Set(),
-    cleanupStaleMove: new Set(),
     staleScan: null,
     staleState: 'idle',
     staleError: null,
@@ -234,24 +232,22 @@ describe('长期未点击书签扫描状态', () => {
   })
 
   it('长期未点击书签的删除与移动选择互斥', () => {
-    useStore.setState({ cleanupChecked: new Set(['stale-id']), cleanupStaleMove: new Set() })
+    useStore.setState({ cleanupSelection: { delete: new Set(['stale-id']), move: new Set(), staleMove: new Set() } })
 
     useStore.getState().toggleStaleMove('stale-id')
-    expect(useStore.getState().cleanupChecked.has('stale-id')).toBe(false)
-    expect(useStore.getState().cleanupStaleMove.has('stale-id')).toBe(true)
+    expect(useStore.getState().cleanupSelection.delete.has('stale-id')).toBe(false)
+    expect(useStore.getState().cleanupSelection.staleMove.has('stale-id')).toBe(true)
 
     useStore.getState().toggleStaleDelete('stale-id')
-    expect(useStore.getState().cleanupChecked.has('stale-id')).toBe(true)
-    expect(useStore.getState().cleanupStaleMove.has('stale-id')).toBe(false)
+    expect(useStore.getState().cleanupSelection.delete.has('stale-id')).toBe(true)
+    expect(useStore.getState().cleanupSelection.staleMove.has('stale-id')).toBe(false)
   })
   it('stale history scan preserves duplicate and dead-link selections', async () => {
     vi.mocked(send).mockResolvedValue({
       ok: true, kind: 'cleanup_stale_scan', scan: staleReadyResult,
     } as never)
     useStore.setState({
-      cleanupChecked: new Set(['101', 'dead-link']),
-      cleanupMove: new Set(['dead-link-move']),
-      cleanupStaleMove: new Set(),
+      cleanupSelection: { delete: new Set(['101', 'dead-link']), move: new Set(['dead-link-move']), staleMove: new Set() },
       staleScan: null,
       staleState: 'idle',
       staleError: null,
@@ -259,8 +255,8 @@ describe('长期未点击书签扫描状态', () => {
 
     await useStore.getState().runStaleScan()
 
-    expect([...useStore.getState().cleanupChecked]).toEqual(['101', 'dead-link'])
-    expect([...useStore.getState().cleanupMove]).toEqual(['dead-link-move'])
+    expect([...useStore.getState().cleanupSelection.delete]).toEqual(['101', 'dead-link'])
+    expect([...useStore.getState().cleanupSelection.move]).toEqual(['dead-link-move'])
     expect(useStore.getState().staleState).toBe('ready')
   })
 
@@ -307,8 +303,7 @@ describe('CleanupStep 长期未点击书签一节', () => {
     useStore.setState({
       staleScan: staleReadyResult,
       staleState: 'ready',
-      cleanupChecked: new Set(),
-      cleanupStaleMove: new Set(),
+      cleanupSelection: { delete: new Set(), move: new Set(), staleMove: new Set() },
     })
     render(<CleanupStep />)
 
@@ -334,8 +329,7 @@ describe('CleanupStep 长期未点击书签一节', () => {
     useStore.setState({
       staleScan: staleReadyResult,
       staleState: 'ready',
-      cleanupChecked: new Set(),
-      cleanupStaleMove: new Set(),
+      cleanupSelection: { delete: new Set(), move: new Set(), staleMove: new Set() },
     })
     render(<CleanupStep />)
 
@@ -351,8 +345,7 @@ describe('CleanupStep 长期未点击书签一节', () => {
     useStore.setState({
       staleScan: staleReadyResult,
       staleState: 'ready',
-      cleanupChecked: new Set(),
-      cleanupStaleMove: new Set(),
+      cleanupSelection: { delete: new Set(), move: new Set(), staleMove: new Set() },
     })
     render(<CleanupStep />)
 
@@ -364,19 +357,17 @@ describe('CleanupStep 长期未点击书签一节', () => {
     expect(screen.getByText('没有记录的文章')).toBeDefined()
     expect(screen.queryByText('旧文章')).toBeNull()
     await userEvent.click(screen.getByRole('checkbox', { name: '删除 没有记录的文章' }))
-    expect(useStore.getState().cleanupChecked.has('stale-unknown')).toBe(true)
+    expect(useStore.getState().cleanupSelection.delete.has('stale-unknown')).toBe(true)
   })
 
   it('长期未点击书签的选择合并进底部执行数量', async () => {
     useStore.setState({
       cleanupScan: scan,
       cleanupResult: null,
-      cleanupChecked: new Set(),
+      cleanupSelection: { delete: new Set(), move: new Set(), staleMove: new Set() },
       staleScan: staleReadyResult,
       staleState: 'ready',
-      cleanupStaleMove: new Set(),
       cleanupFolders: new Set(),
-      cleanupMove: new Set(),
     })
     render(<CleanupStep />)
     const run = screen.getByRole('button', { name: '清理 0 项' }) as HTMLButtonElement
@@ -406,8 +397,7 @@ describe('CleanupStep 长期未点击书签一节', () => {
         ],
       },
       staleState: 'ready',
-      cleanupChecked: new Set(),
-      cleanupStaleMove: new Set(),
+      cleanupSelection: { delete: new Set(), move: new Set(), staleMove: new Set() },
     })
     render(<CleanupStep />)
 
@@ -442,8 +432,7 @@ describe('CleanupStep 长期未点击书签一节', () => {
         ],
       },
       staleState: 'ready',
-      cleanupChecked: new Set(),
-      cleanupStaleMove: new Set(),
+      cleanupSelection: { delete: new Set(), move: new Set(), staleMove: new Set() },
     })
     render(<CleanupStep />)
 
@@ -460,7 +449,7 @@ describe('CleanupStep 长期未点击书签一节', () => {
     await userEvent.click(screen.getByRole('button', { name: /展开 \/书签栏\/目录甲\/，共 2 条/ }))
     expect(screen.getByText('旧文章')).toBeDefined()
     await userEvent.click(screen.getByRole('checkbox', { name: '删除 旧文章' }))
-    expect(useStore.getState().cleanupChecked.has('stale-old')).toBe(true)
+    expect(useStore.getState().cleanupSelection.delete.has('stale-old')).toBe(true)
 
     await userEvent.click(screen.getByRole('button', { name: /收起 \/书签栏\/目录甲\// }))
     expect(screen.getAllByText('已选 1')).toHaveLength(2)
@@ -485,8 +474,7 @@ describe('CleanupStep 长期未点击书签一节', () => {
         ],
       },
       staleState: 'ready',
-      cleanupChecked: new Set(),
-      cleanupStaleMove: new Set(),
+      cleanupSelection: { delete: new Set(), move: new Set(), staleMove: new Set() },
     })
     render(<CleanupStep />)
 
@@ -503,8 +491,7 @@ describe('CleanupStep 长期未点击书签一节', () => {
     useStore.setState({
       staleScan: staleReadyResult,
       staleState: 'ready',
-      cleanupChecked: new Set(),
-      cleanupStaleMove: new Set(['stale-old']),
+      cleanupSelection: { delete: new Set(), move: new Set(), staleMove: new Set(['stale-old']) },
     })
     render(<CleanupStep />)
 
@@ -512,13 +499,13 @@ describe('CleanupStep 长期未点击书签一节', () => {
     expect(selectAll.checked).toBe(false)
     expect(selectAll.indeterminate).toBe(false)
     await userEvent.click(selectAll)
-    expect(useStore.getState().cleanupChecked.has('stale-old')).toBe(true)
-    expect(useStore.getState().cleanupChecked.has('stale-unknown')).toBe(true)
-    expect(useStore.getState().cleanupStaleMove.has('stale-old')).toBe(false)
+    expect(useStore.getState().cleanupSelection.delete.has('stale-old')).toBe(true)
+    expect(useStore.getState().cleanupSelection.delete.has('stale-unknown')).toBe(true)
+    expect(useStore.getState().cleanupSelection.staleMove.has('stale-old')).toBe(false)
     expect(selectAll.checked).toBe(true)
 
     await userEvent.click(selectAll)
-    expect(useStore.getState().cleanupChecked.size).toBe(0)
+    expect(useStore.getState().cleanupSelection.delete.size).toBe(0)
     expect(selectAll.checked).toBe(false)
   })
 
@@ -526,8 +513,7 @@ describe('CleanupStep 长期未点击书签一节', () => {
     useStore.setState({
       staleScan: staleReadyResult,
       staleState: 'ready',
-      cleanupChecked: new Set(['stale-old']),
-      cleanupStaleMove: new Set(),
+      cleanupSelection: { delete: new Set(['stale-old']), move: new Set(), staleMove: new Set() },
     })
     render(<CleanupStep />)
 
@@ -649,7 +635,7 @@ describe('CleanupStep 空状态', () => {
   it('没有任何可清理项时明说，不留一个空白页面', async () => {
     useStore.setState({
       cleanupScan: { ...scan, duplicates: [] },
-      cleanupChecked: new Set(),
+      cleanupSelection: { delete: new Set(), move: new Set(), staleMove: new Set() },
     })
     render(<CleanupStep />)
     await openCleanupTab('重复收藏')
@@ -661,9 +647,7 @@ describe('CleanupStep 空状态', () => {
       cleanupScan: scan,
       cleanupResult: null,
       busy: null,
-      cleanupChecked: new Set(),
-      cleanupMove: new Set(),
-      cleanupStaleMove: new Set(),
+      cleanupSelection: { delete: new Set(), move: new Set(), staleMove: new Set() },
       cleanupFolders: new Set(),
       staleScan: null,
       staleState: 'idle',
@@ -830,7 +814,8 @@ describe('CleanupStep 内容聚合', () => {
 
 describe('CleanupStep 失效链接一节', () => {
   beforeEach(() => {
-    useStore.setState({ cleanupLinks: [], linkCheckState: 'idle', cleanupMove: new Set() })
+    useStore.setState({ cleanupLinks: [], linkCheckState: 'idle',
+      cleanupSelection: { delete: new Set(), move: new Set(), staleMove: new Set() } })
   })
 
   it('没授权前只有说明和按钮，不列任何结果', async () => {
@@ -866,7 +851,7 @@ describe('CleanupStep 失效链接一节', () => {
         { bookmarkId: '200', url: 'https://gone.com/p', verdict: 'dead', status: 404, errorKind: null },
         { bookmarkId: '201', url: 'https://blocked.com/p', verdict: 'suspect', status: 403, errorKind: null },
       ],
-      cleanupChecked: new Set(['200']),
+      cleanupSelection: { delete: new Set(['200']), move: new Set(), staleMove: new Set() },
     })
     render(<CleanupStep />)
     await openCleanupTab('失效链接')
@@ -881,13 +866,13 @@ describe('CleanupStep 失效链接一节', () => {
       cleanupLinks: [
         { bookmarkId: '200', url: 'https://gone.com/p', verdict: 'dead', status: 404, errorKind: null },
       ],
-      cleanupChecked: new Set(['200']),
+      cleanupSelection: { delete: new Set(['200']), move: new Set(), staleMove: new Set() },
     })
     render(<CleanupStep />)
     await openCleanupTab('失效链接')
     await userEvent.click(screen.getByRole('checkbox', { name: '移到「失效链接」文件夹 https://gone.com/p' }))
-    expect(useStore.getState().cleanupChecked.has('200')).toBe(false)
-    expect(useStore.getState().cleanupMove.has('200')).toBe(true)
+    expect(useStore.getState().cleanupSelection.delete.has('200')).toBe(false)
+    expect(useStore.getState().cleanupSelection.move.has('200')).toBe(true)
   })
 
 
@@ -901,8 +886,7 @@ describe('CleanupStep 失效链接一节', () => {
       cleanupLinks: [
         { bookmarkId: '120', url: 'https://a.com/p', verdict: 'dead', status: 404, errorKind: null },
       ],
-      cleanupChecked: new Set(),
-      cleanupMove: new Set(['120']),
+      cleanupSelection: { delete: new Set(), move: new Set(['120']), staleMove: new Set() },
     })
     render(<CleanupStep />)
     // 目录丙只有 120 这一条，移走之后它就空了

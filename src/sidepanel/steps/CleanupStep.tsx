@@ -28,7 +28,7 @@ function ItemLine({ item }: { item: BookmarkItem }) {
  * 保留项自己的勾选框禁用——「既保留又删除」不是一个有意义的状态。
  */
 function DuplicateGroupCard({ group }: { group: DuplicateGroup }) {
-  const { cleanupKeep, cleanupChecked, setCleanupKeep, toggleCleanupItem } = useStore()
+  const { cleanupKeep, cleanupSelection, setCleanupKeep, toggleCleanupItem } = useStore()
   const keepId = cleanupKeep[group.key] ?? group.keepId
   return (
     <li className="space-y-2 rounded-md border border-neutral-200 p-3">
@@ -46,7 +46,7 @@ function DuplicateGroupCard({ group }: { group: DuplicateGroup }) {
             <input
               type="checkbox"
               className="mt-1 shrink-0"
-              checked={cleanupChecked.has(item.id)}
+              checked={cleanupSelection.delete.has(item.id)}
               disabled={item.id === keepId}
               // 用标题给可访问名，与 ItemLine 显示的那一行同源；空标题回落到 URL。
               // 不用 URL 做名字：同一组里三条 URL 一模一样，读屏念出来三遍完全相同
@@ -94,8 +94,8 @@ const subTabOff = `${subTabBase} text-neutral-600 hover:text-neutral-800`
 
 export function CleanupStep() {
   const {
-    tree, cleanupScan, cleanupResult, aggregateResult, cleanupChecked, cleanupFolders,
-    cleanupLinks, linkCheckState, cleanupMove, cleanupStaleMove,
+    tree, cleanupScan, cleanupResult, aggregateResult, cleanupSelection, cleanupFolders,
+    cleanupLinks, linkCheckState,
     startLinkCheck, toggleCleanupMove, toggleCleanupItem,
     busy, busyTask, progress, logs, cancel,
     undoAvailable, runCleanupScan, runCleanup, toggleCleanupFolder, undo,
@@ -109,8 +109,8 @@ export function CleanupStep() {
    * 少并这一半，预览会漏报一部分目录，用户执行完才发现多清了几个。
    */
   const vacated = useMemo(
-    () => new Set([...cleanupChecked, ...cleanupMove, ...cleanupStaleMove]),
-    [cleanupChecked, cleanupMove, cleanupStaleMove],
+    () => new Set([...cleanupSelection.delete, ...cleanupSelection.move, ...cleanupSelection.staleMove]),
+    [cleanupSelection],
   )
   /**
    * 空目录这一节跟着上面的勾选实时变。直接显示 cleanupScan.emptyFolders 报的是删除
@@ -246,7 +246,7 @@ export function CleanupStep() {
   const normalized = cleanupScan.duplicates.filter((g) => g.kind === 'normalized')
   const dead = cleanupLinks.filter((l) => l.verdict === 'dead')
   const suspect = cleanupLinks.filter((l) => l.verdict === 'suspect')
-  const total = cleanupChecked.size + cleanupMove.size + cleanupStaleMove.size + cleanupFolders.size
+  const total = cleanupSelection.delete.size + cleanupSelection.move.size + cleanupSelection.staleMove.size + cleanupFolders.size
 
   return (
     <div>
@@ -354,14 +354,14 @@ export function CleanupStep() {
                           <input
                             type="checkbox"
                             className="mt-0.5 shrink-0"
-                            checked={cleanupChecked.has(link.bookmarkId)}
+                            checked={cleanupSelection.delete.has(link.bookmarkId)}
                             aria-label={`${t('cleanupDeadActionDelete')} ${link.url}`}
                             onChange={() => toggleCleanupItem(link.bookmarkId)}
                           />
                           <input
                             type="checkbox"
                             className="mt-0.5 shrink-0"
-                            checked={cleanupMove.has(link.bookmarkId)}
+                            checked={cleanupSelection.move.has(link.bookmarkId)}
                             aria-label={`${t('cleanupDeadActionMove')} ${link.url}`}
                             onChange={() => toggleCleanupMove(link.bookmarkId)}
                           />

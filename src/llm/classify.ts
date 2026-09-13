@@ -7,6 +7,7 @@ import type { BookmarkItem, CachedClassification, CategoryCandidate, Classificat
 import type { LlmClient } from './client'
 import { fallbackReason, logBatchDone, logBatchOutputs, logBatchSplit } from './logs'
 import { classifyPrompt } from './prompts'
+import { runLlmBatch } from './batches'
 
 export interface ClassifyInput {
   items: BookmarkItem[]
@@ -32,8 +33,6 @@ export interface ClassifyInput {
 }
 
 const SEMANTIC_RULE_VERSION = 2
-
-const MAX_RETRIES = 2
 
 /**
  * 路径拼接用 \u0000 而不是 '/'：目录名里允许出现 '/'，用它当分隔符时
@@ -191,77 +190,51 @@ async function runBatch(
   hooks: BatchHooks = {},
 ): Promise<Classification[]> {
   const validIds = new Set(candidates.map((c) => c.id))
-  // 仅用于满足类型初始化：正常执行路径下，走到最终 return 之前必然先经过下面的
-  // catch 把它覆盖成真实错误信息，这个初始值实际不会被用户看到，不必双语。
-  let lastError = '未知错误'
-  let truncated = false
-  let timedOut = false
-
-  for (let attempt = 0; attempt <= MAX_RETRIES; attempt++) {
-    try {
-      const raw = (await client.complete(
-        buildBatchPrompt(batch, candidates, locale, includeTopicRule),
-        buildSchema(candidates),
-      )) as { results?: RawResult[] }
-      const byId = new Map((raw.results ?? []).map((r) => [r.bookmark_id, r]))
-
-      return batch.map((item) => {
-        const hit = byId.get(item.id)
-        if (!hit) return unclassified(item, fallbackReason(locale, 'noResult'))
-        const target =
-          hit.target_category_id !== null && validIds.has(hit.target_category_id)
-            ? hit.target_category_id
-            : null
-        const topic = target === null ? String(hit.topic ?? '').trim() : ''
-        return {
-          bookmarkId: item.id,
-          targetCategoryId: target,
-          confidence: target === null ? 0 : hit.confidence,
-          reason: hit.reason,
-          source: 'llm',
-          // 有归属时不带 topic：那个字段只为无家可归的书签存在，
-          // 留着会让下游误以为这条书签还需要一个新目录。
-          ...(topic === '' ? {} : { topic }),
-        }
-      })
-    } catch (error) {
-      lastError = String(error)
-      truncated = (error as { truncated?: boolean }).truncated === true
-      timedOut = (error as { timedOut?: boolean }).timedOut === true
-      // 只进开发者控制台，不进侧栏日志，不必双语。
-      console.error('[Reshelve] 分类请求失败：', error)
-      // 取消之后一个新请求都不再发：那三次注定失败，用户却要眼看着「正在取消」
-      // 多等三个请求加 1.5 秒的退避。
-      if (hooks.isCancelled?.() === true) break
-      // 截断或（可拆的）超时：原样再问同一批没有意义，跳出重试去拆。
-      // 一条的超时、已经拆过一层的超时，仍走下面的可重试退避。
-      const willSplit = batch.length > 1 && (
-        truncated || (timedOut && hooks.timeoutSplit !== false)
-      )
-      if (willSplit) break
-      const retryable = (error as { retryable?: boolean }).retryable === true
-      if (!retryable) break
-      if (attempt < MAX_RETRIES) {
-        await new Promise((resolve) => setTimeout(resolve, 2 ** attempt * 500))
-      }
-    }
+  try {
+    return await runLlmBatch(
+      {
+        client,
+        buildPrompt: (b) => buildBatchPrompt(b, candidates, locale, includeTopicRule),
+        schema: buildSchema(candidates),
+        parse: (raw, b) => {
+          const { results } = (raw ?? {}) as { results?: RawResult[] }
+          const byId = new Map((results ?? []).map((r) => [r.bookmark_id, r]))
+          return b.map((item) => {
+            const hit = byId.get(item.id)
+            if (!hit) return unclassified(item, fallbackReason(locale, 'noResult'))
+            const target =
+              hit.target_category_id !== null && validIds.has(hit.target_category_id)
+                ? hit.target_category_id
+                : null
+            const topic = target === null ? String(hit.topic ?? '').trim() : ''
+            return {
+              bookmarkId: item.id,
+              targetCategoryId: target,
+              confidence: target === null ? 0 : hit.confidence,
+              reason: hit.reason,
+              source: 'llm',
+              // 有归属时不带 topic：那个字段只为无家可归的书签存在，
+              // 留着会让下游误以为这条书签还需要一个新目录。
+              ...(topic === '' ? {} : { topic }),
+            }
+          })
+        },
+        fallback: (item, error) => unclassified(item, fallbackReason(locale, 'failed', error), error),
+        isCancelled: hooks.isCancelled,
+        onError: (error) => {
+          // 只进开发者控制台，不进侧栏日志，不必双语。
+          console.error('[Reshelve] 分类请求失败：', error)
+        },
+      },
+      batch,
+      { onSplit: hooks.onSplit, timeoutSplit: hooks.timeoutSplit },
+    )
+  } catch (error) {
+    // 整批彻底没救（重试用尽 / 取消 / 不可拆的失败）：照常逐条降级为未分类，
+    // 丢的只是这一批的归属建议，分析本身照常出方案。
+    const lastError = String(error)
+    return batch.map((item) => unclassified(item, fallbackReason(locale, 'failed', lastError), lastError))
   }
-  // 输出被截断或整批超时：原样再问只会再失败一次，改成拆成两半分别问。
-  // 两半各自返回与自己逐位对齐的结果，顺序拼回去，「返回值与 batch 一一对应」
-  // 这条契约不变；拆完仍失败的那一半照常降级为未分类，丢的只有它。
-  // 超时只拆一层（childHooks.timeoutSplit = false），避免死端点上二分到单条。
-  const splitTimeout = timedOut && batch.length > 1 && hooks.timeoutSplit !== false
-  if (hooks.isCancelled?.() !== true && batch.length > 1 && (truncated || splitTimeout)) {
-    hooks.onSplit?.(batch.length, splitTimeout ? 'timeout' : 'truncated')
-    const childHooks = splitTimeout ? { ...hooks, timeoutSplit: false } : hooks
-    const mid = Math.ceil(batch.length / 2)
-    // 顺序问而不是并发：外层已经有 concurrency 个 worker 在跑，
-    // 一批刚被截断/超时说明这条线正吃力，没必要再往上叠一倍请求。
-    const head = await runBatch(batch.slice(0, mid), candidates, client, locale, includeTopicRule, childHooks)
-    const tail = await runBatch(batch.slice(mid), candidates, client, locale, includeTopicRule, childHooks)
-    return [...head, ...tail]
-  }
-  return batch.map((item) => unclassified(item, fallbackReason(locale, 'failed', lastError), lastError))
 }
 
 export async function classifyBookmarks(input: ClassifyInput): Promise<Classification[]> {

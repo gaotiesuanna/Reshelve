@@ -8,6 +8,7 @@ import { currentLocale, setLocale, t } from '@/i18n'
 import { DEFAULT_SETTINGS, activeLlm } from '@/storage/settings'
 import { EMPTY_EDITS, type StructureDraft, type StructureEdits, type StructureWorkflowState } from '@/core/structure'
 import type { CleanupScan } from '@/engine/cleanup'
+import type { OrganizePlan } from '@/core/types'
 import { makePlan } from '../fakes/plan'
 import { withLlm } from '../fakes/settings'
 import type { ProgressEvent, TaskRecord } from '@/background/events'
@@ -1370,15 +1371,15 @@ describe('清理模式的勾选', () => {
         emptyFolders: [], items: [], folders: [], scopeRootIds: ['1'],
       },
       cleanupKeep: { 'https://a': '1' },
-      cleanupChecked: new Set(['2']),
+      cleanupSelection: { delete: new Set(['2']), move: new Set(), staleMove: new Set() },
     })
 
     useStore.getState().setCleanupKeep('https://a', '2')
 
     const state = useStore.getState()
     expect(state.cleanupKeep['https://a']).toBe('2')
-    expect(state.cleanupChecked.has('2')).toBe(false)
-    expect(state.cleanupChecked.has('1')).toBe(true)
+    expect(state.cleanupSelection.delete.has('2')).toBe(false)
+    expect(state.cleanupSelection.delete.has('1')).toBe(true)
   })
 })
 
@@ -1881,5 +1882,45 @@ describe('runTask 的统一收场', () => {
     expect(state.applyResult).toBeNull()
     expect(state.busy).toBeNull()
     expect(state.busyTask).toBeNull()
+  })
+})
+
+describe('landTaskResult 的落地规则（发起与接回同一条）', () => {
+  const taskRecord = (over: Partial<TaskRecord> = {}): TaskRecord => ({
+    id: 'task-1', kind: 'analyze', startedAt: 1, status: 'running', cancellable: true, events: [],
+    ...over,
+  })
+
+  beforeEach(() => {
+    vi.mocked(send).mockReset()
+    vi.mocked(send).mockImplementation((req: { kind: string }) =>
+      Promise.resolve({ ok: true, kind: req.kind, tree: [], available: false }) as never)
+    useStore.setState({ pendingTaskId: null, ownPending: false, busy: null, busyTask: null })
+  })
+
+  it('接回跑完的 titleOnly analyze：改名建议照常默认全选（rows 里没有它们，要从 operations 收）', async () => {
+    const plan = makePlan()
+    const titleOnlyPlan: OrganizePlan = {
+      ...plan,
+      titleOnly: true,
+      rebuildStructure: false,
+      // titleOnly 方案的 rows 恒为空：buildPlan 只从分类 items 里造 rows，
+      // 标题改名全部躺在 operations 的 rename_bookmark 里
+      rows: [],
+      operations: [
+        { type: 'rename_bookmark', bookmarkId: 'g0', oldTitle: 'a', newTitle: 'b' },
+        { type: 'rename_bookmark', bookmarkId: 'g1', oldTitle: 'c', newTitle: 'd' },
+      ],
+    }
+    const record = taskRecord({
+      status: 'done',
+      result: { ok: true, kind: 'analyze', outcome: 'plan', plan: titleOnlyPlan },
+      finishedAt: 2,
+    })
+    await useStore.getState().adoptFinishedTask(record)
+
+    const state = useStore.getState()
+    expect(state.step).toBe('review')
+    expect([...state.accepted]).toEqual(['g0', 'g1'])
   })
 })

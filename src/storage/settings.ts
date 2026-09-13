@@ -322,3 +322,74 @@ export async function saveCache(ports: Ports, cache: Map<string, CachedClassific
 export async function clearCache(ports: Ports): Promise<void> {
   await ports.storage.remove(CACHE_KEY)
 }
+
+/** 预设自带的那个模型名，只在这条端点当下就能用的时候才写进去——Key 填了，
+ * 或者本机端点压根不要 Key（isModelConfigured 问的正是这件事）。
+ *
+ * Key 还空着就先摆一个模型名，屏幕上会多出一个圆点：它看着是「已经有一个模型可选」，
+ * 点下去却必然 401。列表里一个模型都没有，反而如实说明了「这条端点还没配完」。
+ * 等 Key 填好，「添加模型」拉的是这个服务商真实的模型清单，比预设里写死的一个名字新。 */
+function presetModels(baseUrl: string, apiKey: string, model: string): string[] {
+  return isModelConfigured({ baseUrl, apiKey, model }) ? [model] : []
+}
+
+/**
+ * 端点表的三个变更操作，与 findEndpoint / activeLlm / ensureActive 住在一起。
+ *
+ * 曾经它们长在 SettingsPanel 里——「active 在任何变更之后指向哪里」这条 invariant
+ * 由视图层的手写函数与 ensureActive 两个 owner 分管，removeEndpoint 的兜底
+ * （落到第一条端点的第一个模型，**不看可用性**）已经与 ensureActive 的规则
+ * （落到第一个**能用**的组合）漂移。收进来之后三个操作统一以 ensureActive 收尾，
+ * 调用方（设置面板）只报意图。
+ *
+ * 删端点连 Key 一起从数组里真删掉，不做标记——留着标记等于 Key 还躺在存储里。
+ */
+
+export function replaceEndpoint(settings: Settings, index: number, next: Endpoint): Settings {
+  const endpoints = settings.endpoints.map((e, i) => (i === index ? next : e))
+  const old = settings.endpoints[index]!
+  // 改地址时把 active 一起跟过去，否则改完地址当前那一对就指空了
+  const active = endpointKey(old.baseUrl) === endpointKey(settings.active.baseUrl)
+    ? { baseUrl: next.baseUrl, model: settings.active.model }
+    : settings.active
+  return ensureActive({ ...settings, endpoints, active })
+}
+
+export function removeEndpoint(settings: Settings, index: number): Settings {
+  const endpoints = settings.endpoints.filter((_, i) => i !== index)
+  // active 指着的端点被删了：先清空，再让 ensureActive 落到剩下第一个**能用**的组合；
+  // 一个能用的都不剩就保持空着，activeLlm 的兜底让界面回到「还没配置模型」。
+  // 绝不让 active 悬在一条已经不存在的端点上。
+  const dangling = endpointKey(settings.active.baseUrl) !== ''
+    && !endpoints.some((e) => endpointKey(e.baseUrl) === endpointKey(settings.active.baseUrl))
+  return ensureActive({
+    ...settings,
+    endpoints,
+    ...(dangling ? { active: { baseUrl: '', model: '' } } : {}),
+  })
+}
+
+/**
+ * 点预设 = 新增一个端点，不是覆盖当前这个——覆盖语义在能存多条的世界里没有意义。
+ * 已有同 baseUrl 时只把模型名并进去，**Key 一个字都不动**：预设本来就不带 Key，
+ * 拿它去盖用户已经填好的那把是纯粹的破坏。
+ */
+export function applyPreset(settings: Settings, preset: { baseUrl: string; model: string }): Settings {
+  const key = endpointKey(preset.baseUrl)
+  const hit = settings.endpoints.findIndex((e) => endpointKey(e.baseUrl) === key)
+  if (hit === -1) {
+    return ensureActive({
+      ...settings,
+      endpoints: [
+        ...settings.endpoints,
+        { baseUrl: preset.baseUrl, apiKey: '', models: presetModels(preset.baseUrl, '', preset.model) },
+      ],
+    })
+  }
+  const endpoints = settings.endpoints.map((e, i) => (
+    i !== hit || e.models.includes(preset.model)
+      ? e
+      : { ...e, models: [...e.models, ...presetModels(e.baseUrl, e.apiKey, preset.model)] }
+  ))
+  return ensureActive({ ...settings, endpoints })
+}

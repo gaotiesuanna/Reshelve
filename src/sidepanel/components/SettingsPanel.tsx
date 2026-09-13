@@ -1,78 +1,11 @@
 import { useEffect, useState } from 'react'
 
 import { currentLocale, t } from '@/i18n'
-import { isModelConfigured } from '@/llm/config'
 import { useStore } from '../store'
 import { EndpointCard, domainOf } from './EndpointCard'
 import { CloseIcon, PlusIcon } from './icons'
-import { PRESETS, endpointKey, ensureActive } from '@/storage/settings'
-import type { Endpoint, Settings } from '@/storage/settings'
-
-function replaceEndpoint(settings: Settings, index: number, next: Endpoint): Settings {
-  const endpoints = settings.endpoints.map((e, i) => (i === index ? next : e))
-  const old = settings.endpoints[index]!
-  // 改地址时把 active 一起跟过去，否则改完地址当前那一对就指空了
-  const active = endpointKey(old.baseUrl) === endpointKey(settings.active.baseUrl)
-    ? { baseUrl: next.baseUrl, model: settings.active.model }
-    : settings.active
-  return { ...settings, endpoints, active }
-}
-
-/**
- * 删端点连 Key 一起从数组里真删掉，不做标记——留着标记等于 Key 还躺在存储里。
- * 删掉的正好是在用的那条时，active 落到剩下第一条的第一个模型；一条不剩就清空，
- * 于是 activeLlm 走兜底、界面回到「还没配置模型」。
- */
-function removeEndpoint(settings: Settings, index: number): Settings {
-  const endpoints = settings.endpoints.filter((_, i) => i !== index)
-  const removed = settings.endpoints[index]!
-  if (endpointKey(removed.baseUrl) !== endpointKey(settings.active.baseUrl)) {
-    return { ...settings, endpoints }
-  }
-  const first = endpoints[0]
-  const model = first?.models[0]
-  const active = first === undefined || model === undefined
-    ? { baseUrl: '', model: '' }
-    : { baseUrl: first.baseUrl, model }
-  return { ...settings, endpoints, active }
-}
-
-/**
- * 预设自带的那个模型名，只在这条端点当下就能用的时候才写进去——Key 填了，
- * 或者本机端点压根不要 Key（isModelConfigured 问的正是这件事）。
- *
- * Key 还空着就先摆一个模型名，屏幕上会多出一个圆点：它看着是「已经有一个模型可选」，
- * 点下去却必然 401。列表里一个模型都没有，反而如实说明了「这条端点还没配完」。
- * 等 Key 填好，「添加模型」拉的是这个服务商真实的模型清单，比预设里写死的一个名字新。
- */
-function presetModels(baseUrl: string, apiKey: string, model: string): string[] {
-  return isModelConfigured({ baseUrl, apiKey, model }) ? [model] : []
-}
-
-/**
- * 点预设 = 新增一个端点，不是覆盖当前这个——覆盖语义在能存多条的世界里没有意义。
- * 已有同 baseUrl 时只把模型名并进去，**Key 一个字都不动**：预设本来就不带 Key，
- * 拿它去盖用户已经填好的那把是纯粹的破坏。
- */
-function applyPreset(settings: Settings, preset: { baseUrl: string; model: string }): Settings {
-  const key = endpointKey(preset.baseUrl)
-  const hit = settings.endpoints.findIndex((e) => endpointKey(e.baseUrl) === key)
-  if (hit === -1) {
-    return {
-      ...settings,
-      endpoints: [
-        ...settings.endpoints,
-        { baseUrl: preset.baseUrl, apiKey: '', models: presetModels(preset.baseUrl, '', preset.model) },
-      ],
-    }
-  }
-  const endpoints = settings.endpoints.map((e, i) => (
-    i !== hit || e.models.includes(preset.model)
-      ? e
-      : { ...e, models: [...e.models, ...presetModels(e.baseUrl, e.apiKey, preset.model)] }
-  ))
-  return { ...settings, endpoints }
-}
+import { PRESETS, endpointKey, applyPreset, removeEndpoint, replaceEndpoint } from '@/storage/settings'
+import type { Settings } from '@/storage/settings'
 
 /** 预设卡片：名字一行、域名一行，整块可点。左对齐是为了两列之间字头能对齐。 */
 const presetCard = [
@@ -110,7 +43,7 @@ export function SettingsPanel() {
    * 等于把「还差一步」藏进了一个看不出还差一步的界面。
    */
   const pickPreset = (preset: (typeof PRESETS)[number]): void => {
-    void setSettings(ensureActive(applyPreset(settings, preset)))
+    void setSettings(applyPreset(settings, preset))
     setJustAdded({ key: endpointKey(preset.baseUrl), seq: (justAdded?.seq ?? 0) + 1 })
     setPicking(false)
   }
@@ -137,7 +70,7 @@ export function SettingsPanel() {
                   : null
               }
               initialEditing={endpoint.baseUrl === '' || fresh}
-              onChange={(next) => void setSettings(ensureActive(replaceEndpoint(settings, index, next)))}
+              onChange={(next) => void setSettings(replaceEndpoint(settings, index, next))}
               onDelete={() => void setSettings(removeEndpoint(settings, index))}
               onPick={(model) => void setSettings({
                 ...settings, active: { baseUrl: endpoint.baseUrl, model },
