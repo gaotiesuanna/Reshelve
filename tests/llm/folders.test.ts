@@ -570,10 +570,14 @@ describe('designTagFolders', () => {
     expect(result.map((t) => t.primaryTopic)).toEqual(['语音合成', '语音合成'])
   })
 
-  it('设计失败时整摊标签原样保留', async () => {
+  it('设计失败时整摊标签原样保留，并作为可恢复警告记录', async () => {
     const complete = vi.fn().mockRejectedValue(new Error('boom'))
-    const result = await designTagFolders([tag('1', 'KV Cache')], { complete })
+    const logs: Array<[string, string]> = []
+    const result = await designTagFolders([tag('1', 'KV Cache')], { complete }, {
+      onLog: (message, level) => logs.push([message, level]),
+    })
     expect(result[0]!.primaryTopic).toBe('KV Cache')
+    expect(logs.some(([message, level]) => level === 'warn' && message.includes('目录设计失败'))).toBe(true)
   })
 
   it('保持输入顺序与条数', async () => {

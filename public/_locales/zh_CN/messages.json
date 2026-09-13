@@ -704,6 +704,15 @@
   "progressCancel": {
     "message": "取消"
   },
+  "progressRunning": {
+    "message": "进行中"
+  },
+  "progressCompleted": {
+    "message": "已完成"
+  },
+  "progressFailed": {
+    "message": "失败"
+  },
   "progressLogsExpand": {
     "message": "展开运行日志"
   },

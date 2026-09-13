@@ -367,7 +367,8 @@ export async function classifyBookmarks(input: ClassifyInput): Promise<Classific
         if (ok === size) input.onLog?.(summary, 'info')
         else if (ok === 0) {
           const sep = locale === 'zh_CN' ? '。' : '. '
-          input.onLog?.(`${summary}${sep}${results[0]?.reason ?? ''}`, 'error')
+          // 失败批次会降级为未分类，分析仍会继续；整轮失败由上层 error 状态承载。
+          input.onLog?.(`${summary}${sep}${results[0]?.reason ?? ''}`, 'warn')
         } else input.onLog?.(summary, 'warn')
         const outputs = batch.map((rep, i) => {
           const result = results[i]!

@@ -704,6 +704,15 @@
   "progressCancel": {
     "message": "Cancel"
   },
+  "progressRunning": {
+    "message": "In progress"
+  },
+  "progressCompleted": {
+    "message": "Completed"
+  },
+  "progressFailed": {
+    "message": "Failed"
+  },
   "progressLogsExpand": {
     "message": "Show log"
   },

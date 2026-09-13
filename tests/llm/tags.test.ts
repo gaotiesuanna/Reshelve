@@ -174,7 +174,7 @@ describe('extractTags 的失败收场', () => {
     expect(complete).toHaveBeenCalledTimes(3)
   })
 
-  it('拆批记 warn、半批失败记 error，两条日志分得开', async () => {
+  it('拆批和半批失败都记 warn，两条可恢复警告分得开', async () => {
     const logs: Array<{ message: string; level: string }> = []
     const complete = vi.fn().mockImplementation((prompt: string) => {
       const ids = idsIn(prompt)
@@ -184,7 +184,8 @@ describe('extractTags 的失败收场', () => {
     })
     await extractTags(four, { complete }, { onLog: (message, level) => logs.push({ message, level }) })
     expect(logs.some((l) => l.level === 'warn' && l.message.includes('输出被截断'))).toBe(true)
-    expect(logs.some((l) => l.level === 'error' && l.message.includes('拆开后仍有 2 条失败'))).toBe(true)
+    expect(logs.some((l) => l.level === 'warn' && l.message.includes('拆开后仍有 2 条失败'))).toBe(true)
+    expect(logs.some((l) => l.level === 'error')).toBe(false)
   })
 
   it('整批失败的日志带上一共问了几次', async () => {

@@ -7,6 +7,8 @@ interface Props {
   busy: string | null
   progress: Progress | null
   logs: LogLine[]
+  /** 整轮任务的终态错误；日志里的单批失败不等于整轮失败。 */
+  error?: string | null
   /** 传入时显示取消按钮；只有可中断的步骤才传。 */
   onCancel?: () => void
 }
@@ -17,7 +19,19 @@ const LEVEL_CLASS = {
   error: 'text-red-700',
 } as const
 
-export function ProgressPanel({ busy, progress, logs, onCancel }: Props) {
+const STATUS_LABELS = {
+  running: 'progressRunning',
+  completed: 'progressCompleted',
+  failed: 'progressFailed',
+} as const
+
+const STATUS_CLASS = {
+  running: 'text-neutral-600',
+  completed: 'text-green-700',
+  failed: 'text-red-700',
+} as const
+
+export function ProgressPanel({ busy, progress, logs, error = null, onCancel }: Props) {
   const [expanded, setExpanded] = useState(false)
   const autoExpanded = useRef(false)
   const bottom = useRef<HTMLDivElement>(null)
@@ -47,40 +61,53 @@ export function ProgressPanel({ busy, progress, logs, onCancel }: Props) {
     if (expanded) bottom.current?.scrollIntoView?.({ block: 'nearest' })
   }, [expanded, logs])
 
-  if (busy === null && logs.length === 0) return null
+  const status = busy !== null
+    ? 'running'
+    : error !== null
+      ? 'failed'
+      : logs.length > 0 || progress !== null
+        ? 'completed'
+        : null
+
+  if (status === null) return null
 
   const latest = logs[logs.length - 1]
   const percent =
     progress !== null && progress.total > 0
-      ? Math.round((progress.done / progress.total) * 100)
+      ? busy !== null
+        ? Math.min(99, Math.round((progress.done / progress.total) * 100))
+        : Math.round((progress.done / progress.total) * 100)
       : null
 
   return (
     <div role="status" className="mt-3 rounded border bg-neutral-50 p-2 text-sm leading-caption">
-      {busy !== null && (
-        <div className="flex items-center gap-2 text-neutral-600">
+      <div className={`flex items-center gap-2 ${STATUS_CLASS[status]}`}>
+        {status === 'running' ? (
           <span
             aria-hidden
             className="h-3 w-3 shrink-0 animate-spin rounded-full border border-neutral-300 border-t-neutral-600"
           />
-          <span>{busy}</span>
-          {progress !== null && progress.total > 0 && (
-            <span className="ml-auto shrink-0 text-neutral-500">
-              {t(PHASE_LABELS[progress.phase])} {progress.done}/{progress.total}
-            </span>
-          )}
-          {onCancel !== undefined && (
-            <button
-              className={`shrink-0 rounded border px-2 py-0.5 text-neutral-600 hover:bg-white ${
-                progress !== null && progress.total > 0 ? '' : 'ml-auto'
-              }`}
-              onClick={onCancel}
-            >
-              {t('progressCancel')}
-            </button>
-          )}
-        </div>
-      )}
+        ) : (
+          <span aria-hidden className="w-3 shrink-0 text-center font-semibold">{status === 'failed' ? '!' : '✓'}</span>
+        )}
+        <span className="shrink-0 font-medium">{t(STATUS_LABELS[status])}</span>
+        {busy !== null && <span>{busy}</span>}
+        {progress !== null && progress.total > 0 && (
+          <span className="ml-auto shrink-0 text-neutral-500">
+            {t(PHASE_LABELS[progress.phase])} {progress.done}/{progress.total}
+          </span>
+        )}
+        {onCancel !== undefined && (
+          <button
+            className={`shrink-0 rounded border px-2 py-0.5 text-neutral-600 hover:bg-white ${
+              progress !== null && progress.total > 0 ? '' : 'ml-auto'
+            }`}
+            onClick={onCancel}
+          >
+            {t('progressCancel')}
+          </button>
+        )}
+      </div>
 
       {percent !== null && (
         <div className="mt-2 h-1 w-full overflow-hidden rounded bg-neutral-200">

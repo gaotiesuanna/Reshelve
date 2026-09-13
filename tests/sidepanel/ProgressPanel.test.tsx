@@ -27,6 +27,62 @@ describe('ProgressPanel', () => {
     expect(screen.getByText('分类 320/923')).toBeDefined()
   })
 
+  it('任务运行中明确显示进行中，即使已有失败级别的可恢复日志', () => {
+    render(
+      <ProgressPanel
+        busy="正在分析…"
+        progress={{ phase: 'classify', done: 320, total: 923 }}
+        logs={[...logs, { id: 3, phase: 'classify', level: 'error', message: '批次失败，稍后继续' }]}
+      />,
+    )
+
+    expect(screen.getByText('进行中')).toBeDefined()
+    expect(screen.queryByText('失败')).toBeNull()
+  })
+
+  it('任务正常结束后明确显示已完成', () => {
+    render(<ProgressPanel busy={null} progress={null} logs={logs} />)
+
+    expect(screen.getByText('已完成')).toBeDefined()
+  })
+
+  it('任务最终失败后明确显示失败', () => {
+    render(
+      <ProgressPanel
+        busy={null}
+        progress={null}
+        logs={logs}
+        error="分析失败"
+      />,
+    )
+
+    expect(screen.getByText('失败')).toBeDefined()
+  })
+
+  it('任务仍在运行且数字已到总数时，进度条保持未满', () => {
+    const { container } = render(
+      <ProgressPanel
+        busy="正在分析…"
+        progress={{ phase: 'classify', done: 923, total: 923 }}
+        logs={logs}
+      />,
+    )
+
+    expect(container.querySelector('div[style="width: 99%;"]')).not.toBeNull()
+  })
+
+  it('任务结束后，进度条可以显示 100%', () => {
+    const { container } = render(
+      <ProgressPanel
+        busy={null}
+        progress={{ phase: 'classify', done: 923, total: 923 }}
+        logs={logs}
+      />,
+    )
+
+    expect(container.querySelector('div[style="width: 100%;"]')).not.toBeNull()
+  })
+
   it('开跑时自动展开：busy 从 null 变成非空，全部日志直接可见', () => {
     const { rerender } = render(<ProgressPanel busy={null} progress={null} logs={[]} />)
     rerender(<ProgressPanel busy="正在分析…" progress={null} logs={logs} />)

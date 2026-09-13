@@ -436,11 +436,12 @@ export async function designFolders(
     // 两个调用方的收场完全不同，文案不能共用（见 logs.ts 的 logDeepenDesignFailed）：
     // - 全局那次（非 oneLevel）失败，调用方退回原始标签进建树，「保留原始标签」是对的；
     // - 下切那次（oneLevel）发生在建树之后，没有标签可退，实际是这一个目录保持原样。
+    // 这里只回退原始标签或保留当前目录，整轮分析仍会继续；真正整轮失败由上层 error 状态承载。
     options.onLog?.(
       options.oneLevel === true
         ? logDeepenDesignFailed(locale, options.parentTitle ?? '', first.detail)
         : logFoldersFailed(locale, first.detail),
-      'error',
+      'warn',
     )
     return null
   }

@@ -682,7 +682,7 @@ describe('handle', () => {
     expect(events.at(-1)!.message).toContain('分析完成')
   })
 
-  it('批次失败时推送 error 级别的日志', async () => {
+  it('批次失败但分析继续时推送 warn 级别的日志', async () => {
     const { ports } = setup()
     await saveSettings(ports, {
       ...DEFAULT_SETTINGS,
@@ -699,9 +699,10 @@ describe('handle', () => {
       onEvent: (event: ProgressEvent) => events.push(event),
     })
 
-    const errors = events.filter((e) => e.level === 'error')
-    expect(errors).toHaveLength(1)
-    expect(errors[0]!.message).toContain('400')
+    const warnings = events.filter((e) => e.level === 'warn')
+    expect(warnings).toHaveLength(1)
+    expect(warnings[0]!.message).toContain('400')
+    expect(events.some((e) => e.level === 'error')).toBe(false)
   })
 
   it('取消后停止分析并返回 cancelled 标记', async () => {

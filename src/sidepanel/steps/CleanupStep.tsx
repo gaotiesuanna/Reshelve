@@ -97,7 +97,7 @@ export function CleanupStep() {
     tree, cleanupScan, cleanupResult, aggregateResult, cleanupSelection, cleanupFolders,
     cleanupLinks, linkCheckState,
     startLinkCheck, toggleCleanupMove, toggleCleanupItem,
-    busy, busyTask, progress, logs, cancel,
+    busy, busyTask, error, progress, logs, cancel,
     undoAvailable, runCleanupScan, runCleanup, toggleCleanupFolder, undo,
   } = useStore()
   const [tab, setTab] = useState<CleanupTab>('stale')
@@ -457,6 +457,7 @@ export function CleanupStep() {
           busy={busy}
           progress={progress}
           logs={logs}
+          error={error}
           {...(busyTask === 'check_links' ? { onCancel: () => void cancel() } : {})}
         />
       )}

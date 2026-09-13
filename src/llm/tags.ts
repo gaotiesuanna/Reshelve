@@ -141,7 +141,8 @@ async function runExtraction(
         onSplit: (size, cause) =>
           options.onLog?.(logBatchSplit(locale, label, index, batches.length, size, cause), 'warn'),
         onHalfFailed: (size, error) =>
-          options.onLog?.(logBatchPartFailed(locale, label, index, batches.length, size, error), 'error'),
+          // 失败的部分降级为空主题，仍会继续后续分析；整轮失败由上层 error 状态承载。
+          options.onLog?.(logBatchPartFailed(locale, label, index, batches.length, size, error), 'warn'),
       },
     )
     return new Map(tuples)
@@ -194,7 +195,7 @@ async function runExtraction(
         if (options.isCancelled?.() !== true) {
           options.onLog?.(
             logBatchFailed(locale, label, index, batches.length, String(error), tally.attempts),
-            'error',
+            'warn',
           )
         }
       }

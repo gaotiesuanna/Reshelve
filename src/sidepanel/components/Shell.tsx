@@ -151,6 +151,7 @@ export function Shell({ children, organizeContent }: { children: ReactNode; orga
                 busy={busy}
                 progress={progress}
                 logs={logs}
+                error={error}
                 {...(cancellable
                   ? { onCancel: () => void cancel() }
                   : {})}
