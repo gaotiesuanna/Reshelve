@@ -1819,6 +1819,17 @@
       }
     }
   },
+  "errFolderDesignFailed": {
+    "message": "Folder design failed; this analysis has been aborted.\n$detail$",
+    "placeholders": {
+      "detail": {
+        "content": "$1"
+      }
+    }
+  },
+  "errNoTopicsForDesign": {
+    "message": "Tag extraction failed for every batch, so there is no information to design folders from. This analysis has been aborted."
+  },
   "logAnalyzeStart": {
     "message": "Analysis started: reading the bookmark tree"
   },

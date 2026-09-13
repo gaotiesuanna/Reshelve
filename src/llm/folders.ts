@@ -449,7 +449,9 @@ function logAdopted(
  * 这类碎片。碎片各自都不够大，按数量筛只会把它们统统扔进「其他」。
  * 归并只能在这里做——这是唯一看得到全部标签的地方。
  *
- * 失败返回 null，调用方退回未归并的原始标签，不让整次分析白跑。
+ * 失败返回 null，收场由调用方定：全局那一摊（designTagFolders）会把它升级成
+ * FolderDesignError 中止整轮分析；下切（oneLevel）那一摊保持非致命，
+ * 失败的这一个目录原样保留，整轮继续。
  */
 export async function designFolders(
   topics: TopicCount[],

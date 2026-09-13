@@ -137,8 +137,8 @@ export function logFoldersFailed(locale: Locale, detail: string): string {
 /**
  * 下切（oneLevel）那条路上的设计失败。
  *
- * 不能沿用 logFoldersFailed：那条文案的尾巴是「保留原始标签进入建树」，而下切发生在
- * 建树**之后**——没有任何标签被退回，实际发生的是这一个目录原封不动留了下来。
+ * 不能沿用 logFoldersFailed：那条文案说的是「本轮分析已中止」，而下切发生在
+ * 建树**之后**——整轮并没有中止，实际发生的是这一个目录原封不动留了下来。
  * 沿用它等于在日志里说一句假话，而这条路此前的表现更糟：整条分支静默 `continue`，
  * 一个撑爆的目录没被切开，链路上没有任何一处说过为什么（与 logFoldersRetryFailed
  * 分家的理由相同，见 issues review I1）。

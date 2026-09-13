@@ -1819,6 +1819,17 @@
       }
     }
   },
+  "errFolderDesignFailed": {
+    "message": "目录设计失败，本轮分析已中止。\n$detail$",
+    "placeholders": {
+      "detail": {
+        "content": "$1"
+      }
+    }
+  },
+  "errNoTopicsForDesign": {
+    "message": "标签抽取全部失败，没有可用于设计目录的信息，本轮分析已中止。"
+  },
   "logAnalyzeStart": {
     "message": "开始分析：正在读取书签树"
   },

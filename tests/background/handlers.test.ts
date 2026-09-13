@@ -171,6 +171,54 @@ describe('handle', () => {
     expect(complete).toHaveBeenCalledTimes(2)
   })
 
+  it('rebuild 目录设计彻底失败时如实报错，不产出只剩兜底目录的假成功草案', async () => {
+    const fake = createFakeBookmarks(rebuildTree)
+    const ports = { bookmarks: fake.api, storage: createFakeStorage() }
+    await saveSettings(ports, {
+      ...DEFAULT_SETTINGS,
+      ...withLlm({ baseUrl: 'https://x/v1', apiKey: 'sk-x', model: 'm' }),
+    })
+    const complete = vi.fn()
+      .mockResolvedValueOnce({
+        results: REBUILD_IDS.map((bookmark_id) => ({ bookmark_id, primary_topic: '前端' })),
+      })
+      .mockRejectedValueOnce(Object.assign(new Error('模型接口返回 500'), { retryable: false }))
+
+    const response = await handleRequest(
+      ports,
+      { kind: 'analyze', scopeRootIds: ['1'], modeOverride: 'rebuild' },
+      { createClient: () => ({ complete }), now: () => 1 },
+    )
+
+    expect(response).toMatchObject({ ok: false })
+    expect((response as { error: string }).error).toContain('模型接口返回 500')
+  })
+
+  it('rebuild 目录设计阶段被取消时仍返回 cancelled，不被误判成设计失败', async () => {
+    const fake = createFakeBookmarks(rebuildTree)
+    const ports = { bookmarks: fake.api, storage: createFakeStorage() }
+    await saveSettings(ports, {
+      ...DEFAULT_SETTINGS,
+      ...withLlm({ baseUrl: 'https://x/v1', apiKey: 'sk-x', model: 'm' }),
+    })
+    let cancelled = false
+    const complete = vi.fn().mockImplementation(async (prompt: string) => {
+      if (prompt.includes('标签清单：')) {
+        cancelled = true // 抽标签成功后用户点了取消，紧接着的目录设计请求失败
+        throw Object.assign(new Error('请求已取消'), { retryable: false })
+      }
+      return { results: REBUILD_IDS.map((bookmark_id) => ({ bookmark_id, primary_topic: '前端' })) }
+    })
+
+    const response = await handleRequest(
+      ports,
+      { kind: 'analyze', scopeRootIds: ['1'], modeOverride: 'rebuild' },
+      { createClient: () => ({ complete }), now: () => 1, isCancelled: () => cancelled },
+    )
+
+    expect(response).toMatchObject({ ok: false, cancelled: true })
+  })
+
   it('rebuild never classifies before confirmation and classifies against the confirmed tree', async () => {
     const preparePorts = async () => {
       const fake = createFakeBookmarks(workflowTree)
@@ -558,6 +606,11 @@ describe('handle', () => {
     const complete = vi.fn(async (prompt: string) => {
       const ids = [...prompt.matchAll(/^- id=(\S+) 目录=(.+)$/gm)]
       if (ids.length === 0) {
+        // 目录设计那一次调用也必须给真答案：设计失败如今是致命错误，不再退回
+        // 原始标签——这条用例验的是「复用已有目录」，不是设计失败的兜底
+        if (prompt.includes('标签清单：')) {
+          return { folders: [{ title: '前端', topics: ['前端'], children: [] }] }
+        }
         return { results: bookmarks.map((b) => ({ bookmark_id: b.id, primary_topic: '前端', secondary_topic: null })) }
       }
       const target = ids.find((m) => m[2]!.includes('前端'))![1]!
@@ -619,7 +672,7 @@ describe('handle', () => {
     expect(res.plan.tags[0]!.primaryTopic).toBe('前端框架')
   })
 
-  it('目录设计失败时整次分析仍然完成，退回原始标签', async () => {
+  it('目录设计彻底失败时如实报错，不产出只剩兜底目录的假成功树', async () => {
     const complete = vi.fn(async (prompt: string) => {
       if (prompt.includes('抽取一个具体主题')) {
         return { results: [{ bookmark_id: '100', primary_topic: 'React 生态' }] }
@@ -636,9 +689,12 @@ describe('handle', () => {
       removeEmptyFolders: false,
       rewriteGithubTitles: false,
     })
+    // 目录设计失败不再是「退回原始标签继续跑」：整轮分析如实失败，
+    // 错误文案带上原始 detail，让用户看到的是真话而不是一棵空树
     const res = await handle(ports, { kind: 'analyze', scopeRootIds: ['1'], modeOverride: 'rebuild' }, deps)
-    expect(res).toMatchObject({ ok: true })
-    expect((res as { plan: OrganizePlan }).plan.tags[0]!.primaryTopic).toBe('React 生态')
+    expect(res).toMatchObject({ ok: false })
+    expect((res as { error: string }).error).toContain('目录设计失败，本轮分析已中止')
+    expect((res as { error: string }).error).toContain('boom')
   })
 
   it('分析过程中推送阶段进度与批次日志', async () => {
@@ -1075,8 +1131,13 @@ function setupAnalyze(urls: Record<string, string>) {
     ]},
   ])
   const classifyPrompts: string[] = []
-  // 标签阶段有两种提示词（通用抽取 + 聚合组细分），分类阶段只有一种，正向识别它
+  // 标签阶段有两种提示词（通用抽取 + 聚合组细分），目录设计一次（标签清单），
+  // 分类阶段只有一种，正向识别它。目录设计必须给真答案：设计失败如今是
+  // 致命错误，不再退回原始标签。
   const complete = vi.fn(async (prompt: string) => {
+    if (prompt.includes('标签清单：')) {
+      return { folders: [{ title: '工具', topics: ['工具'], children: [] }] }
+    }
     if (!prompt.includes('候选目录')) {
       return {
         results: Object.keys(urls).map((id) => ({

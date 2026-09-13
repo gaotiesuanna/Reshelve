@@ -28,6 +28,7 @@ import { findBookmarksBar } from '@/core/import'
 import { importTree } from '@/engine/importTree'
 import { moveBookmarks, MoveBookmarksError } from '@/engine/moveBookmarks'
 import { classifyBookmarks } from '@/llm/classify'
+import { FolderDesignError } from '@/llm/folders'
 import type { EmitProgress, ProgressPhase } from './events'
 import type { Request, Response } from './messages'
 import {
@@ -182,6 +183,14 @@ export async function handle(
             return { ok: true, kind: 'analyze', outcome: 'structure', draft }
           } catch (error) {
             if (error instanceof RebuildCancelledError) return CANCELLED
+            if (error instanceof FolderDesignError) {
+              return {
+                ok: false,
+                error: error.reason === 'no-topics'
+                  ? t('errNoTopicsForDesign')
+                  : t('errFolderDesignFailed', error.detail),
+              }
+            }
             throw error
           }
         }
