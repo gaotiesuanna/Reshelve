@@ -6,6 +6,7 @@ import type { TopicCluster } from '@/core/newTopics'
 import { MAX_SIBLINGS } from '@/core/tree'
 import { SHAPE_MAX_SIBLINGS } from '@/core/shape'
 import { SKILL_TOPIC } from '@/core/rules'
+import { runLlmRequest } from './batches'
 import { NO_TOPIC } from './tags'
 import type { LlmClient } from './client'
 import {
@@ -304,7 +305,12 @@ async function requestDesign(
   options: DesignOptions,
 ): Promise<DesignAttempt> {
   try {
-    const response = (await client.complete(prompt, DESIGN_SCHEMA)) as {
+    const response = (await runLlmRequest({
+      client,
+      prompt,
+      schema: DESIGN_SCHEMA,
+      isCancelled: options.isCancelled,
+    })) as {
       folders?: RawFolder[]
     }
     const raw = response.folders ?? []

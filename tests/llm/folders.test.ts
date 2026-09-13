@@ -1,4 +1,5 @@
-import { describe, it, expect, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { batchBackoffMs } from '@/llm/batches'
 import {
   collectTopics,
   normalizeSkillDesign,
@@ -337,6 +338,37 @@ describe('designFolders', () => {
     })
     await designFolders(topics, { complete }, { onLog })
     expect(onLog.mock.calls.some(([, level]) => level === 'warn')).toBe(false)
+  })
+})
+
+describe('designFolders 的传输层重试', () => {
+  const topics = [{ topic: 'Claude Code', count: 3 }]
+
+  beforeEach(() => {
+    vi.useFakeTimers()
+  })
+  afterEach(() => {
+    vi.useRealTimers()
+  })
+
+  it('500 后重试成功，正常返回设计结果', async () => {
+    const complete = vi.fn()
+    complete.mockRejectedValueOnce(Object.assign(new Error('500'), { retryable: true }))
+    complete.mockResolvedValueOnce({ folders: [{ title: 'AI', topics: ['Claude Code'], children: [] }] })
+    const pending = designFolders(topics, { complete })
+    await vi.advanceTimersByTimeAsync(batchBackoffMs(0))
+    const result = await pending
+    expect(complete).toHaveBeenCalledTimes(2)
+    expect(result!.folders).toEqual([{ title: 'AI', children: [] }])
+  })
+
+  it('500 重试耗尽后仍返回 null——重试口径生效，不是一次就死', async () => {
+    const complete = vi.fn().mockRejectedValue(Object.assign(new Error('500'), { retryable: true }))
+    const pending = designFolders(topics, { complete })
+    await vi.advanceTimersByTimeAsync(batchBackoffMs(0))
+    await vi.advanceTimersByTimeAsync(batchBackoffMs(1))
+    expect(await pending).toBeNull()
+    expect(complete).toHaveBeenCalledTimes(3)
   })
 })
 
