@@ -8,9 +8,10 @@ import {
   measureFallbackShare,
   measureTopSiblings,
   promoteFallbackChildren,
+  type TargetAssignment,
 } from '@/core/audit'
 import type { Locale } from '@/core/locale'
-import { buildPlan } from '@/core/plan'
+import { buildPlan, type FolderMoveSpec, type NewFolderSpec } from '@/core/plan'
 import { MIN_FOLDER_BOOKMARKS, pruneSmallFolders } from '@/core/prune'
 import { FALLBACK_SHARE_LIMIT, MAX_LEAF, SHAPE_MAX_SIBLINGS, deriveShape } from '@/core/shape'
 import { planTitleRewrites } from '@/core/titles'
@@ -24,7 +25,9 @@ import {
 } from '@/core/structure'
 import { buildCategoryTree, FALLBACK_TITLE, MAX_SIBLINGS as PRODUCT_MAX_SIBLINGS } from '@/core/tree'
 import type {
+  BookmarkItem,
   CachedClassification,
+  CategoryCandidate,
   FolderItem,
   OrganizePlan,
   ScanResult,
@@ -101,7 +104,94 @@ function assertNotCancelled(input: { isCancelled: () => boolean }): void {
   if (input.isCancelled()) throw new RebuildCancelledError('cancelled')
 }
 
-function appendMeasurementWarnings(
+/**
+ * 结构自检共用的日志口：调用方绑好自己的 phase（本模块用 'tree'，plan-analysis 的
+ * 归入现有路径用 'classify'），helper 只管说什么、不管往哪个槽里说。
+ */
+export type SelfCheckLog = (message: string, level?: 'info' | 'warn') => void
+
+/**
+ * 结构自检其一：塌掉与上层同名的穿透层。两种模式共用——非推翻模式下
+ * core/newTopics.ts 同样会在范围根下建新目录，同名套娃是同一个 bug。
+ * 只动 newFolders 里的目录，用户自己的目录一根手指都不碰。
+ * 必须排在下切之前——塌完之后原本第 2 层的目录升到第 1 层，深度预算凭空多出一层。
+ */
+export function collapseSameNameLayer<T extends TargetAssignment>(input: {
+  candidates: CategoryCandidate[]
+  newFolders: NewFolderSpec[]
+  classifications: T[]
+  existingFolders: FolderItem[]
+  locale: Locale
+  mergeRootTemporaryId: string | null
+}, log: SelfCheckLog): { candidates: CategoryCandidate[]; newFolders: NewFolderSpec[]; classifications: T[] } {
+  const collapsed = collapseSameNameFolders({
+    candidates: input.candidates,
+    newFolders: input.newFolders,
+    classifications: input.classifications,
+    existingFolders: input.existingFolders,
+    mergeRootTemporaryId: input.mergeRootTemporaryId,
+  })
+  if (collapsed.collapsedTitles.length > 0) {
+    log(t('logReviewCollapsed', String(collapsed.collapsedTitles.length)))
+  }
+  return { candidates: collapsed.candidates, newFolders: collapsed.newFolders, classifications: collapsed.classifications }
+}
+
+/**
+ * 结构自检其三：把「其他」切出来的族提到一级。「其他」是收容所，不应成为主题
+ * 目录的父级。推翻模式下处理本轮新建的子目录；归入现有模式下则生成 move_folder，
+ * 把已有子目录整体移到范围根。
+ */
+export function promoteFallbackLayer<T extends TargetAssignment>(input: {
+  candidates: CategoryCandidate[]
+  newFolders: NewFolderSpec[]
+  classifications: T[]
+  locale: Locale
+  rootIds: string[]
+  existingFolders: Array<Pick<FolderItem, 'id' | 'parentId' | 'index'>>
+  scanBookmarks: BookmarkItem[]
+}, log: SelfCheckLog): {
+  candidates: CategoryCandidate[]
+  newFolders: NewFolderSpec[]
+  classifications: T[]
+  folderMoves: FolderMoveSpec[]
+  warnings: string[]
+} {
+  const bookmarkCountByFolder = new Map<string, number>()
+  for (const bookmark of input.scanBookmarks) {
+    bookmarkCountByFolder.set(
+      bookmark.parentId,
+      (bookmarkCountByFolder.get(bookmark.parentId) ?? 0) + 1,
+    )
+  }
+  const promotion = promoteFallbackChildren({
+    candidates: input.candidates,
+    newFolders: input.newFolders,
+    classifications: input.classifications,
+    locale: input.locale,
+    rootIds: input.rootIds,
+    existingFolders: input.existingFolders,
+    bookmarkCountByFolder,
+  })
+  for (const warning of promotion.warnings) log(warning, 'warn')
+  if (promotion.promoted.length > 0) {
+    const detail = promotion.promoted
+      .map((item) => (input.locale === 'zh_CN'
+        ? `「${item.title}」${item.count} 条`
+        : `"${item.title}" (${item.count})`))
+      .join(input.locale === 'zh_CN' ? '、' : ', ')
+    log(t('logPromotedFallback', String(promotion.promoted.length), detail))
+  }
+  return {
+    candidates: promotion.candidates,
+    newFolders: promotion.newFolders,
+    classifications: promotion.classifications,
+    folderMoves: promotion.folderMoves,
+    warnings: promotion.warnings,
+  }
+}
+
+export function appendMeasurementWarnings(
   warnings: string[],
   candidates: StructureDraft['candidates'],
   assignments: StructureDraft['estimatedAssignments'],
@@ -253,19 +343,17 @@ export async function designRebuildDraft(
     log('tree', t('logPrunedSmall', String(pruned.prunedTitles.length), String(MIN_FOLDER_BOOKMARKS)))
   }
 
-  const collapsed = collapseSameNameFolders({
+  const collapsed = collapseSameNameLayer({
     candidates,
     newFolders,
     classifications: estimatedAssignments,
     existingFolders: input.scan.folders,
+    locale: input.locale,
     mergeRootTemporaryId: planMergeRoot?.temporaryId ?? null,
-  })
+  }, (message, level) => log('tree', message, level))
   candidates = collapsed.candidates
   newFolders = collapsed.newFolders
   estimatedAssignments = collapsed.classifications
-  if (collapsed.collapsedTitles.length > 0) {
-    log('tree', t('logReviewCollapsed', String(collapsed.collapsedTitles.length)))
-  }
 
   const nextTemporaryId = createTemporaryIdFactory(newFolders)
   let deepenCalls = 0
@@ -378,14 +466,7 @@ export async function designRebuildDraft(
     }
   }
 
-  const bookmarkCountByFolder = new Map<string, number>()
-  for (const bookmark of input.scan.bookmarks) {
-    bookmarkCountByFolder.set(
-      bookmark.parentId,
-      (bookmarkCountByFolder.get(bookmark.parentId) ?? 0) + 1,
-    )
-  }
-  const promotion = promoteFallbackChildren({
+  const promotion = promoteFallbackLayer({
     candidates,
     newFolders,
     classifications: estimatedAssignments,
@@ -396,22 +477,13 @@ export async function designRebuildDraft(
       parentId: folder.parentId,
       index: folder.index,
     })),
-    bookmarkCountByFolder,
-  })
+    scanBookmarks: input.scan.bookmarks,
+  }, (message, level) => log('tree', message, level))
   candidates = promotion.candidates
   newFolders = promotion.newFolders
   estimatedAssignments = promotion.classifications
   folderMoves = promotion.folderMoves
   const warnings = [...promotion.warnings]
-  for (const warning of promotion.warnings) log('tree', warning, 'warn')
-  if (promotion.promoted.length > 0) {
-    const detail = promotion.promoted
-      .map((item) => input.locale === 'zh_CN'
-        ? `「${item.title}」${item.count} 条`
-        : `"${item.title}" (${item.count})`)
-      .join(input.locale === 'zh_CN' ? '、' : ', ')
-    log('tree', t('logPromotedFallback', String(promotion.promoted.length), detail))
-  }
   appendMeasurementWarnings(
     warnings,
     candidates,
