@@ -655,7 +655,7 @@ export async function nameMergedFolder(
       locale === 'zh_CN' ? '主题清单：' : 'Topic list:',
       JSON.stringify(topics, null, 2),
     ].join('\n')
-    const response = (await client.complete(prompt, NAME_SCHEMA)) as { name?: unknown }
+    const response = (await runLlmRequest({ client, prompt, schema: NAME_SCHEMA })) as { name?: unknown }
     const name = stripNumberPrefix(String(response.name ?? '').trim()).trim()
     return name === '' ? null : name
   } catch (error) {
@@ -714,7 +714,7 @@ export async function nameNewTopics(
       locale === 'zh_CN' ? '待命名的主题：' : 'Topics to name:',
       JSON.stringify(clusters.map((c) => ({ key: c.key, topic: c.title, count: c.bookmarkIds.length })), null, 2),
     ].join('\n')
-    const response = (await client.complete(prompt, NEW_FOLDER_NAMES_SCHEMA)) as {
+    const response = (await runLlmRequest({ client, prompt, schema: NEW_FOLDER_NAMES_SCHEMA })) as {
       names?: Array<{ key?: unknown; name?: unknown }>
     }
     proposed = new Map(

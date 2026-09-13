@@ -729,6 +729,34 @@ describe('nameMergedFolder', () => {
     const client = { complete: vi.fn().mockResolvedValue({ name: ' 01 AI 学习 ' }) }
     expect(await nameMergedFolder(topics, ['a', 'b'], client, 'zh_CN')).toBe('AI 学习')
   })
+
+  describe('传输层重试', () => {
+    beforeEach(() => {
+      vi.useFakeTimers()
+    })
+    afterEach(() => {
+      vi.useRealTimers()
+    })
+
+    it('500 后重试成功', async () => {
+      const complete = vi.fn()
+      complete.mockRejectedValueOnce(Object.assign(new Error('500'), { retryable: true }))
+      complete.mockResolvedValueOnce({ name: 'AI 与前端' })
+      const pending = nameMergedFolder(topics, ['a', 'b'], { complete }, 'zh_CN')
+      await vi.advanceTimersByTimeAsync(batchBackoffMs(0))
+      expect(await pending).toBe('AI 与前端')
+      expect(complete).toHaveBeenCalledTimes(2)
+    })
+
+    it('500 重试耗尽后仍返回 null，不抛出', async () => {
+      const complete = vi.fn().mockRejectedValue(Object.assign(new Error('500'), { retryable: true }))
+      const pending = nameMergedFolder(topics, ['a', 'b'], { complete }, 'zh_CN')
+      await vi.advanceTimersByTimeAsync(batchBackoffMs(0))
+      await vi.advanceTimersByTimeAsync(batchBackoffMs(1))
+      expect(await pending).toBeNull()
+      expect(complete).toHaveBeenCalledTimes(3)
+    })
+  })
 })
 
 describe('nameNewTopics', () => {
@@ -803,6 +831,36 @@ describe('nameNewTopics', () => {
     const client = { complete: vi.fn().mockResolvedValue({ names: [{ key: '语音合成', name: '语音与音频' }] }) }
     const names = await nameNewTopics(clusters, ['语音与音频', '语音合成'], client, 'zh_CN')
     expect(names.has('语音合成')).toBe(false)
+  })
+
+  describe('传输层重试', () => {
+    beforeEach(() => {
+      vi.useFakeTimers()
+    })
+    afterEach(() => {
+      vi.useRealTimers()
+    })
+
+    it('500 后重试成功', async () => {
+      const complete = vi.fn()
+      complete.mockRejectedValueOnce(Object.assign(new Error('500'), { retryable: true }))
+      complete.mockResolvedValueOnce({ names: [{ key: '语音合成', name: '语音与音频' }] })
+      const pending = nameNewTopics(clusters, [], { complete }, 'zh_CN')
+      await vi.advanceTimersByTimeAsync(batchBackoffMs(0))
+      const names = await pending
+      expect(names.get('语音合成')).toBe('语音与音频')
+      expect(complete).toHaveBeenCalledTimes(2)
+    })
+
+    it('500 重试耗尽后全部退回主题名，不抛出', async () => {
+      const complete = vi.fn().mockRejectedValue(Object.assign(new Error('500'), { retryable: true }))
+      const pending = nameNewTopics(clusters, [], { complete }, 'zh_CN')
+      await vi.advanceTimersByTimeAsync(batchBackoffMs(0))
+      await vi.advanceTimersByTimeAsync(batchBackoffMs(1))
+      const names = await pending
+      expect(names.get('语音合成')).toBe('语音合成')
+      expect(complete).toHaveBeenCalledTimes(3)
+    })
   })
 })
 
