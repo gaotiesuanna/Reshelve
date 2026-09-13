@@ -90,7 +90,7 @@ async function runExtraction(
   label: string,
   locale: Locale,
 ): Promise<TagResult[]> {
-  const batchSize = options.batchSize ?? 25
+  const batchSize = options.batchSize ?? 10
   const concurrency = options.concurrency ?? 4
 
   const batches: BookmarkItem[][] = []

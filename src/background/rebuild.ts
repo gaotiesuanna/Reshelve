@@ -167,6 +167,7 @@ export async function designRebuildDraft(
     onProgress: progress('tags'),
     onLog: (message, level) => log('tags', message, level),
     isCancelled: input.isCancelled,
+    batchSize: input.batchSize,
     concurrency: input.concurrency,
   })
   assertNotCancelled(input)
@@ -300,6 +301,7 @@ export async function designRebuildDraft(
         const fresh = await extractTags(items, input.client, input.locale, {
           onLog: (message, level) => log('tree', message, level),
           isCancelled: input.isCancelled,
+          batchSize: input.batchSize,
           concurrency: input.concurrency,
         })
         assertNotCancelled(input)

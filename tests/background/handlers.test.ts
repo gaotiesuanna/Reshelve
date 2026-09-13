@@ -3980,7 +3980,7 @@ describe('结构自检：撑爆的叶子再切一层', () => {
       onEvent: (event: ProgressEvent) => events.push(event),
     }, 'rebuild')
 
-    expect(tagPasses).toBe(1)
+    expect(tagPasses).toBe(3)
     expect(events.some((e) => e.message.includes('重新抽取标签'))).toBe(false)
     expect(designPrompts).toHaveLength(1)
     const created = plan.operations.flatMap((o) =>

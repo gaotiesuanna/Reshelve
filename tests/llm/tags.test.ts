@@ -65,6 +65,19 @@ describe('extractTags', () => {
     expect(complete).toHaveBeenCalledTimes(3)
   })
 
+  it('默认每批最多向模型发送 10 条收藏', async () => {
+    const complete = vi.fn().mockResolvedValue({ results: [] })
+    const items = Array.from({ length: 21 }, (_, i) => item(String(i), `https://s${i}.dev`))
+
+    await extractTags(items, { complete })
+
+    expect(complete).toHaveBeenCalledTimes(3)
+    const sizes = complete.mock.calls.map(([prompt]) =>
+      [...(prompt as string).matchAll(/"bookmark_id": "([^"]+)"/g)].length,
+    )
+    expect(sizes).toEqual([10, 10, 1])
+  })
+
   it('一批回来后把模型给出的主题打进日志', async () => {
     const logs: string[] = []
     const complete = vi.fn().mockResolvedValue({
