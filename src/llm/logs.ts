@@ -130,8 +130,8 @@ export function logFoldersDone(locale: Locale, folders: number, merged: number):
 
 export function logFoldersFailed(locale: Locale, detail: string): string {
   return locale === 'zh_CN'
-    ? `目录设计失败，保留原始标签进入建树：${detail}`
-    : `Folder design failed; falling back to raw labels: ${detail}`
+    ? `目录设计失败，本轮分析已中止：${detail}`
+    : `Folder design failed; this analysis has been aborted: ${detail}`
 }
 
 /**

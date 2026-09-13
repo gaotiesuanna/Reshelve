@@ -10,6 +10,7 @@ import {
   nameNewTopics,
   isCompoundName,
   fragmentedFamilies,
+  FolderDesignError,
   type FolderDesign,
   type DesignOptions,
 } from '@/llm/folders'
@@ -602,14 +603,22 @@ describe('designTagFolders', () => {
     expect(result.map((t) => t.primaryTopic)).toEqual(['语音合成', '语音合成'])
   })
 
-  it('设计失败时整摊标签原样保留，并作为可恢复警告记录', async () => {
+  it('设计失败时整轮分析中止，不再退回原始标签凑数', async () => {
     const complete = vi.fn().mockRejectedValue(new Error('boom'))
     const logs: Array<[string, string]> = []
-    const result = await designTagFolders([tag('1', 'KV Cache')], { complete }, {
+    await expect(designTagFolders([tag('1', 'KV Cache')], { complete }, {
       onLog: (message, level) => logs.push([message, level]),
-    })
-    expect(result[0]!.primaryTopic).toBe('KV Cache')
+    })).rejects.toMatchObject({ reason: 'design-failed' })
     expect(logs.some(([message, level]) => level === 'warn' && message.includes('目录设计失败'))).toBe(true)
+  })
+
+  it('设计彻底失败的详情能从错误对象上取到，供上层拼错误文案', async () => {
+    const complete = vi.fn().mockRejectedValue(new Error('boom'))
+    await expect(designTagFolders([tag('1', 'KV Cache')], { complete }))
+      .rejects.toMatchObject({ reason: 'design-failed', detail: expect.stringContaining('boom') })
+    // mockRejectedValue 是持久的，第二次调用同样抛错；顺带钉死抛的就是 FolderDesignError 本尊
+    await expect(designTagFolders([tag('1', 'KV Cache')], { complete }))
+      .rejects.toBeInstanceOf(FolderDesignError)
   })
 
   it('保持输入顺序与条数', async () => {
@@ -624,11 +633,11 @@ describe('designTagFolders', () => {
     expect(result.map((t) => t.primaryTopic)).toEqual(['B', 'A'])
   })
 
-  it('标签全空时不发请求', async () => {
+  it('标签全空（全部批次都失败）时抛 no-topics 错误，不发目录设计请求', async () => {
     const complete = vi.fn()
-    const result = await designTagFolders([tag('1', NO_TOPIC)], { complete })
+    await expect(designTagFolders([tag('1', NO_TOPIC)], { complete }))
+      .rejects.toMatchObject({ reason: 'no-topics' })
     expect(complete).not.toHaveBeenCalled()
-    expect(result[0]!.primaryTopic).toBe(NO_TOPIC)
   })
 
   it('取消时不发请求，标签原样保留', async () => {

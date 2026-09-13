@@ -29,6 +29,24 @@ export interface FolderDesign {
 }
 
 /**
+ * 全局目录设计彻底失败——不是下切（oneLevel）那条非致命路。
+ *
+ * llm/ 不允许 import i18n（core/ 与 llm/ 要保持零浏览器依赖，见 src/i18n/index.ts 的头注），
+ * 所以这里只带 reason 与未译的 detail，由 background 层（能 import i18n 的那一层）
+ * 挑消息、拼 t()。
+ */
+export class FolderDesignError extends Error {
+  readonly reason: 'no-topics' | 'design-failed'
+  readonly detail: string
+  constructor(reason: 'no-topics' | 'design-failed', detail: string) {
+    super(`FolderDesignError: ${reason}`)
+    this.name = 'FolderDesignError'
+    this.reason = reason
+    this.detail = detail
+  }
+}
+
+/**
  * Keep the reusable skill repository category at the top level regardless of
  * where the model places it, without mutating the model's folder design.
  */
@@ -162,6 +180,11 @@ export interface DesignOptions {
   onLog?: (message: string, level: 'info' | 'warn' | 'error') => void
   /** 每摊设计开始前检查一次，返回 true 就跳过剩余摊子。 */
   isCancelled?: () => boolean
+  /**
+   * 目录设计彻底失败时的原始详情，仅供 designTagFolders 在抛出 FolderDesignError 前
+   * 取用；designFolders 自身的返回值契约不变，失败仍然是 null，不是抛错。
+   */
+  onFailureDetail?: (detail: string) => void
 }
 
 function buildDesignPrompt(topics: TopicCount[], options: DesignOptions, locale: Locale): string {
@@ -439,16 +462,16 @@ export async function designFolders(
   const prompt = buildDesignPrompt(topics, options, locale)
   const first = await requestDesign(prompt, client, locale, options)
   if (!first.ok) {
-    // 两个调用方的收场完全不同，文案不能共用（见 logs.ts 的 logDeepenDesignFailed）：
-    // - 全局那次（非 oneLevel）失败，调用方退回原始标签进建树，「保留原始标签」是对的；
-    // - 下切那次（oneLevel）发生在建树之后，没有标签可退，实际是这一个目录保持原样。
-    // 这里只回退原始标签或保留当前目录，整轮分析仍会继续；真正整轮失败由上层 error 状态承载。
+    // 两个调用方的收场不同：下切（oneLevel）失败时这一个目录保持原样，整轮继续；
+    // 全局那次失败时 designTagFolders 会把这次失败升级成 FolderDesignError 中止整轮
+    // ——onFailureDetail 把原始详情带出去，供那一层拼最终的错误文案。
     options.onLog?.(
       options.oneLevel === true
         ? logDeepenDesignFailed(locale, options.parentTitle ?? '', first.detail)
         : logFoldersFailed(locale, first.detail),
       'warn',
     )
+    options.onFailureDetail?.(first.detail)
     return null
   }
   const adopt = (attempt: Extract<DesignAttempt, { ok: true }>): FolderDesign => {
@@ -597,7 +620,10 @@ function issueFeedback(locale: Locale, issues: DesignIssues): string[] {
  * 「怎么用这个项目」劈在两个一级目录里（实测 20%），而检索时用户想的是主题，
  * 不是这条书签当初存的是仓库还是它的文档站。
  *
- * 设计失败时整摊标签原样保留：碎片化的目录也好过整摊书签失去归属。
+ * 设计彻底失败时抛出 FolderDesignError 中止整轮分析——失败可能是网络问题（已经按
+ * 传输层口径重试过）、模型返回的形状不对，或抽标签阶段全军覆没导致无主题可设计。
+ * 这里曾经退回未归并的原始标签「凑合」，但那些标签天生一条书签一个，过不了
+ * core/tree.ts 的 minFolderSize 这道闸，只会产出一棵只有「其他」的假成功树。
  */
 export async function designTagFolders(
   tags: TagResult[],
@@ -613,9 +639,23 @@ export async function designTagFolders(
   const before = new Set(
     tags.map((tag, index) => (tag.primaryTopic === NO_TOPIC ? index : -1)).filter((i) => i >= 0),
   )
-  const design = await designFolders(collectTopics(tags), client, locale, options)
-  // 设计失败就保留原始标签：碎片化的目录也好过整摊书签失去归属
-  if (design === null) return tags
+  const topics = collectTopics(tags)
+  // 全部标签批次都失败时到这里必是空——没有任何设计依据。退回原始标签只会让
+  // 每条书签都撑不过 core/tree.ts 的 minFolderSize 那道闸，全部落进「其他」，
+  // 一棵假装成功的空树比一次如实的失败更糟。
+  if (topics.length === 0) throw new FolderDesignError('no-topics', '')
+
+  let failureDetail = ''
+  const design = await designFolders(topics, client, locale, {
+    ...options,
+    onFailureDetail: (detail) => { failureDetail = detail },
+  })
+  if (design === null) {
+    // 取消导致的失败不是设计失败：用户点了取消，标签原样退回，
+    // 真正的收场交给上层的 isCancelled 检查（background/rebuild.ts 的 assertNotCancelled）。
+    if (options.isCancelled?.() === true) return tags
+    throw new FolderDesignError('design-failed', failureDetail)
+  }
   const next = applyDesign(tags, design)
   const newlyUnmapped = next.filter(
     (tag, index) => !before.has(index) && tag.primaryTopic === NO_TOPIC,
