@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { batchBackoffMs, runLlmBatch, type BatchTask } from '@/llm/batches'
+import { batchBackoffMs, runLlmBatch, runLlmRequest, type BatchTask } from '@/llm/batches'
 import type { LlmClient } from '@/llm/client'
 
 type Item = { id: string }
@@ -160,5 +160,67 @@ describe('runLlmBatch 的拆批口径', () => {
     // 与原先 tags.ask 的 cause 语义一致：抛的是触发拆批的那个错误
     await expect(runLlmBatch(task, items(2))).rejects.toThrow('cut')
     expect(complete).toHaveBeenCalledTimes(2)
+  })
+})
+
+describe('runLlmRequest 的重试口径', () => {
+  it('一次成功：只发一个请求，不退避', async () => {
+    const complete = vi.fn().mockResolvedValueOnce({ ok: true })
+    const tally = { attempts: 0 }
+    await expect(runLlmRequest(
+      { client: { complete } as unknown as LlmClient, prompt: 'p', schema: {} },
+      { tally },
+    )).resolves.toEqual({ ok: true })
+    expect(complete).toHaveBeenCalledTimes(1)
+    expect(tally.attempts).toBe(1)
+  })
+
+  it('可重试错误退避后原样再问，最多 MAX_RETRIES 次重试', async () => {
+    const complete = vi.fn()
+    complete.mockRejectedValueOnce(retryableError())
+    complete.mockRejectedValueOnce(retryableError())
+    complete.mockResolvedValueOnce({ ok: true })
+    const pending = runLlmRequest({ client: { complete } as unknown as LlmClient, prompt: 'p', schema: {} })
+    await vi.advanceTimersByTimeAsync(batchBackoffMs(0))
+    await vi.advanceTimersByTimeAsync(batchBackoffMs(1))
+    await expect(pending).resolves.toEqual({ ok: true })
+    expect(complete).toHaveBeenCalledTimes(3)
+  })
+
+  it('不可重试的错误当场抛出，不再退避', async () => {
+    const complete = vi.fn().mockRejectedValueOnce(new Error('bad request'))
+    await expect(runLlmRequest({ client: { complete } as unknown as LlmClient, prompt: 'p', schema: {} }))
+      .rejects.toThrow('bad request')
+    expect(complete).toHaveBeenCalledTimes(1)
+  })
+
+  it('失败后 isCancelled 为 true 时不再发起下一次请求', async () => {
+    const complete = vi.fn().mockRejectedValue(retryableError())
+    const isCancelled = vi.fn().mockReturnValue(true)
+    await expect(runLlmRequest(
+      { client: { complete } as unknown as LlmClient, prompt: 'p', schema: {}, isCancelled },
+    )).rejects.toThrow('500')
+    expect(complete).toHaveBeenCalledTimes(1)
+  })
+
+  it('重试次数用尽：抛出最后一个错误', async () => {
+    const complete = vi.fn().mockRejectedValue(retryableError())
+    const pending = runLlmRequest({ client: { complete } as unknown as LlmClient, prompt: 'p', schema: {} })
+    pending.catch(() => {})
+    await vi.advanceTimersByTimeAsync(batchBackoffMs(0))
+    await vi.advanceTimersByTimeAsync(batchBackoffMs(1))
+    await expect(pending).rejects.toThrow('500')
+    expect(complete).toHaveBeenCalledTimes(3)
+  })
+
+  it('onError 每次失败都调用一次，含最终失败那次', async () => {
+    const complete = vi.fn().mockRejectedValue(retryableError())
+    const onError = vi.fn()
+    const pending = runLlmRequest({ client: { complete } as unknown as LlmClient, prompt: 'p', schema: {}, onError })
+    pending.catch(() => {})
+    await vi.advanceTimersByTimeAsync(batchBackoffMs(0))
+    await vi.advanceTimersByTimeAsync(batchBackoffMs(1))
+    await pending.catch(() => {})
+    expect(onError).toHaveBeenCalledTimes(3)
   })
 })

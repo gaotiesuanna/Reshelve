@@ -138,3 +138,55 @@ export async function runLlmBatch<TIn, TOut>(
 
   throw lastError
 }
+
+export interface RequestTask {
+  client: LlmClient
+  prompt: string
+  schema: object
+  /** 每次失败后、发下一个请求之前问一次。 */
+  isCancelled?: () => boolean
+  /** 每次失败先进开发者控制台（调用方各带各的前缀），不进侧栏日志，不必双语。 */
+  onError?: (error: unknown) => void
+}
+
+export interface RequestRunOptions {
+  /** 失败次数记在这本账上，供调用方的失败日志点名。 */
+  tally?: BatchTally
+  backoffMs?: (attempt: number) => number
+}
+
+/**
+ * 单次请求的重试引擎，与 runLlmBatch 共用 MAX_RETRIES 与 batchBackoffMs 这两个口径，
+ * 但不拆批——folders.ts 的目录设计、命名类调用只问一次，没有 batch 条目可拆。
+ *
+ * 可重试（429 / 5xx / 网络，client.ts 标了 retryable）——退避后原样再问，最多
+ * MAX_RETRIES 次；其余错误（含截断、非法 JSON、取消）当场抛出，不浪费一次调用。
+ * 全部用完仍失败时抛出最后一个原始错误，降级政策归调用方。
+ */
+export async function runLlmRequest(
+  task: RequestTask,
+  opts: RequestRunOptions = {},
+): Promise<unknown> {
+  const backoffMs = opts.backoffMs ?? batchBackoffMs
+  const flagged = (error: unknown): boolean =>
+    (error as Record<string, unknown> | null)?.retryable === true
+
+  let lastError: unknown = new Error('未知错误')
+
+  for (let attempt = 0; attempt <= MAX_RETRIES; attempt++) {
+    if (opts.tally !== undefined) opts.tally.attempts++
+    try {
+      return await task.client.complete(task.prompt, task.schema)
+    } catch (error) {
+      lastError = error
+      task.onError?.(error)
+      if (task.isCancelled?.() === true) break
+      if (!flagged(error)) break
+      if (attempt < MAX_RETRIES) {
+        await new Promise((resolve) => setTimeout(resolve, backoffMs(attempt)))
+      }
+    }
+  }
+
+  throw lastError
+}
