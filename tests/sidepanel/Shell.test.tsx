@@ -4,6 +4,7 @@ import userEvent from '@testing-library/user-event'
 import { Shell } from '@/sidepanel/components/Shell'
 import { useStore } from '@/sidepanel/store'
 import type { StructureDraft } from '@/core/structure'
+import type { ScanResult } from '@/core/types'
 
 
 beforeEach(() => {
@@ -293,6 +294,18 @@ describe('Shell 换成完整标签页', () => {
     expect(screen.getByRole('heading', { name: 'Reshelve' })).toBeDefined()
     window.history.pushState({}, '', '/')
   })
+
+  it('标签页整理把书签工作区放左侧、LLM 日志放右侧', () => {
+    window.history.pushState({}, '', '/?view=tab')
+    render(<Shell organizeContent={<div>书签树</div>}>{null}</Shell>)
+
+    const workspace = screen.getByTestId('tab-workspace-split')
+    expect(workspace.className).toContain('lg:grid-cols-')
+    expect(within(screen.getByTestId('tab-bookmark-workspace')).getByText('书签树')).toBeDefined()
+    expect(screen.getByTestId('tab-llm-log')).toBeDefined()
+    expect(screen.getByRole('heading', { name: 'LLM 日志' })).toBeDefined()
+    window.history.pushState({}, '', '/')
+  })
 })
 
 /**
@@ -335,6 +348,20 @@ describe('Shell 的进度条按模式各管各的', () => {
     render(<Shell organizeContent={<div>结构编辑器</div>}>{null}</Shell>)
 
     expect(screen.getByText('等待确认')).toBeDefined()
+    expect(screen.queryByText('已完成')).toBeNull()
+  })
+
+  it('偏好页不会因为扫描完成而显示通用已完成条', () => {
+    useStore.setState({
+      step: 'preferences',
+      scan: {} as ScanResult,
+      busy: null,
+      error: null,
+      logs: [],
+    })
+    render(<Shell organizeContent={<div>偏好设置</div>}>{null}</Shell>)
+
+    expect(screen.getByText('偏好设置')).toBeDefined()
     expect(screen.queryByText('已完成')).toBeNull()
   })
 })

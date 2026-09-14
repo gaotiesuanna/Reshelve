@@ -14,20 +14,20 @@ interface Props {
 
 export type ProgressStatus = 'running' | 'waiting' | 'completed' | 'failed'
 
-const LEVEL_CLASS = {
+export const LEVEL_CLASS = {
   info: 'text-neutral-500',
   warn: 'text-amber-700',
   error: 'text-red-700',
 } as const
 
-const STATUS_LABELS = {
+export const STATUS_LABELS = {
   running: 'progressRunning',
   waiting: 'progressWaiting',
   completed: 'progressCompleted',
   failed: 'progressFailed',
 } as const
 
-const STATUS_CLASS = {
+export const STATUS_CLASS = {
   running: 'text-neutral-600',
   waiting: 'text-amber-700',
   completed: 'text-green-700',

@@ -738,6 +738,12 @@
       }
     }
   },
+  "llmLogTitle": {
+    "message": "LLM 日志"
+  },
+  "llmLogEmpty": {
+    "message": "等待 AI 分析开始…"
+  },
   "sendErrChannelClosed": {
     "message": "后台在返回结果前被中断了（扩展刚重新加载，或后台被浏览器回收）。已经跑完的批次有缓存，重试会快很多。"
   },

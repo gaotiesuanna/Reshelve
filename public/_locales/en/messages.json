@@ -738,6 +738,12 @@
       }
     }
   },
+  "llmLogTitle": {
+    "message": "LLM logs"
+  },
+  "llmLogEmpty": {
+    "message": "Waiting for an AI run to start…"
+  },
   "sendErrChannelClosed": {
     "message": "The background stopped before returning a result (the extension was just reloaded, or the browser suspended it). Finished batches are cached, so a retry is much faster."
   },

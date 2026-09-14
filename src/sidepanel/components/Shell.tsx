@@ -6,6 +6,7 @@ import { isTabView, openAppInTab } from '../lib/openInTab'
 import { REPO_URL } from '../lib/about'
 import { AlertIcon, BookmarkIcon, ChevronLeftIcon, GithubIcon } from './icons'
 import { IndexNavigation, type IndexNavigationItem } from './IndexNavigation'
+import { LogPanel } from './LogPanel'
 import { ProgressPanel, type ProgressStatus } from './ProgressPanel'
 import { SettingsPanel } from './SettingsPanel'
 import { StepIndex, type StepIndexItem } from './StepIndex'
@@ -42,7 +43,6 @@ export function Shell({ children, organizeContent }: { children: ReactNode; orga
     progress,
     logs,
     cancel,
-    scan,
     plan,
     structureDraft,
     applyResult,
@@ -66,9 +66,7 @@ export function Shell({ children, organizeContent }: { children: ReactNode; orga
           ? 'completed'
           : mode === 'organize' && step === 'result' && (applyResult !== null || undoResult !== null)
             ? 'completed'
-            : mode === 'organize' && step === 'preferences' && scan !== null
-              ? 'completed'
-              : null
+            : null
   const content = (
     <>
       <header className={settingsOpen ? 'border-b border-index-line' : ''}>
@@ -171,7 +169,27 @@ export function Shell({ children, organizeContent }: { children: ReactNode; orga
         : 'flex-1 overflow-y-auto p-4'}
       >
         <div className={tabView ? 'mx-auto w-full max-w-7xl' : undefined}>
-          {settingsOpen ? <SettingsPanel /> : (
+          {settingsOpen ? <SettingsPanel /> : tabView && mode === 'organize' ? (
+            <div
+              data-testid="tab-workspace-split"
+              className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_minmax(20rem,24rem)] lg:items-start"
+            >
+              <section data-testid="tab-bookmark-workspace" className="min-w-0">
+                <StepIndex items={stepItems()} currentKey={step}>
+                  {organizeContent ?? children}
+                </StepIndex>
+              </section>
+              <LogPanel
+                status={progressStatus}
+                busy={busy}
+                progress={progress}
+                logs={logs}
+                {...(cancellable
+                  ? { onCancel: () => void cancel() }
+                  : {})}
+              />
+            </div>
+          ) : (
             <>
               {mode === 'organize' ? (
                 <StepIndex items={stepItems()} currentKey={step}>{organizeContent ?? children}</StepIndex>
