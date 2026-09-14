@@ -35,6 +35,32 @@ describe('createLlmClient', () => {
     await expect(client.complete('hi', schema)).rejects.toThrow(/超时/)
   })
 
+  it('默认请求超时为 180 秒', async () => {
+    vi.useFakeTimers()
+    try {
+      const fetchImpl = vi.fn((_url: string, init: RequestInit) => new Promise((_resolve, reject) => {
+        init.signal?.addEventListener('abort', () => reject(new DOMException('aborted', 'AbortError')))
+      }))
+      const client = createLlmClient(config, 'zh_CN', fetchImpl as unknown as typeof fetch)
+      let settled = false
+      const pending = client.complete('hi', schema).then(
+        () => { settled = true; return { ok: true as const } },
+        (error: unknown) => { settled = true; return { ok: false as const, error } },
+      )
+
+      await vi.advanceTimersByTimeAsync(179_999)
+      expect(settled).toBe(false)
+
+      await vi.advanceTimersByTimeAsync(1)
+      await expect(pending).resolves.toMatchObject({
+        ok: false,
+        error: { retryable: true, timedOut: true },
+      })
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
   it('用户取消仍然标成不可重试，没有被超时那条路顶掉', async () => {
     const controller = new AbortController()
     const fetchImpl = vi.fn((_url: string, init: RequestInit) => new Promise((_resolve, reject) => {

@@ -1,6 +1,54 @@
-@tailwind base;
-@tailwind components;
-@tailwind utilities;
+@import "tailwindcss";
+@source "../";
+
+/* Tailwind v4 / shadcn 共享主题：运行时 token 仍留在 :root，主题层只建立语义映射。 */
+@theme inline {
+  --font-sans: var(--font-family-sans);
+  --font-mono: var(--font-family-mono);
+
+  --text-2xs: var(--font-size-2xs);
+  --text-xs: var(--font-size-xs);
+  --text-sm: var(--font-size-sm);
+  --text-md: var(--font-size-md);
+  --text-base: var(--font-size-base);
+  --text-display: var(--font-size-display);
+  --text-title: var(--font-size-title);
+  --text-heading: var(--font-size-heading);
+  --text-body-lg: var(--font-size-body-lg);
+  --text-body: var(--font-size-body);
+  --text-caption: var(--font-size-caption);
+  --text-overline: var(--font-size-overline);
+
+  --font-weight-regular: 400;
+  --font-weight-medium: 500;
+  --font-weight-semibold: 600;
+  --font-weight-bold: 700;
+
+  --leading-snug: var(--line-height-snug);
+  --leading-normal: var(--line-height-normal);
+  --leading-relaxed: var(--line-height-relaxed);
+  --leading-caption: var(--line-height-caption);
+  --leading-body: var(--line-height-body);
+  --leading-display: var(--line-height-display);
+  --leading-title: var(--line-height-title);
+  --leading-heading: var(--line-height-heading);
+  --leading-body-lg: var(--line-height-body-lg);
+  --leading-body-sm: var(--line-height-body-sm);
+  --leading-overline: var(--line-height-overline);
+
+  --color-index-canvas: var(--index-canvas);
+  --color-index-page: var(--index-page);
+  --color-index-ink: var(--index-ink);
+  --color-index-muted: var(--index-muted);
+  --color-index-faint: var(--index-faint);
+  --color-index-line: var(--index-line);
+  --color-index-line-strong: var(--index-line-strong);
+  --color-index-blue: var(--index-blue);
+  --color-index-blue-soft: var(--index-blue-soft);
+
+  --radius-index: var(--index-radius);
+  --spacing-index-row: var(--index-row-min-height);
+}
 
 @layer base {
   /* 侧栏是块固定高度的画布，不是一篇会长的文档：滚动只该发生在 <main> 里那一处。
@@ -15,19 +63,21 @@
 
   body {
     overflow: hidden;
+    background: var(--index-page);
   }
 
   :root {
     --index-canvas: #ffffff;
-    --index-page: #b8e1e4;
-    --index-ink: #18181b;
-    --index-muted: #71717a;
-    --index-faint: #a1a1aa;
-    --index-line: #e4e4e7;
-    --index-line-strong: #d4d4d8;
-    --index-blue: #2563eb;
-    --index-blue-soft: #eff6ff;
-    --index-radius: 9px;
+    --index-page: #f4f8f7;
+    --index-ink: #0f172a;
+    --index-muted: #475569;
+    --index-faint: #94a3b8;
+    --index-line: #e2e8f0;
+    --index-line-strong: #cbd5e1;
+    /* 历史类名保留，视觉主色从亮蓝统一为青绿色。 */
+    --index-blue: #0f766e;
+    --index-blue-soft: #f0fdfa;
+    --index-radius: 10px;
     --index-row-min-height: 42px;
 
     --font-family-sans: ui-sans-serif, system-ui, sans-serif, "Apple Color Emoji", "Segoe UI Emoji", "Segoe UI Symbol", "Noto Color Emoji";
@@ -38,15 +88,26 @@
     --font-size-sm: 0.75rem;
     --font-size-md: 0.8125rem;
     --font-size-base: 0.875rem;
+    /* 语义字号：组件不再只依赖 text-sm/text-base，页面层级一眼可读。 */
+    --font-size-display: 1.75rem;
+    --font-size-title: 1.25rem;
+    --font-size-heading: 1rem;
+    --font-size-body-lg: 1rem;
+    --font-size-body: 0.875rem;
+    --font-size-caption: 0.75rem;
+    --font-size-overline: 0.6875rem;
 
-    --font-weight-regular: 400;
-    --font-weight-medium: 500;
-    --font-weight-semibold: 600;
 
     --line-height-snug: 1.375;
     --line-height-normal: 1.5;
     --line-height-relaxed: 1.625;
     --line-height-caption: 1rem;
     --line-height-body: 1.25rem;
+    --line-height-display: 1.15;
+    --line-height-title: 1.3;
+    --line-height-heading: 1.4;
+    --line-height-body-lg: 1.5;
+    --line-height-body-sm: 1.45;
+    --line-height-overline: 1.2;
   }
 }

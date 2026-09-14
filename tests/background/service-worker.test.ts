@@ -122,12 +122,16 @@ function structureCheckpoint(
 /** open_app_tab 的现场：开了哪个 URL、侧栏开关被拨了哪几下。 */
 let openedUrls: string[]
 let panelToggles: boolean[]
+let panelBehaviors: boolean[]
+let onActionClicked: () => void
 
 beforeEach(async () => {
   calls = []
   lifecycleEvents = []
   openedUrls = []
   panelToggles = []
+  panelBehaviors = []
+  onActionClicked = () => {}
   handle.mockClear()
   createDocument.mockClear()
   closeDocument.mockClear()
@@ -141,8 +145,14 @@ beforeEach(async () => {
       onMessage: { addListener: (fn: typeof onMessage) => { onMessage = fn } },
       onInstalled: { addListener: () => {} },
     },
+    action: {
+      onClicked: { addListener: (fn: () => void) => { onActionClicked = fn } },
+    },
     sidePanel: {
-      setPanelBehavior: () => Promise.resolve(),
+      setPanelBehavior: (options: { openPanelOnActionClick: boolean }) => {
+        panelBehaviors.push(options.openPanelOnActionClick)
+        return Promise.resolve()
+      },
       setOptions: (options: { enabled: boolean }) => {
         panelToggles.push(options.enabled)
         return Promise.resolve()
@@ -612,6 +622,20 @@ describe('收尾落盘', () => {
  * 顺序是这条功能的命根——先禁用再启用，缺了后者扩展图标从此点了没反应。
  */
 describe('换成完整标签页', () => {
+  it('点击扩展图标默认打开整理完整页面，而不是侧边栏', async () => {
+    onActionClicked()
+    await flush()
+
+    expect(openedUrls).toHaveLength(1)
+    const url = new URL(openedUrls[0]!)
+    expect(url.searchParams.get('view')).toBe('tab')
+    expect(url.searchParams.get('mode')).toBe('organize')
+    expect(url.searchParams.get('step')).toBe('scope')
+    expect(url.searchParams.has('ids')).toBe(false)
+    expect(panelToggles).toEqual([])
+    expect(panelBehaviors).toEqual([false])
+  })
+
   it('开带 view/mode/step/ids 参数的标签页，并先禁用再启用侧栏把它关上', async () => {
     const response = await sendAsync({
       kind: 'open_app_tab',

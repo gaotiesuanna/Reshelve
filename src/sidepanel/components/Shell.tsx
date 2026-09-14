@@ -4,7 +4,7 @@ import { TASK_SPECS } from '@/background/task-specs'
 import { useStore, type AppMode, type Step } from '../store'
 import { isTabView, openAppInTab } from '../lib/openInTab'
 import { REPO_URL } from '../lib/about'
-import { AlertIcon, ChevronLeftIcon, GithubIcon } from './icons'
+import { AlertIcon, BookmarkIcon, ChevronLeftIcon, GithubIcon } from './icons'
 import { IndexNavigation, type IndexNavigationItem } from './IndexNavigation'
 import { ProgressPanel, type ProgressStatus } from './ProgressPanel'
 import { SettingsPanel } from './SettingsPanel'
@@ -75,7 +75,7 @@ export function Shell({ children, organizeContent }: { children: ReactNode; orga
         {/* Chrome 侧栏顶部已经显示了图标和「Reshelve」，这里再写一遍是重复，还白占一行高度。
             但那个标题栏属于浏览器界面、不在本文档里，读屏用户在文档中导航时找不到它，
             所以只是视觉隐藏而非删除——保证这个页面至少还有一个 h1。 */}
-        <h1 className="sr-only">Reshelve</h1>
+        {!tabView && <h1 className="sr-only">Reshelve</h1>}
         {/* 模式切换占满这一行、齿轮贴在索引栏右边。不要 justify-between：
             Chrome 顶栏已经是「左身份、右按钮」，再做一遍就是两条叠着的工具栏。
             齿轮仍跟模式同一行——单独占一行的话，清理模式下那行只剩一个 16px 图标。 */}
@@ -86,7 +86,18 @@ export function Shell({ children, organizeContent }: { children: ReactNode; orga
           {settingsOpen ? (
             /* 设置不是第几步，步骤条显示出来会误导。返回和标题同一行：
                正文里再写一个「设置」会变成顶栏只剩返回、下面孤零零一个标题。 */
-            <div className="flex min-h-index-row items-center gap-2 px-3">
+            <div className={tabView
+              ? 'flex min-h-[72px] items-center gap-4 border-b border-index-line bg-white px-5 sm:gap-6 sm:px-8'
+              : 'flex min-h-index-row items-center gap-2 px-3'}
+            >
+              {tabView && (
+                <div className="flex shrink-0 items-center gap-2.5">
+                  <span className="flex h-8 w-8 items-center justify-center rounded-lg bg-index-ink text-white">
+                    <BookmarkIcon className="h-4 w-4" />
+                  </span>
+                  <h1 className="text-base font-semibold tracking-tight text-index-ink">Reshelve</h1>
+                </div>
+              )}
               <button
                 type="button"
                 className="inline-flex h-8 items-center gap-1 px-1 text-sm leading-body text-index-muted transition-colors duration-150 hover:text-index-ink focus-visible:outline focus-visible:outline-2 focus-visible:outline-index-blue motion-reduce:transition-none"
@@ -116,8 +127,9 @@ export function Shell({ children, organizeContent }: { children: ReactNode; orga
               activeKey={mode}
               disabled={busy !== null}
               settingsLabel={t('settingsGearLabel')}
+              variant={tabView ? 'tab' : 'sidebar'}
               // 已经在完整标签页里就不给这颗按钮——再点只会多开一个一模一样的标签。
-              {...(isTabView()
+              {...(tabView
                 ? {}
                 : { openInTabLabel: t('openInTabLabel'), onOpenInTab: () => void openAppInTab({ mode, step, checkedIds: [...checkedIds] }) })}
               onSelect={setMode}
@@ -154,39 +166,44 @@ export function Shell({ children, organizeContent }: { children: ReactNode; orga
           </div>
         </div>
       )}
-      <main className="flex-1 overflow-y-auto p-4">
-        {settingsOpen ? <SettingsPanel /> : (
-          <>
-            {mode === 'organize' ? (
-              <StepIndex items={stepItems()} currentKey={step}>{organizeContent ?? children}</StepIndex>
-            ) : children}
-            {/* 清理扫描结果属于「重复收藏」那一格，由 CleanupStep 自己画。
-                扫描还没回来时 CleanupStep 是 null，进度仍由这里顶上。
-                看板和浏览书签不接这根管子——切过去还挂着「扫描完成：2 组重复」，
-                等于别的页在替清理页说话。 */}
-            {(mode === 'organize' || (mode === 'cleanup' && cleanupScan === null)) && (
-              <ProgressPanel
-                status={progressStatus}
-                busy={busy}
-                progress={progress}
-                logs={logs}
-                {...(cancellable
-                  ? { onCancel: () => void cancel() }
-                  : {})}
-              />
-            )}
-          </>
-        )}
+      <main className={tabView
+        ? 'flex-1 overflow-y-auto bg-index-page px-4 py-6 sm:px-8 sm:py-8'
+        : 'flex-1 overflow-y-auto p-4'}
+      >
+        <div className={tabView ? 'mx-auto w-full max-w-7xl' : undefined}>
+          {settingsOpen ? <SettingsPanel /> : (
+            <>
+              {mode === 'organize' ? (
+                <StepIndex items={stepItems()} currentKey={step}>{organizeContent ?? children}</StepIndex>
+              ) : children}
+              {/* 清理扫描结果属于「重复收藏」那一格，由 CleanupStep 自己画。
+                  扫描还没回来时 CleanupStep 是 null，进度仍由这里顶上。
+                  看板和浏览书签不接这根管子——切过去还挂着「扫描完成：2 组重复」，
+                  等于别的页在替清理页说话。 */}
+              {(mode === 'organize' || (mode === 'cleanup' && cleanupScan === null)) && (
+                <ProgressPanel
+                  status={progressStatus}
+                  busy={busy}
+                  progress={progress}
+                  logs={logs}
+                  {...(cancellable
+                    ? { onCancel: () => void cancel() }
+                    : {})}
+                />
+              )}
+            </>
+          )}
+        </div>
       </main>
     </>
   )
-  // 完整标签页动不动一千五六百像素宽，内容铺满没法看：收进居中的限宽列，
-  // 两侧露出页面背景。侧栏本就三四百像素宽，保持原样铺满。
+  // 完整标签页是主工作区：全宽铺底，正文在 main 内保持可读的最大宽度。
+  // 侧栏仍然是紧凑画布，保持原样铺满。
   return tabView ? (
     <div className="h-full bg-index-page text-neutral-800">
       <div
         data-testid="tab-view-column"
-        className="mx-auto flex h-full w-full max-w-3xl flex-col border-x border-index-line bg-white"
+        className="flex h-full w-full flex-col"
       >
         {content}
       </div>

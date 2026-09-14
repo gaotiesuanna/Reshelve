@@ -160,14 +160,14 @@ function withSchemaInPrompt(prompt: string, schema: object, locale: Locale): str
 /**
  * 单次请求最多等多久。
  *
- * 取 120 秒是两头夹出来的：往下，正常一批（25 条书签）在慢模型上也就几十秒，
- * 收得太紧只会把还在路上的请求误杀、白白多花一次重试的钱；往上，一个 120 秒
+ * 取 180 秒是两头夹出来的：往下，正常一批（25 条书签）在慢模型上也就几十秒，
+ * 收得太紧只会把还在路上的请求误杀、白白多花一次重试的钱；往上，一个 180 秒
  * 还没吐出第一个字节的请求基本已经死了，再等只是让 worker 继续堵着。
  *
- * 配合 MAX_RETRIES=2 与指数退避，最坏情形一批约 6 分钟后彻底失败——有界，
+ * 配合 MAX_RETRIES=2 与指数退避，最坏情形一批约 9 分钟后彻底失败——有界，
  * 而在此之前是**无界**：真实一遍里 8 个标签批次有 2 个永久挂起，整轮作废。
  */
-const REQUEST_TIMEOUT_MS = 120_000
+const REQUEST_TIMEOUT_MS = 180_000
 
 function isUnsupportedResponseFormat(status: number, body: string): boolean {
   return status === 400 && /response_format/i.test(body)

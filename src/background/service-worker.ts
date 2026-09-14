@@ -21,7 +21,42 @@ void loadSettings(createChromePorts())
   .catch(() => {}) // 读不到就用默认语言，不该因此阻塞消息监听
 
 chrome.runtime.onInstalled.addListener(() => {
-  chrome.sidePanel.setPanelBehavior({ openPanelOnActionClick: true }).catch(console.error)
+  chrome.sidePanel.setPanelBehavior({ openPanelOnActionClick: false }).catch(console.error)
+})
+
+/**
+ * 完整整理流程默认落在独立标签页：它需要更宽的目录树、步骤确认和结果预览。
+ * 侧栏仍然保留，但不再抢占扩展图标这个主入口。
+ *
+ * 这里在每次 worker 启动时都设置一次，而不是只依赖 onInstalled：已有安装在更新
+ * 扩展后不会重新触发安装事件，也必须立即切换到新的点击行为。
+ */
+chrome.sidePanel.setPanelBehavior({ openPanelOnActionClick: false }).catch(console.error)
+
+const APP_PAGE = 'src/sidepanel/index.html'
+
+async function openAppTab(input: {
+  mode: string
+  step: string
+  checkedIds: string[]
+}, closeSidePanel: boolean): Promise<void> {
+  const url = new URL(chrome.runtime.getURL(APP_PAGE))
+  url.searchParams.set('view', 'tab')
+  url.searchParams.set('mode', input.mode)
+  url.searchParams.set('step', input.step)
+  if (input.checkedIds.length > 0) url.searchParams.set('ids', input.checkedIds.join(','))
+
+  await chrome.tabs.create({ url: url.toString() })
+  if (closeSidePanel) {
+    // 侧栏没有 close API。这个分支只服务于侧栏内的「在新标签页打开」按钮；
+    // 扩展图标直接打开页面时不触碰侧栏状态。
+    await chrome.sidePanel.setOptions({ enabled: false })
+    await chrome.sidePanel.setOptions({ enabled: true })
+  }
+}
+
+chrome.action.onClicked.addListener(() => {
+  void openAppTab({ mode: 'organize', step: 'scope', checkedIds: [] }, false).catch(console.error)
 })
 
 /**
@@ -111,20 +146,8 @@ chrome.runtime.onMessage.addListener((message: PanelRequest, _sender, sendRespon
   }
 
   if (message.kind === 'open_app_tab') {
-    const url = new URL(chrome.runtime.getURL('src/sidepanel/index.html'))
-    // view=tab 给标签页形态一个能被自己读到的标记（按钮因此收起），
-    // mode / step / ids 让新页面落在侧栏正停在的位置上，「换过去」而不是「重新打开」。
-    url.searchParams.set('view', 'tab')
-    url.searchParams.set('mode', message.mode)
-    url.searchParams.set('step', message.step)
-    if (message.checkedIds.length > 0) url.searchParams.set('ids', message.checkedIds.join(','))
     void (async () => {
-      await chrome.tabs.create({ url: url.toString() })
-      // 侧栏没有 close API，关它的唯一办法是禁用再立刻启用。
-      // 代价是全局的：别的窗口开着的侧栏也会一起被关掉——可接受，
-      // 反过来的方案（让侧栏自己做）是图标从此失效，严重得多。
-      await chrome.sidePanel.setOptions({ enabled: false })
-      await chrome.sidePanel.setOptions({ enabled: true })
+      await openAppTab(message, true)
       sendResponse({ ok: true, kind: 'open_app_tab' })
     })().catch((error: unknown) => sendResponse({ ok: false, error: String(error) }))
     return true

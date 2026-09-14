@@ -276,18 +276,21 @@ describe('Shell 换成完整标签页', () => {
     expect(screen.getByRole('tab', { name: 'AI 整理' })).toBeDefined()
   })
 
-  // 完整标签页动不动一千五六百像素宽，内容铺满没法看：收进居中的限宽列，
-  // 两侧露出页面背景。侧栏本就三四百像素，不需要这根管子
-  it('标签页形态把内容收进居中限宽列，侧栏形态不收', () => {
+  // 完整页面不再模拟放大的侧栏：它使用全宽工作区，并把品牌、一级模式导航
+  // 与设置收进同一条 headerline。
+  it('标签页形态使用全宽工作区和品牌 headerline，侧栏形态不显示它们', () => {
     const { unmount } = render(<Shell organizeContent={<div>步骤内容</div>}>{null}</Shell>)
     expect(screen.queryByTestId('tab-view-column')).toBeNull()
+    expect(screen.queryByTestId('tab-app-header')).toBeNull()
     unmount()
 
     window.history.pushState({}, '', '/?view=tab')
     render(<Shell organizeContent={<div>步骤内容</div>}>{null}</Shell>)
     const column = screen.getByTestId('tab-view-column')
-    expect(column.className).toContain('max-w-')
-    expect(column.className).toContain('mx-auto')
+    expect(column.className).toContain('w-full')
+    expect(column.className).not.toContain('max-w-')
+    expect(screen.getByTestId('tab-app-header')).toBeDefined()
+    expect(screen.getByRole('heading', { name: 'Reshelve' })).toBeDefined()
     window.history.pushState({}, '', '/')
   })
 })
