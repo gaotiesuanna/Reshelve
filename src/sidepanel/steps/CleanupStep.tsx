@@ -256,7 +256,7 @@ export function CleanupStep() {
         : null
 
   return (
-    <div>
+    <div className="flex min-h-full flex-1 flex-col">
       <div className="space-y-4">
         {/* 这句话摆在三个标签之上，所以它对三个标签一起说，措辞就得三个都成立。
             原文是「不需要模型，也不会发出任何网络请求」——后半句被「失效链接」
@@ -443,7 +443,7 @@ export function CleanupStep() {
 
       {tab !== 'aggregate' && (
         /* 吸底的负外边距与 pb-4 的用意见 ScopeStep.tsx 底部那一大段注释，此处照抄 */
-        <div className="sticky -bottom-4 -mx-4 -mb-4 mt-3 space-y-2 border-t border-neutral-200 bg-white px-4 pb-4 pt-3">
+        <div className="sticky -bottom-4 -mx-4 -mb-4 mt-auto space-y-2 border-t border-neutral-200 bg-white px-4 pb-4 pt-3">
           {/* 撤销只有一个槽，清理会把上一次 AI 整理的快照覆盖掉。不静默覆盖 */}
           {undoAvailable && (
             <p className="text-xs leading-relaxed text-amber-700">

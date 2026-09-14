@@ -92,7 +92,7 @@ export const fieldClass = [
 
 export const fieldLabelClass = 'mb-1 block text-sm leading-caption font-medium text-index-ink'
 
-export const stickyActionBar = 'sticky -bottom-4 -mx-4 -mb-4 mt-3 border-t border-index-line bg-index-canvas px-4 pb-4 pt-3'
+export const stickyActionBar = 'sticky -bottom-4 -mx-4 -mb-4 mt-auto border-t border-index-line bg-index-canvas px-4 pb-4 pt-3'
 
 /** 虚线边框，暗示「这里要放一个文件」，同时和上方导出组的实线按钮拉开区别。 */
 export const filePickerButton = [

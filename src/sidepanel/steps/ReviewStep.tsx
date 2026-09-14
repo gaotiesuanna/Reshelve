@@ -172,7 +172,7 @@ export function ReviewStep() {
   }
 
   return (
-    <div>
+    <div className="flex min-h-full flex-1 flex-col">
       <p className="mb-3 text-sm leading-body text-index-muted">
       {titleOnly
         ? plural(titleOperations.length, 'reviewTitleOnlySummaryOne', 'reviewTitleOnlySummaryOther', String(titleOperations.length), String(accepted.size))

@@ -52,5 +52,6 @@ describe('IndexControls', () => {
     expect(screen.getByRole('button', { name: '取消' }).className).toContain('secondary-extra')
     expect(screen.getByRole('button', { name: '删除' }).className).toContain('danger-extra')
     expect(screen.getByRole('button', { name: '提交' }).parentElement?.className).toContain('sticky')
+    expect(screen.getByRole('button', { name: '提交' }).parentElement?.className).toContain('mt-auto')
   })
 })

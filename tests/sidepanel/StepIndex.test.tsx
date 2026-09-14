@@ -13,6 +13,18 @@ const items: readonly StepIndexItem<StepKey>[] = [
 ]
 
 describe('StepIndex', () => {
+  it('让步骤内容撑满主区域，为底部操作栏提供稳定的布局空间', () => {
+    render(
+      <StepIndex items={items} currentKey="scope">
+        <div>范围编辑器</div>
+      </StepIndex>,
+    )
+
+    const content = screen.getByTestId('step-content')
+    expect(content.className).toContain('flex-1')
+    expect(content.className).toContain('flex-col')
+  })
+
   it('渲染当前步骤内容，并把当前步骤标成 aria-current', () => {
     render(
       <StepIndex items={items} currentKey="structure">

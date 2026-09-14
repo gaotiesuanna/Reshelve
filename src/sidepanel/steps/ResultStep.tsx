@@ -43,7 +43,7 @@ export function ResultStep() {
   const finish = (): void => window.close()
 
   return (
-    <div className="text-base leading-body">
+    <div className="flex min-h-full flex-1 flex-col text-base leading-body">
       <div className="mb-4">
         <InlineStatus tone={applyResult.status === 'completed' ? 'success' : 'warning'}>
           {applyResult.status === 'completed' ? t('resultCompleted') : t('resultInterrupted')}

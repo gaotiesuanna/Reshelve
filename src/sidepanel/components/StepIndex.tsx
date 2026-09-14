@@ -17,7 +17,7 @@ export function StepIndex<K extends string>({
   const currentIndex = items.findIndex((item) => item.key === currentKey)
 
   return (
-    <div>
+    <div className="flex min-h-full flex-col">
       <ol className="flex flex-wrap gap-1.5" aria-label={t('shellStepsLabel')}>
         {items.map((item, index) => {
           const current = index === currentIndex
@@ -43,7 +43,7 @@ export function StepIndex<K extends string>({
           )
         })}
       </ol>
-      <div className="mt-4">{children}</div>
+      <div data-testid="step-content" className="mt-4 flex min-h-0 flex-1 flex-col">{children}</div>
     </div>
   )
 }

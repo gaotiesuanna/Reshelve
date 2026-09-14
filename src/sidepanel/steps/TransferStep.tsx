@@ -95,7 +95,7 @@ export function TransferStep() {
   }
 
   return (
-    <div>
+    <div className="flex min-h-full flex-1 flex-col">
       <div className="space-y-3">
         <p className="text-sm leading-relaxed text-neutral-500">{t('transferIntro')}</p>
 

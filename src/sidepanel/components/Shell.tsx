@@ -165,16 +165,19 @@ export function Shell({ children, organizeContent }: { children: ReactNode; orga
         </div>
       )}
       <main className={tabView
-        ? 'flex-1 overflow-y-auto bg-index-page px-4 py-6 sm:px-8 sm:py-8'
-        : 'flex-1 overflow-y-auto p-4'}
+        ? 'flex min-h-0 flex-1 flex-col overflow-y-auto bg-index-page px-4 py-6 sm:px-8 sm:py-8'
+        : 'flex min-h-0 flex-1 flex-col overflow-y-auto p-4'}
       >
-        <div className={tabView ? 'mx-auto w-full max-w-7xl' : undefined}>
+        <div className={tabView
+          ? 'mx-auto flex min-h-full w-full max-w-7xl flex-1 flex-col'
+          : 'flex min-h-full flex-1 flex-col'}
+        >
           {settingsOpen ? <SettingsPanel /> : tabView && mode === 'organize' ? (
             <div
               data-testid="tab-workspace-split"
-              className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_minmax(20rem,24rem)] lg:items-start"
+              className="grid min-h-full gap-6 lg:grid-cols-[minmax(0,1fr)_minmax(20rem,24rem)] lg:items-stretch"
             >
-              <section data-testid="tab-bookmark-workspace" className="min-w-0">
+              <section data-testid="tab-bookmark-workspace" className="flex min-h-full min-w-0 flex-col">
                 <StepIndex items={stepItems()} currentKey={step}>
                   {organizeContent ?? children}
                 </StepIndex>

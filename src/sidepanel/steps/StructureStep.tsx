@@ -159,7 +159,7 @@ export function StructureStep() {
   )
 
   return (
-    <div>
+    <div className="flex min-h-full flex-1 flex-col">
       <p className="text-sm leading-body text-index-muted">{description}</p>
       <p className="mt-1 text-xs leading-body text-index-muted">{t('structureEstimateHint')}</p>
       <p className="mt-1 text-xs leading-body text-index-muted">{t('structureHint')}</p>

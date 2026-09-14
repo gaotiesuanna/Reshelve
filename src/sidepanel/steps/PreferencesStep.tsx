@@ -103,7 +103,7 @@ export function PreferencesStep() {
   const needModel = !isModelConfigured(llm)
 
   return (
-    <div>
+    <div className="flex min-h-full flex-1 flex-col">
       <div data-testid="preferences-section">
         <IndexSection title={t('prefsScanScope')} count={scopePaths.length}>
           {scopePaths.length > 0 && (

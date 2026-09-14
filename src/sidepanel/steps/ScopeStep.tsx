@@ -54,7 +54,7 @@ export function ScopeStep() {
   }
 
   return (
-    <div>
+    <div className="flex min-h-full flex-1 flex-col">
       <p className="mb-4 text-sm leading-body text-index-muted">{t('scopeIntro')}</p>
 
       {needModel && (
