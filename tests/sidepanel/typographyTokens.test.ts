@@ -27,6 +27,17 @@ describe('typography tokens', () => {
     expect(css).toContain('--line-height-overline:')
   })
 
+  it('defines the quiet workspace surface and interaction tokens', async () => {
+    const css = await readFile(resolve('src/sidepanel/index.css'), 'utf8')
+
+    expect(css).toContain('--index-surface:')
+    expect(css).toContain('--index-surface-muted:')
+    expect(css).toContain('--index-accent:')
+    expect(css).toContain('--index-accent-soft:')
+    expect(css).toContain('--index-shadow-soft:')
+    expect(css).toContain('--index-focus-ring:')
+  })
+
   it('compiles the named typography tokens to the shared CSS variables', async () => {
     const css = await readFile(resolve('src/sidepanel/index.css'), 'utf8')
     const result = await postcss([tailwindcss()]).process(`${css}

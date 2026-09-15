@@ -101,7 +101,7 @@ export function TransferStep() {
 
         <div className="flex gap-1 text-sm leading-caption">
           <button
-            className="rounded border px-2 py-1 hover:bg-neutral-50"
+            className="rounded-index border border-index-line-strong bg-index-surface px-2 py-1 text-index-ink hover:bg-index-accent-soft"
             onClick={() => setAllExpanded(allOpen ? [] : folderIds)}
           >
             {t(allOpen ? 'scopeCollapseAll' : 'scopeExpandAll')}
@@ -119,7 +119,7 @@ export function TransferStep() {
           </label>
         </div>
 
-        <div className="rounded border">
+        <div className="overflow-hidden rounded-index border border-index-line bg-index-surface shadow-sm">
           <BookmarkTree
             nodes={visibleNodes}
             checkedIds={checkedIds}
@@ -236,7 +236,7 @@ function MoveBookmarksPanel({ tree, busy }: { tree: BookmarkNode[]; busy: string
   }
 
   return (
-    <div className="mt-2 space-y-2 rounded-index border border-index-line bg-index-blue-soft p-3">
+    <div className="mt-2 space-y-2 rounded-index border border-index-line bg-index-surface-muted p-3">
       <div className={segmentTrack} role="group" aria-label={t('moveDestinationLabel')}>
         <button
           type="button"
@@ -272,7 +272,7 @@ function MoveBookmarksPanel({ tree, busy }: { tree: BookmarkNode[]; busy: string
               type="text"
               value={newFolderTitle}
               onChange={(event) => setNewFolderTitle(event.target.value)}
-              className="min-h-index-row w-full rounded-index border border-index-line bg-index-canvas px-2 text-sm text-index-ink placeholder:text-index-faint focus-visible:outline focus-visible:ring-2 focus-visible:ring-index-blue"
+              className="min-h-index-row w-full rounded-index border border-index-line-strong bg-index-surface px-2 text-sm text-index-ink placeholder:text-index-faint focus-visible:outline focus-visible:ring-2 focus-visible:ring-index-accent"
               aria-label={t('moveNewFolderName')}
             />
           </label>
@@ -288,7 +288,7 @@ function MoveBookmarksPanel({ tree, busy }: { tree: BookmarkNode[]; busy: string
       )}
       <button
         type="button"
-        className="inline-flex min-h-index-row w-full items-center justify-center rounded-index bg-index-ink px-3 text-sm leading-caption font-medium text-index-canvas transition-colors hover:bg-zinc-800 disabled:cursor-not-allowed disabled:opacity-40 focus-visible:outline focus-visible:ring-2 focus-visible:ring-index-blue"
+        className="inline-flex min-h-index-row w-full items-center justify-center rounded-index bg-index-ink px-3 text-sm leading-caption font-medium text-index-canvas transition-colors hover:bg-zinc-800 disabled:cursor-not-allowed disabled:opacity-40 focus-visible:outline focus-visible:ring-2 focus-visible:ring-index-accent"
         disabled={!canSubmit}
         onClick={submit}
       >

@@ -31,21 +31,21 @@ type VisitState =
   | { kind: 'empty' }
   | { kind: 'denied' }
 
-const toggleTrack = 'flex shrink-0 rounded-full bg-neutral-100 p-0.5'
+const toggleTrack = 'flex shrink-0 rounded-full border border-index-line bg-index-surface-muted p-0.5'
 const toggleBase = [
   'inline-flex h-7 cursor-pointer items-center justify-center rounded-full px-3',
   'text-sm leading-caption font-medium',
   'transition-colors duration-150 motion-reduce:transition-none',
   'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-neutral-400',
 ].join(' ')
-const toggleOn = `${toggleBase} bg-white text-blue-600 shadow-sm`
-const toggleOff = `${toggleBase} text-neutral-500 hover:text-neutral-800`
+const toggleOn = `${toggleBase} bg-index-surface text-index-accent shadow-sm`
+const toggleOff = `${toggleBase} text-index-muted hover:text-index-ink`
 
 const countInput = [
-  'h-6 w-11 rounded-md border border-transparent bg-neutral-100 px-1 text-center',
-  'text-base leading-body font-semibold tabular-nums text-neutral-900',
-  'transition-colors duration-150 hover:bg-neutral-200 motion-reduce:transition-none',
-  'focus-visible:bg-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-neutral-400',
+  'h-7 w-11 rounded-md border border-transparent bg-index-surface-muted px-1 text-center',
+  'text-base leading-body font-semibold tabular-nums text-index-ink',
+  'transition-colors duration-150 hover:bg-index-accent-soft motion-reduce:transition-none',
+  'focus-visible:bg-index-surface focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-index-accent',
 ].join(' ')
 
 const rangeBase = [
@@ -54,8 +54,8 @@ const rangeBase = [
   'transition-colors duration-150 motion-reduce:transition-none',
   'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-neutral-400',
 ].join(' ')
-const rangeOn = `${rangeBase} bg-blue-50 text-blue-600`
-const rangeOff = `${rangeBase} text-neutral-500 hover:bg-neutral-100 hover:text-neutral-800`
+const rangeOn = `${rangeBase} bg-index-accent-soft text-index-accent`
+const rangeOff = `${rangeBase} text-index-muted hover:bg-index-surface-muted hover:text-index-ink`
 
 const WINDOW_LABEL = {
   all: 'dashWindowAll',
@@ -147,11 +147,11 @@ export function DashboardStep() {
   }
 
   return (
-    <section className="rounded-2xl border border-neutral-200 bg-white p-4 shadow-sm">
+    <section className="rounded-index border border-index-line bg-index-surface p-5 shadow-[var(--index-shadow-soft)]">
       <header className="mb-4 flex items-start justify-between gap-3">
         <div className="min-w-0">
           <h2 className="flex items-center gap-1.5 text-base leading-body font-semibold text-neutral-900">
-            <TrendingUpIcon className="h-4 w-4 text-blue-500" />
+            <TrendingUpIcon className="h-4 w-4 text-index-accent" />
             <label className="flex min-w-0 items-center gap-1">
               <span>{t('dashTopDomainsLead')}</span>
               <input
@@ -383,7 +383,7 @@ function DomainRow({
             key={i}
             className={[
               'h-1.5 w-1.5 rounded-full transition-colors duration-300 motion-reduce:transition-none',
-              grown && i < filled ? 'bg-blue-500' : 'bg-neutral-200',
+              grown && i < filled ? 'bg-index-accent' : 'bg-index-line',
             ].join(' ')}
             style={{ transitionDelay: grown ? `${i * 40}ms` : '0ms' }}
           />
@@ -400,9 +400,9 @@ function DomainRow({
         <button
           type="button"
           className={[
-            'flex w-full cursor-pointer items-center gap-2.5 rounded-lg px-1.5 py-1.5 -mx-1.5 text-left',
+            'flex w-full cursor-pointer items-center gap-2.5 rounded-index px-1.5 py-1.5 -mx-1.5 text-left',
             'transition-colors duration-150 motion-reduce:transition-none',
-            'hover:bg-neutral-50 active:bg-neutral-100',
+            'hover:bg-index-surface-muted active:bg-index-accent-soft',
             'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-neutral-400',
           ].join(' ')}
           aria-expanded={open}
@@ -467,7 +467,7 @@ function VisitBreakdown({
     >
       <VisitSection
         label={t('dashVisitSavedLabel', domain)}
-        icon={<BookmarkIcon className="h-3.5 w-3.5 shrink-0 text-blue-500" />}
+        icon={<BookmarkIcon className="h-3.5 w-3.5 shrink-0 text-index-accent" />}
         title={t('dashVisitSaved')}
         note={t('dashVisitCount', String(savedVisits))}
         emptyText={split.saved.length === 0 ? t('dashVisitNoneSaved') : undefined}
@@ -543,7 +543,7 @@ function VisitSection({
           className={[
             '-mx-1.5 flex w-full cursor-pointer items-center gap-1.5 rounded-md px-1.5 py-0.5 text-left',
             'transition-colors duration-150 motion-reduce:transition-none',
-            'hover:bg-neutral-50 active:bg-neutral-100',
+            'hover:bg-index-surface-muted active:bg-index-accent-soft',
             'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-neutral-400',
           ].join(' ')}
           aria-expanded={open}
@@ -691,7 +691,7 @@ function FolderNode({
           className={[
             '-mx-1.5 flex w-full cursor-pointer items-center gap-2 rounded-md px-1.5 py-0.5 text-left',
             'transition-colors duration-150 motion-reduce:transition-none',
-            'hover:bg-neutral-50 active:bg-neutral-100',
+            'hover:bg-index-surface-muted active:bg-index-accent-soft',
             'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-neutral-400',
           ].join(' ')}
           aria-expanded={open}
@@ -775,14 +775,14 @@ function DomainIcon({ domain, pageUrl }: { domain: string; pageUrl: string }) {
     return (
       <span
         aria-hidden="true"
-        className="inline-flex h-5 w-5 shrink-0 items-center justify-center rounded-md bg-white text-2xs font-medium text-neutral-500 ring-1 ring-neutral-200/70"
+        className="inline-flex h-5 w-5 shrink-0 items-center justify-center rounded-md bg-index-surface text-2xs font-medium text-index-muted ring-1 ring-index-line-strong/70"
       >
         {domain.charAt(0).toUpperCase()}
       </span>
     )
   }
   return (
-    <span className="inline-flex h-5 w-5 shrink-0 items-center justify-center rounded-md bg-white ring-1 ring-neutral-200/70">
+    <span className="inline-flex h-5 w-5 shrink-0 items-center justify-center rounded-md bg-index-surface ring-1 ring-index-line-strong/70">
       <img
         src={faviconSrc(pageUrl)}
         alt=""

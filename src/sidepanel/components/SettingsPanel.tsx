@@ -9,10 +9,10 @@ import type { Settings } from '@/storage/settings'
 
 /** 预设卡片：名字一行、域名一行，整块可点。左对齐是为了两列之间字头能对齐。 */
 const presetCard = [
-  'flex min-w-0 cursor-pointer flex-col items-start gap-0.5 rounded-lg',
-  'border border-neutral-200 bg-white px-2.5 py-2 text-left',
+  'flex min-w-0 cursor-pointer flex-col items-start gap-0.5 rounded-index',
+  'border border-index-line bg-index-surface px-3 py-2.5 text-left',
   'transition-colors duration-150 motion-reduce:transition-none',
-  'hover:border-neutral-300 hover:bg-neutral-50',
+  'hover:border-index-accent hover:bg-index-accent-soft',
   'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-neutral-400 focus-visible:ring-offset-1',
 ].join(' ')
 
@@ -83,14 +83,14 @@ export function SettingsPanel() {
             虚线边框说明这一格现在还是空的、点了才会填上东西——和实线的已有端点卡分得开。
             展开后原地换成挑选面板，不再跳到列表最下面：出现的位置就是刚点的位置。 */}
         {picking ? (
-          <div className="space-y-2 rounded-lg border border-neutral-200 bg-neutral-50/50 p-3">
+          <div className="space-y-2 rounded-index border border-index-line bg-index-surface-muted p-3.5">
             <div className="flex items-start justify-between gap-2">
               <p className="text-sm leading-body text-neutral-600">{t('settingsPresetHint')}</p>
               <button
                 type="button"
                 aria-label={t('settingsEndpointCancel')}
                 title={t('settingsEndpointCancel')}
-                className="-mr-1 -mt-1 shrink-0 cursor-pointer rounded-md p-1.5 text-neutral-500 transition-colors duration-150 hover:bg-white hover:text-neutral-900 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-neutral-400 motion-reduce:transition-none"
+                className="-mr-1 -mt-1 shrink-0 cursor-pointer rounded-index p-1.5 text-neutral-500 transition-colors duration-150 hover:bg-index-surface hover:text-index-ink focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-index-accent motion-reduce:transition-none"
                 onClick={() => setPicking(false)}
               >
                 <CloseIcon />
@@ -133,7 +133,7 @@ export function SettingsPanel() {
         ) : (
           <button
             type="button"
-            className="flex w-full cursor-pointer items-center justify-center gap-1.5 rounded-lg border border-dashed border-neutral-300 bg-white px-3 py-2.5 text-base leading-body font-medium text-neutral-600 transition-colors duration-150 hover:border-neutral-400 hover:bg-neutral-50 hover:text-neutral-900 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-neutral-400 focus-visible:ring-offset-1 motion-reduce:transition-none"
+            className="flex w-full cursor-pointer items-center justify-center gap-1.5 rounded-index border border-dashed border-index-line-strong bg-index-surface px-3 py-2.5 text-base leading-body font-medium text-index-muted transition-colors duration-150 hover:border-index-accent hover:bg-index-accent-soft hover:text-index-ink focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-index-accent focus-visible:ring-offset-1 motion-reduce:transition-none"
             onClick={() => setPicking(true)}
           >
             <PlusIcon className="h-4 w-4" />
@@ -153,7 +153,7 @@ export function SettingsPanel() {
         <h3 className="text-base leading-body font-medium">{t('settingsLangTitle')}</h3>
         <label className="block text-base leading-body">
           <select
-            className="w-full min-h-8 cursor-pointer rounded border border-neutral-200 bg-white px-2.5 text-base leading-body focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-neutral-400"
+            className="w-full min-h-8 cursor-pointer rounded-index border border-index-line-strong bg-index-surface px-2.5 text-base leading-body focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-index-accent"
             aria-label={t('settingsLangTitle')}
             value={settings.uiLocale}
             onChange={(e) =>

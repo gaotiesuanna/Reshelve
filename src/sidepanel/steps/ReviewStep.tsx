@@ -188,7 +188,7 @@ export function ReviewStep() {
       {/* 普通整理里的新建/重命名目录、统一书签标题、清空空文件夹都不是待办，
           收进同一块浅底旁注里；title-only 则把标题改名展开成下面的逐条清单。 */}
       {(summary.createdFolders > 0 || summary.renamedFolders > 0 || summary.renamedBookmarks > 0 || settings.removeEmptyFolders) && (
-        <div className="space-y-1 rounded-index bg-neutral-50 px-3 py-2 text-sm leading-caption text-index-muted">
+        <div className="space-y-1 rounded-index border border-index-line bg-index-surface-muted px-3 py-2.5 text-sm leading-caption text-index-muted">
           {(summary.createdFolders > 0 || summary.renamedFolders > 0) && (
             <p>
               {plural(summary.createdFolders, 'reviewCreateFoldersOne', 'reviewCreateFoldersOther', String(summary.createdFolders))}
@@ -222,7 +222,7 @@ export function ReviewStep() {
       )}
 
       {titleOnly && titleOperations.length > 0 && (
-        <ul className="mt-3 overflow-hidden rounded-index border border-index-line bg-neutral-50">
+        <ul className="mt-3 overflow-hidden rounded-index border border-index-line bg-index-surface-muted shadow-sm">
           {titleOperations.map((operation) => {
             const rule = TITLE_RULES.find((r) => r.id === operation.providerId)
             return (
@@ -324,7 +324,7 @@ export function ReviewStep() {
           原来靠每行自带 border-b 拼出来的横线会一路漏到卡片外面，
           最后一条还正好压在底部操作条上方，看着像多画了一条边。 */}
       {visibleGroups.length > 0 && (
-        <div className="mt-3 overflow-hidden rounded-index border border-index-line">
+        <div className="mt-3 overflow-hidden rounded-index border border-index-line bg-index-surface shadow-sm">
           {visibleGroups.map((group, groupIndex) => {
             const collapsed = collapsedOverride[group.key] ?? group.allRule
             // 组内接受了几条，决定组级勾选框显示成勾/空/半选三态之一。
@@ -373,7 +373,7 @@ export function ReviewStep() {
                 {/* 展开的成员压一层浅底：不靠缩进也能看出这几行属于上面那个组，
                     在只有 360px 宽的侧栏里，省下来的缩进正好给标题多断一行的余地。 */}
                 {!collapsed && (
-                  <ul className="border-t border-index-line bg-neutral-50">
+                    <ul className="border-t border-index-line bg-index-surface-muted">
                     {group.rows.map((row, rowIndex) => (
                       <li
                         key={row.bookmarkId}

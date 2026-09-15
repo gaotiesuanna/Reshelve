@@ -54,18 +54,18 @@ export function domainOf(baseUrl: string): string {
 
 
 const btn =
-  'inline-flex min-h-8 cursor-pointer items-center justify-center gap-1.5 whitespace-nowrap rounded-md border border-neutral-200 bg-white px-2.5 text-base leading-body text-neutral-700 transition-colors duration-150 hover:bg-neutral-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-neutral-400 focus-visible:ring-offset-1 disabled:cursor-not-allowed disabled:opacity-40'
+  'inline-flex min-h-8 cursor-pointer items-center justify-center gap-1.5 whitespace-nowrap rounded-index border border-index-line bg-index-surface px-2.5 text-base leading-body text-index-ink transition-colors duration-150 hover:border-index-accent hover:bg-index-accent-soft focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-index-accent focus-visible:ring-offset-1 disabled:cursor-not-allowed disabled:opacity-40'
 const iconBtn =
-  'inline-flex h-8 w-8 shrink-0 cursor-pointer items-center justify-center rounded-md text-neutral-500 transition-colors duration-150 hover:bg-neutral-100 hover:text-neutral-900 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-neutral-400 disabled:cursor-not-allowed disabled:opacity-40'
+  'inline-flex h-8 w-8 shrink-0 cursor-pointer items-center justify-center rounded-index text-index-muted transition-colors duration-150 hover:bg-index-accent-soft hover:text-index-ink focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-index-accent disabled:cursor-not-allowed disabled:opacity-40'
 /**
  * 删除保留红色，但只落在图标上、不上红边框：一整圈红把这张卡上最不该被误点的东西
  * 变成了最抢眼的东西（原来的样子见 issues 里那两张截图）。红字 + 垃圾桶图标 + 中文
  * aria-label，三重信号已经够，不需要再加一圈框来喊。
  */
 const iconBtnDanger =
-  'inline-flex h-8 w-8 shrink-0 cursor-pointer items-center justify-center rounded-md text-red-600 transition-colors duration-150 hover:bg-red-50 hover:text-red-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red-400 motion-reduce:transition-none'
+  'inline-flex h-8 w-8 shrink-0 cursor-pointer items-center justify-center rounded-index text-red-600 transition-colors duration-150 hover:bg-red-50 hover:text-red-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red-400 motion-reduce:transition-none'
 const field =
-  'w-full rounded-md border border-neutral-200 px-2.5 py-1.5 text-base leading-body focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-neutral-400'
+  'w-full rounded-index border border-index-line-strong bg-index-surface px-2.5 py-1.5 text-base leading-body focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-index-accent'
 
 function IconAction({
   label, danger, disabled, onClick, children,
@@ -198,7 +198,7 @@ export function EndpointCard({
 
 
   return (
-    <article className="space-y-3 rounded-lg border border-neutral-200 p-3">
+    <article className="space-y-3 rounded-index border border-index-line bg-index-surface p-3.5 shadow-sm">
       <div className="flex items-start justify-between gap-2">
         <div className="min-w-0 flex-1">
           <span className="block truncate text-base leading-body font-medium">

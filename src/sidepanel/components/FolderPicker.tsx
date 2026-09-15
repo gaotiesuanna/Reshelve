@@ -119,7 +119,7 @@ function FolderRow({
       <div
         className={`flex items-center rounded px-1 py-1 transition-colors cursor-pointer ${
           isSelected
-            ? 'bg-blue-50 text-blue-900 font-medium'
+            ? 'bg-index-accent-soft text-index-ink font-medium'
             : 'hover:bg-neutral-100 text-neutral-700'
         }`}
         style={{ paddingLeft: `${depth * 14 + 4}px` }}
@@ -158,7 +158,7 @@ function FolderRow({
             onChange={() => onSelect(node.id)}
             className="h-3.5 w-3.5 shrink-0 accent-blue-600"
           />
-          <FolderIcon className={`h-3.5 w-3.5 shrink-0 ${isSelected ? 'text-blue-600' : 'text-neutral-400'}`} />
+          <FolderIcon className={`h-3.5 w-3.5 shrink-0 ${isSelected ? 'text-index-accent' : 'text-neutral-400'}`} />
           <span className="min-w-0 truncate text-sm leading-caption">{node.title}</span>
           <span className="ml-auto shrink-0 font-mono text-xs tabular-nums text-neutral-400">
             {bookmarkCount}

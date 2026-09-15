@@ -45,6 +45,10 @@
   --color-index-line-strong: var(--index-line-strong);
   --color-index-blue: var(--index-blue);
   --color-index-blue-soft: var(--index-blue-soft);
+  --color-index-surface: var(--index-surface);
+  --color-index-surface-muted: var(--index-surface-muted);
+  --color-index-accent: var(--index-accent);
+  --color-index-accent-soft: var(--index-accent-soft);
 
   --radius-index: var(--index-radius);
   --spacing-index-row: var(--index-row-min-height);
@@ -64,19 +68,30 @@
   body {
     overflow: hidden;
     background: var(--index-page);
+    color: var(--index-ink);
+    font-family: var(--font-family-sans);
+    font-size: var(--font-size-base);
+    -webkit-font-smoothing: antialiased;
+    text-rendering: optimizeLegibility;
   }
 
   :root {
     --index-canvas: #ffffff;
-    --index-page: #f4f8f7;
-    --index-ink: #0f172a;
-    --index-muted: #475569;
-    --index-faint: #94a3b8;
-    --index-line: #e2e8f0;
-    --index-line-strong: #cbd5e1;
-    /* 历史类名保留，视觉主色从亮蓝统一为青绿色。 */
-    --index-blue: #0f766e;
-    --index-blue-soft: #f0fdfa;
+    --index-surface: #ffffff;
+    --index-surface-muted: #f7faf8;
+    --index-page: #f1f5f3;
+    --index-ink: #16221f;
+    --index-muted: #53635e;
+    --index-faint: #8a9994;
+    --index-line: #dfe8e4;
+    --index-line-strong: #c4d1cc;
+    --index-accent: #0f766e;
+    --index-accent-soft: #e8f4f1;
+    /* 历史类名保留，避免一次改版把所有业务组件变成无效 class。 */
+    --index-blue: var(--index-accent);
+    --index-blue-soft: var(--index-accent-soft);
+    --index-shadow-soft: 0 12px 30px rgb(21 55 47 / 0.07);
+    --index-focus-ring: rgb(15 118 110 / 0.35);
     --index-radius: 10px;
     --index-row-min-height: 42px;
 
@@ -110,4 +125,58 @@
     --line-height-body-sm: 1.45;
     --line-height-overline: 1.2;
   }
+}
+
+@layer base {
+  ::selection {
+    background: var(--index-accent-soft);
+    color: var(--index-ink);
+  }
+
+  button,
+  input,
+  select,
+  textarea {
+    font: inherit;
+  }
+
+  input[type='checkbox'],
+  input[type='radio'] {
+    accent-color: var(--index-accent);
+  }
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --index-canvas: #182320;
+    --index-surface: #1d2a26;
+    --index-surface-muted: #14201d;
+    --index-page: #101816;
+    --index-ink: #edf7f3;
+    --index-muted: #b0c1bc;
+    --index-faint: #80938d;
+    --index-line: #2d3b36;
+    --index-line-strong: #43544d;
+    --index-accent: #65c6b0;
+    --index-accent-soft: #173d35;
+    --index-blue: var(--index-accent);
+    --index-blue-soft: var(--index-accent-soft);
+    --index-shadow-soft: 0 16px 36px rgb(0 0 0 / 0.24);
+    --index-focus-ring: rgb(101 198 176 / 0.42);
+  }
+
+  /* 旧的 neutral/white utility 仍存在于若干业务状态组件中，统一映射到主题表面，
+     让自动暗色模式不会出现白色卡片和黑色文字。 */
+  .bg-white { background-color: var(--index-canvas) !important; }
+  .bg-neutral-50 { background-color: var(--index-surface-muted) !important; }
+  .bg-neutral-100 { background-color: color-mix(in srgb, var(--index-surface) 78%, var(--index-ink)) !important; }
+  .text-neutral-900,
+  .text-neutral-800,
+  .text-neutral-700 { color: var(--index-ink) !important; }
+  .text-neutral-600,
+  .text-neutral-500 { color: var(--index-muted) !important; }
+  .text-neutral-400,
+  .text-neutral-300 { color: var(--index-faint) !important; }
+  .border-neutral-200,
+  .border-neutral-300 { border-color: var(--index-line) !important; }
 }

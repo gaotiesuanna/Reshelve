@@ -19,13 +19,13 @@ export function IndexSection({
 
   return (
     <section className="border-b border-index-line">
-      <h3 className="flex min-h-index-row items-center gap-2 px-3 py-2 text-sm font-medium text-index-ink">
+      <h3 className="flex min-h-12 items-center gap-2 px-1 py-2 text-sm font-semibold tracking-[-0.01em] text-index-ink">
         <span className="min-w-0 flex-1 truncate">{title}</span>
-        {count !== undefined && <span className="shrink-0 text-xs text-index-muted">{count}</span>}
+        {count !== undefined && <span className="shrink-0 rounded-full bg-index-surface-muted px-2 py-0.5 text-xs font-mono text-index-muted">{count}</span>}
         {hasToggle && (
           <button
             type="button"
-            className="shrink-0 text-index-faint hover:text-index-ink focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-index-blue"
+            className="shrink-0 rounded-md px-1 text-index-faint hover:bg-index-accent-soft hover:text-index-ink focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-index-accent"
             aria-expanded={expanded}
             aria-controls={detailId}
             aria-label={title}
@@ -36,7 +36,7 @@ export function IndexSection({
         )}
       </h3>
       {showDetails && children !== undefined && (
-        <div id={detailId} className="px-3 pb-3">
+        <div id={detailId} className="px-1 pb-4">
           {children}
         </div>
       )}

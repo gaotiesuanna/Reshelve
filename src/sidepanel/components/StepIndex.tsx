@@ -18,7 +18,7 @@ export function StepIndex<K extends string>({
 
   return (
     <div className="flex min-h-full flex-col">
-      <ol className="flex flex-wrap gap-1.5" aria-label={t('shellStepsLabel')}>
+      <ol className="flex flex-wrap gap-x-2 gap-y-1 border-b border-index-line pb-3" aria-label={t('shellStepsLabel')}>
         {items.map((item, index) => {
           const current = index === currentIndex
           const completed = currentIndex >= 0 && index < currentIndex
@@ -29,12 +29,12 @@ export function StepIndex<K extends string>({
               <span
                 {...(current ? { 'aria-current': 'step' as const } : {})}
                 className={[
-                  'block rounded-md px-2 py-1 text-xs leading-none tabular-nums',
+                  'block rounded-index px-2 py-1 text-xs leading-none tabular-nums transition-colors',
                   current
-                    ? 'bg-index-ink font-semibold text-white'
+                    ? 'bg-index-accent-soft font-semibold text-index-ink ring-1 ring-index-accent/20'
                     : completed
-                      ? 'bg-neutral-100 font-medium text-index-ink'
-                      : 'bg-neutral-100 font-medium text-index-faint',
+                      ? 'font-medium text-index-muted'
+                      : 'font-medium text-index-faint',
                 ].join(' ')}
               >
                 {index + 1}. {item.label}

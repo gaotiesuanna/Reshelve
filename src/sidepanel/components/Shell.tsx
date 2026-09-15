@@ -85,20 +85,20 @@ export function Shell({ children, organizeContent }: { children: ReactNode; orga
             /* 设置不是第几步，步骤条显示出来会误导。返回和标题同一行：
                正文里再写一个「设置」会变成顶栏只剩返回、下面孤零零一个标题。 */
             <div className={tabView
-              ? 'flex min-h-[72px] items-center gap-4 border-b border-index-line bg-white px-5 sm:gap-6 sm:px-8'
+              ? 'flex min-h-[64px] items-center gap-4 border-b border-index-line bg-index-surface px-5 sm:gap-6 sm:px-8'
               : 'flex min-h-index-row items-center gap-2 px-3'}
             >
               {tabView && (
                 <div className="flex shrink-0 items-center gap-2.5">
-                  <span className="flex h-8 w-8 items-center justify-center rounded-lg bg-index-ink text-white">
+                  <span className="flex h-8 w-8 items-center justify-center rounded-index bg-index-ink text-index-canvas shadow-sm">
                     <BookmarkIcon className="h-4 w-4" />
                   </span>
-                  <h1 className="text-base font-semibold tracking-tight text-index-ink">Reshelve</h1>
+                  <h1 className="text-base font-semibold tracking-[-0.02em] text-index-ink">Reshelve</h1>
                 </div>
               )}
               <button
                 type="button"
-                className="inline-flex h-8 items-center gap-1 px-1 text-sm leading-body text-index-muted transition-colors duration-150 hover:text-index-ink focus-visible:outline focus-visible:outline-2 focus-visible:outline-index-blue motion-reduce:transition-none"
+                className="inline-flex h-8 items-center gap-1 rounded-md px-1 text-sm leading-body text-index-muted transition-colors duration-150 hover:bg-index-accent-soft hover:text-index-ink focus-visible:outline focus-visible:outline-2 focus-visible:outline-index-accent motion-reduce:transition-none"
                 onClick={closeSettings}
               >
                 <ChevronLeftIcon className="h-3.5 w-3.5" />
@@ -114,7 +114,7 @@ export function Shell({ children, organizeContent }: { children: ReactNode; orga
                 rel="noreferrer"
                 aria-label={t('settingsAboutSource')}
                 title={t('settingsAboutSource')}
-                className="ml-auto inline-flex h-8 w-8 items-center justify-center rounded-md text-index-muted transition-colors duration-150 hover:text-index-ink focus-visible:outline focus-visible:outline-2 focus-visible:outline-index-blue motion-reduce:transition-none"
+                className="ml-auto inline-flex h-8 w-8 items-center justify-center rounded-md text-index-muted transition-colors duration-150 hover:bg-index-accent-soft hover:text-index-ink focus-visible:outline focus-visible:outline-2 focus-visible:outline-index-accent motion-reduce:transition-none"
               >
                 <GithubIcon className="h-4 w-4" />
               </a>
@@ -165,7 +165,7 @@ export function Shell({ children, organizeContent }: { children: ReactNode; orga
         </div>
       )}
       <main className={tabView
-        ? 'flex min-h-0 flex-1 flex-col overflow-y-auto bg-index-page px-4 py-6 sm:px-8 sm:py-8'
+        ? 'flex min-h-0 flex-1 flex-col overflow-y-auto bg-index-page px-5 py-6 sm:px-8 sm:py-8'
         : 'flex min-h-0 flex-1 flex-col overflow-y-auto p-4'}
       >
         <div className={tabView
@@ -175,7 +175,7 @@ export function Shell({ children, organizeContent }: { children: ReactNode; orga
           {settingsOpen ? <SettingsPanel /> : tabView && mode === 'organize' ? (
             <div
               data-testid="tab-workspace-split"
-              className="grid min-h-full gap-6 lg:grid-cols-[minmax(0,1fr)_minmax(20rem,24rem)] lg:items-stretch"
+              className="grid min-h-full gap-8 lg:grid-cols-[minmax(0,1fr)_minmax(20rem,24rem)] lg:items-stretch"
             >
               <section data-testid="tab-bookmark-workspace" className="flex min-h-full min-w-0 flex-col">
                 <StepIndex items={stepItems()} currentKey={step}>
@@ -221,7 +221,7 @@ export function Shell({ children, organizeContent }: { children: ReactNode; orga
   // 完整标签页是主工作区：全宽铺底，正文在 main 内保持可读的最大宽度。
   // 侧栏仍然是紧凑画布，保持原样铺满。
   return tabView ? (
-    <div className="h-full bg-index-page text-neutral-800">
+    <div className="h-full bg-index-page text-index-ink">
       <div
         data-testid="tab-view-column"
         className="flex h-full w-full flex-col"
@@ -230,6 +230,6 @@ export function Shell({ children, organizeContent }: { children: ReactNode; orga
       </div>
     </div>
   ) : (
-    <div className="flex h-full flex-col bg-white text-neutral-800">{content}</div>
+    <div className="flex h-full flex-col bg-index-surface text-index-ink">{content}</div>
   )
 }

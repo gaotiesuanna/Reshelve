@@ -31,7 +31,7 @@ function DuplicateGroupCard({ group }: { group: DuplicateGroup }) {
   const { cleanupKeep, cleanupSelection, setCleanupKeep, toggleCleanupItem } = useStore()
   const keepId = cleanupKeep[group.key] ?? group.keepId
   return (
-    <li className="space-y-2 rounded-md border border-neutral-200 p-3">
+    <li className="space-y-2 rounded-index border border-index-line bg-index-surface p-3 shadow-sm">
       <ul className="space-y-2">
         {group.items.map((item) => (
           <li key={item.id} className="flex items-start gap-2">
@@ -63,10 +63,10 @@ function DuplicateGroupCard({ group }: { group: DuplicateGroup }) {
 
 /** 结果页那两个并排的次要按钮：同宽、同高，谁也不比谁更像主操作。 */
 const secondaryAction = [
-  'cursor-pointer rounded-md border border-neutral-300 py-2 text-base leading-body text-neutral-700',
+  'cursor-pointer rounded-index border border-index-line-strong bg-index-surface py-2 text-base leading-body text-index-ink',
   'transition-colors duration-150 motion-reduce:transition-none',
-  'hover:enabled:border-neutral-400 hover:enabled:bg-neutral-50',
-  'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-neutral-400 focus-visible:ring-offset-1',
+  'hover:enabled:border-index-accent hover:enabled:bg-index-accent-soft',
+  'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-index-accent focus-visible:ring-offset-1',
   'disabled:cursor-not-allowed disabled:opacity-40',
 ].join(' ')
 
@@ -83,14 +83,14 @@ const CLEANUP_TABS: Array<{ key: CleanupTab; labelKey: Parameters<typeof t>[0] }
  * 一段灰底，选中那格抬成白片——和看板里的书签/访问切换同一套（DashboardStep 的 toggleOn）。
  * 选中态只靠白底加一点投影，不再套 ring：小控件上白片描边会跟灰槽内沿叠成一圈重影。
  */
-const subTabGroup = 'flex min-w-0 rounded-md bg-neutral-100 p-0.5 text-xs'
+const subTabGroup = 'flex min-w-0 rounded-index border border-index-line bg-index-surface-muted p-0.5 text-xs'
 const subTabBase = [
-  'inline-flex h-6 min-w-0 flex-1 cursor-pointer items-center justify-center rounded px-1 font-medium',
+  'inline-flex h-7 min-w-0 flex-1 cursor-pointer items-center justify-center rounded-md px-1 font-medium',
   'transition-colors duration-150 motion-reduce:transition-none',
   'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-neutral-400',
 ].join(' ')
-const subTabOn = `${subTabBase} bg-white text-neutral-900 shadow-sm`
-const subTabOff = `${subTabBase} text-neutral-600 hover:text-neutral-800`
+const subTabOn = `${subTabBase} bg-index-surface text-index-accent shadow-sm`
+const subTabOff = `${subTabBase} text-index-muted hover:text-index-ink`
 
 export function CleanupStep() {
   const {
@@ -336,7 +336,7 @@ export function CleanupStep() {
               <>
                 <p className="text-xs leading-relaxed text-neutral-500">{t('cleanupLinksExplain')}</p>
                 <button
-                  className="rounded-md border border-neutral-300 px-2.5 py-1 text-sm leading-caption hover:border-neutral-400 disabled:opacity-40"
+            className="rounded-index border border-index-line-strong bg-index-surface px-2.5 py-1 text-sm leading-caption text-index-ink hover:border-index-accent disabled:opacity-40"
                   disabled={busy !== null}
                   onClick={() => void startLinkCheck()}
                 >
@@ -443,7 +443,7 @@ export function CleanupStep() {
 
       {tab !== 'aggregate' && (
         /* 吸底的负外边距与 pb-4 的用意见 ScopeStep.tsx 底部那一大段注释，此处照抄 */
-        <div className="sticky -bottom-4 -mx-4 -mb-4 mt-auto space-y-2 border-t border-neutral-200 bg-white px-4 pb-4 pt-3">
+        <div className="sticky -bottom-4 -mx-4 -mb-4 mt-auto space-y-2 border-t border-index-line bg-index-surface px-4 pb-4 pt-3 shadow-[0_-12px_24px_rgba(21,55,47,0.05)]">
           {/* 撤销只有一个槽，清理会把上一次 AI 整理的快照覆盖掉。不静默覆盖 */}
           {undoAvailable && (
             <p className="text-xs leading-relaxed text-amber-700">
@@ -451,7 +451,7 @@ export function CleanupStep() {
             </p>
           )}
           <button
-            className="w-full cursor-pointer rounded-md bg-neutral-800 py-2 text-base leading-body font-medium text-white hover:enabled:bg-neutral-900 disabled:cursor-not-allowed disabled:opacity-40"
+            className="w-full cursor-pointer rounded-index bg-index-ink py-2 text-base leading-body font-medium text-index-canvas shadow-sm hover:enabled:bg-zinc-800 disabled:cursor-not-allowed disabled:opacity-40"
             disabled={total === 0 || busy !== null}
             onClick={() => void runCleanup()}
           >

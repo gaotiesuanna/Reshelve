@@ -55,7 +55,7 @@ export function ScopeStep() {
 
   return (
     <div className="flex min-h-full flex-1 flex-col">
-      <p className="mb-4 text-sm leading-body text-index-muted">{t('scopeIntro')}</p>
+      <p className="mb-5 max-w-2xl text-sm leading-relaxed text-index-muted">{t('scopeIntro')}</p>
 
       {needModel && (
         <div className="mb-4">
@@ -75,7 +75,7 @@ export function ScopeStep() {
         >
           {t(allOpen ? 'scopeCollapseAll' : 'scopeExpandAll')}
         </SecondaryButton>
-        <div className="mt-2 border border-index-line">
+        <div className="mt-3 overflow-hidden rounded-index border border-index-line bg-index-surface shadow-sm">
           <BookmarkTree
             nodes={tree}
             checkedIds={checkedIds}
@@ -99,7 +99,7 @@ export function ScopeStep() {
                 </ul>
               </div>
             )}
-            <dl className="grid grid-cols-2 gap-y-1 text-sm leading-caption">
+            <dl className="grid grid-cols-2 gap-x-6 gap-y-2 text-sm leading-caption">
               <dt className="text-index-muted">{t('prefsStatBookmarks')}</dt><dd>{preview.stats.totalBookmarks}</dd>
               <dt className="text-index-muted">{t('prefsStatFolders')}</dt><dd>{preview.stats.totalFolders}</dd>
               <dt className="text-index-muted">{t('prefsStatEmpty')}</dt><dd>{preview.stats.emptyFolders}</dd>

@@ -1,5 +1,5 @@
 import { describe, it, expect, vi } from 'vitest'
-import { render, screen } from '@testing-library/react'
+import { fireEvent, render, screen } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { LogPanel } from '@/sidepanel/components/LogPanel'
 import type { LogLine } from '@/sidepanel/store'
@@ -32,5 +32,53 @@ describe('LogPanel', () => {
 
     await userEvent.click(screen.getByRole('button', { name: '取消' }))
     expect(onCancel).toHaveBeenCalledOnce()
+  })
+
+  it('新增日志时自动滚动到底部', () => {
+    const { rerender } = render(
+      <LogPanel status="running" busy="正在分析…" progress={null} logs={logs} />,
+    )
+    const scrollArea = screen.getByTestId('llm-log-scroll')
+    let scrollHeight = 600
+    Object.defineProperties(scrollArea, {
+      clientHeight: { configurable: true, get: () => 200 },
+      scrollHeight: { configurable: true, get: () => scrollHeight },
+    })
+
+    rerender(
+      <LogPanel
+        status="running"
+        busy="正在分析…"
+        progress={null}
+        logs={[...logs, { id: 3, phase: 'tags', level: 'info', message: '继续提取…' }]}
+      />,
+    )
+
+    expect(scrollArea.scrollTop).toBe(400)
+  })
+
+  it('用户上翻查看历史时不被新日志拉回底部', () => {
+    const { rerender } = render(
+      <LogPanel status="running" busy="正在分析…" progress={null} logs={logs} />,
+    )
+    const scrollArea = screen.getByTestId('llm-log-scroll')
+    let scrollHeight = 600
+    Object.defineProperties(scrollArea, {
+      clientHeight: { configurable: true, get: () => 200 },
+      scrollHeight: { configurable: true, get: () => scrollHeight },
+    })
+    scrollArea.scrollTop = 100
+    fireEvent.scroll(scrollArea)
+
+    rerender(
+      <LogPanel
+        status="running"
+        busy="正在分析…"
+        progress={null}
+        logs={[...logs, { id: 3, phase: 'tags', level: 'info', message: '继续提取…' }]}
+      />,
+    )
+
+    expect(scrollArea.scrollTop).toBe(100)
   })
 })

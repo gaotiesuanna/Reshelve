@@ -115,7 +115,7 @@ export function ResultStep() {
       </div>
 
       {showTree && (
-        <section className="border-b border-index-line py-3">
+        <section className="border-b border-index-line py-4">
           <h2 className="font-medium text-index-ink">
             {undoResult === null ? t('resultTreeAfterApply') : t('resultTreeAfterUndo')}
           </h2>

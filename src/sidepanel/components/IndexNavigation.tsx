@@ -34,15 +34,15 @@ export function IndexNavigation<K extends string>({
     <div
       data-testid={isTab ? 'tab-app-header' : undefined}
       className={isTab
-        ? 'flex min-h-[72px] items-center gap-5 border-b border-index-line bg-white px-5 sm:gap-8 sm:px-8'
-        : 'flex min-w-0 items-stretch border-b border-index-line'}
+        ? 'flex min-h-[64px] items-center gap-5 border-b border-index-line bg-index-surface px-5 sm:gap-8 sm:px-8'
+        : 'flex min-w-0 items-stretch border-b border-index-line bg-index-surface'}
     >
       {isTab && (
         <div className="flex shrink-0 items-center gap-2.5">
-          <span className="flex h-8 w-8 items-center justify-center rounded-lg bg-index-ink text-white">
+          <span className="flex h-8 w-8 items-center justify-center rounded-index bg-index-ink text-index-canvas shadow-sm">
             <BookmarkIcon className="h-4 w-4" />
           </span>
-          <h1 className="text-base font-semibold tracking-tight text-index-ink">Reshelve</h1>
+          <h1 className="text-base font-semibold tracking-[-0.02em] text-index-ink">Reshelve</h1>
         </div>
       )}
       <div className={isTab ? 'flex min-w-0 flex-1 self-stretch' : 'flex min-w-0 flex-1'} role="tablist">
@@ -61,11 +61,11 @@ export function IndexNavigation<K extends string>({
                   ? 'flex min-w-0 flex-1 items-center justify-center gap-1 overflow-hidden border-b-2 px-2 text-sm'
                   : 'flex h-10 min-w-0 flex-1 items-center justify-center gap-1 overflow-hidden border-b-2 px-1 text-xs',
                 'cursor-pointer transition-colors duration-150 motion-reduce:transition-none',
-                'focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-[-2px] focus-visible:outline-index-blue',
+                'focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-[-2px] focus-visible:outline-index-accent',
                 'disabled:cursor-not-allowed disabled:opacity-40',
                 active
-                  ? 'border-index-blue font-semibold text-index-blue'
-                  : 'border-transparent font-medium text-index-muted hover:text-index-ink',
+                  ? 'border-index-accent bg-index-accent-soft/45 font-semibold text-index-accent'
+                  : 'border-transparent font-medium text-index-muted hover:bg-index-surface-muted hover:text-index-ink',
               ].join(' ')}
               onClick={() => onSelect(item.key)}
             >
@@ -80,7 +80,7 @@ export function IndexNavigation<K extends string>({
       {openInTabLabel !== undefined && onOpenInTab !== undefined && (
         <button
           type="button"
-          className="flex h-10 w-10 shrink-0 cursor-pointer items-center justify-center text-index-muted transition-colors duration-150 hover:text-index-ink focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-[-2px] focus-visible:outline-index-blue motion-reduce:transition-none"
+          className="flex h-10 w-10 shrink-0 cursor-pointer items-center justify-center text-index-muted transition-colors duration-150 hover:bg-index-accent-soft hover:text-index-ink focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-[-2px] focus-visible:outline-index-accent motion-reduce:transition-none"
           aria-label={openInTabLabel}
           title={openInTabLabel}
           onClick={onOpenInTab}
@@ -90,7 +90,7 @@ export function IndexNavigation<K extends string>({
       )}
       <button
         type="button"
-        className="flex h-10 w-10 shrink-0 cursor-pointer items-center justify-center text-index-muted transition-colors duration-150 hover:text-index-ink focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-[-2px] focus-visible:outline-index-blue motion-reduce:transition-none"
+        className="flex h-10 w-10 shrink-0 cursor-pointer items-center justify-center text-index-muted transition-colors duration-150 hover:bg-index-accent-soft hover:text-index-ink focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-[-2px] focus-visible:outline-index-accent motion-reduce:transition-none"
         aria-label={settingsLabel}
         onClick={onOpenSettings}
       >

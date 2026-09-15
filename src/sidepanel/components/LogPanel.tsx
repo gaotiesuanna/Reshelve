@@ -1,6 +1,6 @@
 import { PHASE_LABELS } from '@/background/events'
 import { plural, t } from '@/i18n'
-import type { ReactNode } from 'react'
+import { useLayoutEffect, useRef, type ReactNode } from 'react'
 import type { LogLine, Progress } from '../store'
 import {
   LEVEL_CLASS,
@@ -36,6 +36,8 @@ function statusMark(status: ProgressStatus): ReactNode {
 }
 
 export function LogPanel({ status, busy, progress, logs, onCancel }: Props) {
+  const logScrollArea = useRef<HTMLDivElement>(null)
+  const shouldFollowLogs = useRef(true)
   const percent =
     status !== null && progress !== null && progress.total > 0
       ? status === 'completed'
@@ -43,13 +45,26 @@ export function LogPanel({ status, busy, progress, logs, onCancel }: Props) {
         : Math.min(99, Math.round((progress.done / progress.total) * 100))
       : null
 
+  useLayoutEffect(() => {
+    const scrollArea = logScrollArea.current
+    if (scrollArea === null || !shouldFollowLogs.current) return
+    scrollArea.scrollTop = Math.max(0, scrollArea.scrollHeight - scrollArea.clientHeight)
+  }, [logs])
+
+  function handleLogScroll(): void {
+    const scrollArea = logScrollArea.current
+    if (scrollArea === null) return
+    shouldFollowLogs.current =
+      scrollArea.scrollHeight - scrollArea.clientHeight - scrollArea.scrollTop <= 16
+  }
+
   return (
     <aside
       data-testid="tab-llm-log"
       aria-label={t('llmLogTitle')}
-      className="sticky top-6 flex min-h-[20rem] flex-col overflow-hidden rounded-index border border-index-line bg-white"
+      className="sticky top-6 flex min-h-[20rem] flex-col overflow-hidden rounded-index border border-index-line bg-index-surface shadow-[var(--index-shadow-soft)]"
     >
-      <div className="flex items-center justify-between gap-3 border-b border-index-line px-4 py-3">
+      <div className="flex items-center justify-between gap-3 border-b border-index-line bg-index-surface-muted/45 px-4 py-3.5">
         <div>
           <h2 className="text-sm font-semibold text-index-ink">{t('llmLogTitle')}</h2>
           <p className="mt-0.5 text-xs text-index-faint">{busy ?? t('llmLogEmpty')}</p>
@@ -63,8 +78,8 @@ export function LogPanel({ status, busy, progress, logs, onCancel }: Props) {
       </div>
 
       {percent !== null && (
-        <div className="h-1 w-full bg-index-blue-soft">
-          <div className="h-full bg-index-blue transition-all" style={{ width: `${percent}%` }} />
+        <div className="h-1 w-full bg-index-accent-soft">
+          <div className="h-full bg-index-accent transition-all" style={{ width: `${percent}%` }} />
         </div>
       )}
 
@@ -81,7 +96,7 @@ export function LogPanel({ status, busy, progress, logs, onCancel }: Props) {
           {onCancel !== undefined && (
             <button
               type="button"
-              className="ml-auto rounded-md border border-index-line-strong px-2 py-1 font-medium text-index-muted transition-colors hover:border-index-ink hover:text-index-ink focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-index-blue focus-visible:ring-offset-1 motion-reduce:transition-none"
+              className="ml-auto rounded-md border border-index-line-strong px-2 py-1 font-medium text-index-muted transition-colors hover:border-index-accent hover:bg-index-accent-soft hover:text-index-ink focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-index-accent focus-visible:ring-offset-1 motion-reduce:transition-none"
               onClick={onCancel}
             >
               {t('progressCancel')}
@@ -90,7 +105,12 @@ export function LogPanel({ status, busy, progress, logs, onCancel }: Props) {
         </div>
       )}
 
-      <div className="min-h-0 flex-1 overflow-y-auto px-4 py-3">
+      <div
+        ref={logScrollArea}
+        data-testid="llm-log-scroll"
+        className="min-h-0 flex-1 overflow-y-auto px-4 py-3"
+        onScroll={handleLogScroll}
+      >
         {logs.length > 0 ? (
           <ul className="space-y-2 text-xs leading-body-sm">
             {logs.map((line) => (

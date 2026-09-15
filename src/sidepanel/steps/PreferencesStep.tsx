@@ -255,7 +255,7 @@ export function PreferencesStep() {
         {needModel ? (
           <InlineStatus tone="neutral">{t('prefsModelMissing')}</InlineStatus>
         ) : (
-          <div className="text-sm leading-caption text-index-muted">
+          <div className="rounded-index bg-index-surface-muted px-3 py-2.5 text-sm leading-caption text-index-muted">
             {/* 分组标题已经写着「将使用」，正文里再写一遍是同一句话摆两行。
                 但下拉的可访问名要靠它，所以是视觉隐藏而不是删掉。 */}
             <label htmlFor="model-pick" className="sr-only">{t('prefsModelLabel')}</label>

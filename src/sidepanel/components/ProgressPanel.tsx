@@ -75,12 +75,12 @@ export function ProgressPanel({ status, busy, progress, logs, onCancel }: Props)
       : null
 
   return (
-    <div role="status" className="mt-3 rounded border bg-neutral-50 p-2 text-sm leading-caption">
+    <div role="status" className="mt-4 rounded-index border border-index-line bg-index-surface-muted p-3 text-sm leading-caption shadow-sm">
       <div className={`flex items-center gap-2 ${STATUS_CLASS[status]}`}>
         {status === 'running' ? (
           <span
             aria-hidden
-            className="h-3 w-3 shrink-0 animate-spin rounded-full border border-neutral-300 border-t-neutral-600"
+            className="h-3 w-3 shrink-0 animate-spin rounded-full border border-index-line-strong border-t-index-accent"
           />
         ) : (
           <span aria-hidden className="w-3 shrink-0 text-center font-semibold">
@@ -96,7 +96,7 @@ export function ProgressPanel({ status, busy, progress, logs, onCancel }: Props)
         )}
         {onCancel !== undefined && (
           <button
-            className={`shrink-0 rounded border px-2 py-0.5 text-neutral-600 hover:bg-white ${
+            className={`shrink-0 rounded-md border border-index-line-strong px-2 py-0.5 text-index-muted transition-colors hover:bg-index-surface hover:text-index-ink ${
               progress !== null && progress.total > 0 ? '' : 'ml-auto'
             }`}
             onClick={onCancel}
@@ -107,15 +107,15 @@ export function ProgressPanel({ status, busy, progress, logs, onCancel }: Props)
       </div>
 
       {percent !== null && (
-        <div className="mt-2 h-1 w-full overflow-hidden rounded bg-neutral-200">
-          <div className="h-full bg-neutral-600 transition-all" style={{ width: `${percent}%` }} />
+        <div className="mt-3 h-1 w-full overflow-hidden rounded-full bg-index-line">
+          <div className="h-full bg-index-accent transition-all" style={{ width: `${percent}%` }} />
         </div>
       )}
 
       {logs.length > 0 && (
         <div className="mt-2">
           <button
-            className="flex w-full items-center gap-1 text-left text-neutral-500 hover:text-neutral-800"
+            className="flex w-full items-center gap-1 rounded-md text-left text-index-muted hover:text-index-ink"
             aria-expanded={expanded}
             aria-label={expanded ? t('progressLogsCollapse') : t('progressLogsExpand')}
             onClick={() => setExpanded(!expanded)}

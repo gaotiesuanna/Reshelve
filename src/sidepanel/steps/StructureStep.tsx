@@ -193,7 +193,7 @@ export function StructureStep() {
 
       {/* 标题不重复顶上的步骤条（那里已经写着「确认结构」），目标目录数在开头那句里也说了 */}
       <div data-testid="structure-section">
-        <ol className="border-y border-index-line">
+        <ol className="overflow-hidden rounded-index border border-index-line bg-index-surface shadow-sm">
           {nodes.map((node, index) => (
             <StructureRow
               key={node.id}

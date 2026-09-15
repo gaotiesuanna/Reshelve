@@ -3,7 +3,7 @@
  * 高度不写进 base：Tailwind 的优先级由生成顺序决定，写在 base 里会被同族工具类覆盖得莫名其妙。
  */
 export const focusRing = [
-  'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-index-blue',
+  'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-index-accent',
   'focus-visible:ring-offset-2 focus-visible:ring-offset-index-canvas',
 ].join(' ')
 
@@ -24,9 +24,9 @@ export const buttonSizeSm = 'min-h-0 px-2 py-1 text-xs leading-none'
 /** 白底描边按钮：坐在浅灰分组底色上，靠底色差把可点区域衬出来。 */
 export const secondaryButton = [
   base,
-  'border border-index-line bg-index-canvas text-index-ink',
-  'hover:enabled:border-index-line-strong hover:enabled:bg-index-blue-soft',
-  'active:enabled:bg-index-blue-soft',
+  'border border-index-line-strong bg-index-surface text-index-ink shadow-sm',
+  'hover:enabled:border-index-accent hover:enabled:bg-index-accent-soft',
+  'active:enabled:bg-index-accent-soft active:enabled:scale-[0.98]',
 ].join(' ')
 
 /**
@@ -38,8 +38,8 @@ export const secondaryButton = [
 export const ghostButton = [
   base,
   'text-index-muted',
-  'hover:enabled:bg-index-blue-soft hover:enabled:text-index-ink',
-  'active:enabled:bg-index-blue-soft',
+  'hover:enabled:bg-index-accent-soft hover:enabled:text-index-ink',
+  'active:enabled:bg-index-accent-soft active:enabled:scale-[0.98]',
 ].join(' ')
 
 /**
@@ -49,7 +49,7 @@ export const ghostButton = [
  * 用户读到的是五个平级的动作，而它们根本不是一个维度的东西。
  * 三个选项互斥，共用一条槽来表达它们是同一个筛选维度。
  */
-export const filterTrack = 'inline-flex items-center gap-0.5 rounded-index border border-index-line bg-index-canvas p-0.5'
+export const filterTrack = 'inline-flex items-center gap-0.5 rounded-index border border-index-line bg-index-surface-muted p-0.5'
 
 /**
  * 按下态用 aria-pressed 变体，不在调用点拼 `text-index-canvas`：平级工具类的胜负由
@@ -73,7 +73,7 @@ export const filterToggle = [
 export const primaryButton = [
   base,
   'bg-index-ink text-index-canvas',
-  'hover:enabled:bg-zinc-800 active:enabled:bg-zinc-900',
+  'shadow-sm hover:enabled:bg-zinc-800 active:enabled:bg-zinc-900 active:enabled:scale-[0.98]',
 ].join(' ')
 
 export const dangerButton = [
@@ -84,29 +84,29 @@ export const dangerButton = [
 ].join(' ')
 
 export const fieldClass = [
-  'block min-h-index-row w-full rounded-index border border-index-line bg-index-canvas px-3 py-2',
+  'block min-h-index-row w-full rounded-index border border-index-line-strong bg-index-surface px-3 py-2',
   'text-sm leading-body text-index-ink placeholder:text-index-faint',
-  'disabled:cursor-not-allowed disabled:bg-zinc-50 disabled:text-index-muted',
+  'disabled:cursor-not-allowed disabled:bg-index-surface-muted disabled:text-index-muted',
   focusRing,
 ].join(' ')
 
 export const fieldLabelClass = 'mb-1 block text-sm leading-caption font-medium text-index-ink'
 
-export const stickyActionBar = 'sticky -bottom-4 -mx-4 -mb-4 mt-auto border-t border-index-line bg-index-canvas px-4 pb-4 pt-3'
+export const stickyActionBar = 'sticky -bottom-4 -mx-4 -mb-4 mt-auto border-t border-index-line bg-index-surface px-4 pb-4 pt-3 shadow-[0_-12px_24px_rgba(21,55,47,0.05)]'
 
 /** 虚线边框，暗示「这里要放一个文件」，同时和上方导出组的实线按钮拉开区别。 */
 export const filePickerButton = [
   base,
   buttonSizeMd,
-  'w-full border border-dashed border-index-line-strong bg-index-canvas text-index-muted',
-  'hover:enabled:border-index-ink hover:enabled:bg-index-blue-soft hover:enabled:text-index-ink',
+  'w-full border border-dashed border-index-line-strong bg-index-surface text-index-muted',
+  'hover:enabled:border-index-accent hover:enabled:bg-index-accent-soft hover:enabled:text-index-ink',
 ].join(' ')
 
 /**
  * 局部切换槽，不是索引行也不是主操作。42px 会跟下面那些真按钮抢视线，
  * 也比顶部的模式标签还高；32px 够点，看起来才是在换一组下面的选项。
  */
-export const segmentTrack = 'flex rounded-index border border-index-line bg-index-canvas p-0.5'
+export const segmentTrack = 'flex rounded-index border border-index-line bg-index-surface-muted p-0.5'
 
 export const segmentButton = [
   'inline-flex min-h-8 flex-1 cursor-pointer items-center justify-center gap-1 rounded-index px-2',
@@ -117,17 +117,17 @@ export const segmentButton = [
   'disabled:cursor-not-allowed disabled:opacity-40',
 ].join(' ')
 
-export const segmentActive = 'bg-index-blue-soft text-index-ink hover:text-index-ink'
+export const segmentActive = 'bg-index-surface text-index-ink shadow-sm hover:text-index-ink'
 
 /** 导出格式一行一项，左对齐图标+文字，叠成一组。不复用 base：justify-center 会和这里抢。 */
 export const choiceRow = [
   'inline-flex min-h-index-row w-full cursor-pointer items-center justify-start gap-2 px-3',
   'text-sm leading-caption font-medium text-index-ink',
   'transition-colors duration-150 motion-reduce:transition-none',
-  'hover:enabled:bg-index-blue-soft',
-  'active:enabled:bg-index-blue-soft',
+  'hover:enabled:bg-index-accent-soft',
+  'active:enabled:bg-index-accent-soft active:enabled:scale-[0.99]',
   focusRing,
   'disabled:cursor-not-allowed disabled:opacity-40',
 ].join(' ')
 
-export const choiceList = 'divide-y divide-index-line overflow-hidden rounded-index border border-index-line'
+export const choiceList = 'divide-y divide-index-line overflow-hidden rounded-index border border-index-line bg-index-surface'

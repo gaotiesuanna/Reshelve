@@ -28,7 +28,7 @@ export function IndexRow({
   const showDetails = !hasToggle || expanded
   const content = (
     <>
-      <span className="w-8 shrink-0 font-mono text-xs text-neutral-400">{index}</span>
+      <span className="w-8 shrink-0 font-mono text-xs tabular-nums text-index-faint">{index}</span>
       {leading !== undefined && <span className="shrink-0">{leading}</span>}
       {/* 一条横排，和侧栏拉宽后的样子一致。标题保底 5rem 并吃剩余宽度；
           操作列可收缩，避免默认侧栏把标题挤成一个字母。 */}
@@ -44,13 +44,13 @@ export function IndexRow({
   const fallbackDisclosureLabel = typeof title === 'string' ? title : 'Toggle details'
 
   return (
-    <div className="border-b border-index-line">
-      <div className="flex min-h-index-row items-center gap-2 px-3 py-2 text-left">
+    <div className="border-b border-index-line last:border-b-0">
+      <div className="flex min-h-index-row items-center gap-2 rounded-index px-2 py-2 text-left transition-colors hover:bg-index-surface-muted">
         {content}
         {hasToggle ? (
           <button
             type="button"
-            className="ml-auto shrink-0 text-index-faint hover:text-index-ink focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-index-blue"
+            className="ml-auto shrink-0 rounded-md px-1 text-index-faint hover:bg-index-accent-soft hover:text-index-ink focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-index-accent"
             aria-expanded={expanded}
             aria-controls={detailId}
             aria-label={disclosureLabel ?? fallbackDisclosureLabel}
@@ -61,7 +61,7 @@ export function IndexRow({
         ) : null}
       </div>
       {showDetails && children !== undefined && (
-        <div id={detailId} className="ml-8 border-l border-index-line py-2 pl-3">
+        <div id={detailId} className="ml-8 border-l-2 border-index-accent/20 py-2 pl-3">
           {children}
         </div>
       )}

@@ -71,7 +71,7 @@ function Row({
               aria-label={t('treeSelectBookmark', node.title)}
               checked={selectedBookmarkIds?.has(node.id) ?? false}
               onChange={() => onToggleBookmark(node.id)}
-              className="h-3.5 w-3.5 shrink-0 appearance-none rounded-full border border-neutral-400 bg-white checked:border-index-blue checked:bg-index-blue focus-visible:outline focus-visible:outline-2 focus-visible:outline-index-blue"
+              className="h-3.5 w-3.5 shrink-0 appearance-none rounded-full border border-index-line-strong bg-index-surface checked:border-index-accent checked:bg-index-accent focus-visible:outline focus-visible:outline-2 focus-visible:outline-index-accent"
             />
           ) : null}
           <LinkIcon className="h-3 w-3 shrink-0 text-neutral-300" />
@@ -80,7 +80,7 @@ function Row({
               href={node.url}
               target="_blank"
               rel="noreferrer"
-              className="min-w-0 truncate text-neutral-700 hover:text-index-blue hover:underline focus-visible:outline focus-visible:outline-2 focus-visible:outline-index-blue"
+              className="min-w-0 truncate text-neutral-700 hover:text-index-accent hover:underline focus-visible:outline focus-visible:outline-2 focus-visible:outline-index-accent"
             >
               {node.title}
             </a>
@@ -90,7 +90,7 @@ function Row({
               href={node.url}
               target="_blank"
               rel="noreferrer"
-              className="ml-auto min-w-0 truncate text-sm leading-caption text-neutral-400 hover:text-index-blue hover:underline focus-visible:outline focus-visible:outline-2 focus-visible:outline-index-blue"
+            className="ml-auto min-w-0 truncate text-sm leading-caption text-neutral-400 hover:text-index-accent hover:underline focus-visible:outline focus-visible:outline-2 focus-visible:outline-index-accent"
             >
               {node.url}
             </a>
