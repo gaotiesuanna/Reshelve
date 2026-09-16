@@ -266,20 +266,42 @@ describe('TransferStep', () => {
     expect(screen.queryByRole('button', { name: '取消' })).toBeNull()
   })
 
-  it('切换到新建文件夹时显示名称和父目录树选择器', async () => {
+  it('新建文件夹：名称旁确认/取消；确认即创建并移动，取消退回已有文件夹', async () => {
+    const moveBookmarks = vi.fn(async () => undefined)
+    useStore.setState({ moveBookmarks })
     render(<TransferStep />)
     await userEvent.type(screen.getByRole('searchbox', { name: '搜索书签' }), '.dev')
     await userEvent.click(screen.getByRole('checkbox', { name: '选择书签 A' }))
     await userEvent.click(screen.getByRole('button', { name: /移动选中/ }))
     await userEvent.click(screen.getByRole('button', { name: '新建文件夹' }))
 
-    expect(screen.getByRole('textbox', { name: '新文件夹名称' })).toBeDefined()
-    expect(screen.getByRole('radiogroup', { name: '新文件夹放在' })).toBeDefined()
-    expect((screen.getByRole('button', { name: '确认移动' }) as HTMLButtonElement).disabled).toBe(true)
+    const panel = screen.getByTestId('move-destination-panel')
+    expect(within(panel).getByRole('textbox', { name: '新文件夹名称' })).toBeDefined()
+    expect(within(panel).getByRole('radiogroup', { name: '新文件夹放在' })).toBeDefined()
+    // 新建模式底部不再放「确认移动」，确认在名称右侧
+    expect(within(panel).queryByRole('button', { name: '确认移动' })).toBeNull()
+    const confirmNew = within(panel).getByRole('button', { name: '确认' })
+    expect((confirmNew as HTMLButtonElement).disabled).toBe(true)
+    expect(within(panel).getByTestId('move-new-folder-path').textContent).toContain('将创建：')
 
-    // 输入新文件夹名称后可确认移动
-    await userEvent.type(screen.getByRole('textbox', { name: '新文件夹名称' }), '新分组')
-    expect((screen.getByRole('button', { name: '确认移动' }) as HTMLButtonElement).disabled).toBe(false)
+    await userEvent.type(within(panel).getByRole('textbox', { name: '新文件夹名称' }), '新分组')
+    expect((confirmNew as HTMLButtonElement).disabled).toBe(false)
+    expect(within(panel).getByTestId('move-new-folder-path').textContent).toContain('新分组')
+
+    // 取消先清掉草稿并退回已有文件夹（避开 footer 那颗「取消」）
+    await userEvent.click(within(panel).getByRole('button', { name: '取消' }))
+    expect(within(panel).getByRole('radiogroup', { name: '移动到文件夹' })).toBeDefined()
+    expect(within(panel).queryByRole('textbox', { name: '新文件夹名称' })).toBeNull()
+    expect(within(panel).getByRole('button', { name: '确认移动' })).toBeDefined()
+
+    // 再进新建并点确认 → 创建文件夹并移动
+    await userEvent.click(within(panel).getByRole('button', { name: '新建文件夹' }))
+    await userEvent.type(within(panel).getByRole('textbox', { name: '新文件夹名称' }), '新分组')
+    await userEvent.click(within(panel).getByRole('button', { name: '确认' }))
+    expect(moveBookmarks).toHaveBeenCalledWith({
+      nodeIds: ['101'],
+      destination: { kind: 'new', parentId: '1', title: '新分组' },
+    })
   })
 })
 

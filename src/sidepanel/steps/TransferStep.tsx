@@ -3,9 +3,9 @@ import { t } from '@/i18n'
 import { BookmarkTree, filterBookmarkTree, topLevelNodes } from '../components/BookmarkTree'
 import { BookmarkWorkspace } from '../components/BookmarkWorkspace'
 import { ExportPanel } from '../components/ExportPanel'
-import { FolderPicker } from '../components/FolderPicker'
+import { FolderPicker, findFolderPath } from '../components/FolderPicker'
 import { ImportPanel } from '../components/ImportPanel'
-import { segmentActive, segmentButton, segmentTrack } from '../components/buttonStyles'
+import { buttonSizeMd, primaryButton, secondaryButton, segmentActive, segmentButton, segmentTrack } from '../components/buttonStyles'
 import { ChevronDownIcon, DownloadIcon, UploadIcon } from '../components/icons'
 import { isTabView } from '../lib/openInTab'
 import { collectAllFolderIds, useStore } from '../store'
@@ -298,16 +298,38 @@ function MoveBookmarksPanel({
   }, [tree])
   const targetFolderId = existingFolderId
   const parentFolderId = newFolderParentId || fallbackFolderId
-  const canSubmit = busy === null
+  const parentPath = useMemo(
+    () => (parentFolderId === '' ? null : findFolderPath(tree, parentFolderId)),
+    [tree, parentFolderId],
+  )
+  const newFolderPathPreview = parentPath === null
+    ? null
+    : [...parentPath, newFolderTitle.trim() === '' ? '…' : newFolderTitle.trim()].join(' / ')
+  const canSubmitNew = busy === null
     && nodeIds.length > 0
-    && (mode === 'existing' ? targetFolderId !== '' : newFolderTitle.trim() !== '' && parentFolderId !== '')
+    && newFolderTitle.trim() !== ''
+    && parentFolderId !== ''
+  const canSubmitExisting = busy === null
+    && nodeIds.length > 0
+    && targetFolderId !== ''
 
-  function submit(): void {
-    if (!canSubmit) return
-    const destination: MoveBookmarksInput['destination'] = mode === 'existing'
-      ? { kind: 'existing', folderId: targetFolderId }
-      : { kind: 'new', parentId: parentFolderId, title: newFolderTitle }
-    void moveBookmarks({ nodeIds, destination })
+  function submitExisting(): void {
+    if (!canSubmitExisting) return
+    void moveBookmarks({ nodeIds, destination: { kind: 'existing', folderId: targetFolderId } })
+  }
+
+  function submitNewFolder(): void {
+    if (!canSubmitNew) return
+    void moveBookmarks({
+      nodeIds,
+      destination: { kind: 'new', parentId: parentFolderId, title: newFolderTitle },
+    })
+  }
+
+  function cancelNewFolder(): void {
+    setNewFolderTitle('')
+    setNewFolderParentId('')
+    setMode('existing')
   }
 
   return (
@@ -342,16 +364,55 @@ function MoveBookmarksPanel({
           />
         ) : (
           <div className="space-y-2">
-            <label className="block text-sm leading-caption text-index-ink">
-              <span className="mb-1 block font-medium">{t('moveNewFolderName')}</span>
-              <input
-                type="text"
-                value={newFolderTitle}
-                onChange={(event) => setNewFolderTitle(event.target.value)}
-                className="min-h-index-row w-full rounded-index border border-index-line-strong bg-index-surface px-2 text-sm text-index-ink placeholder:text-index-faint focus-visible:outline focus-visible:ring-2 focus-visible:ring-index-accent"
-                aria-label={t('moveNewFolderName')}
-              />
-            </label>
+            <div className="space-y-1.5">
+              <span className="block font-medium text-sm leading-caption text-index-ink">
+                {t('moveNewFolderName')}
+              </span>
+              <div className="flex items-center gap-2">
+                <input
+                  type="text"
+                  value={newFolderTitle}
+                  onChange={(event) => setNewFolderTitle(event.target.value)}
+                  onKeyDown={(event) => {
+                    if (event.key === 'Enter') {
+                      event.preventDefault()
+                      submitNewFolder()
+                    }
+                    if (event.key === 'Escape') {
+                      event.preventDefault()
+                      cancelNewFolder()
+                    }
+                  }}
+                  className="min-h-index-row min-w-0 flex-1 rounded-index border border-index-line-strong bg-index-surface px-2 text-sm text-index-ink placeholder:text-index-faint focus-visible:outline focus-visible:ring-2 focus-visible:ring-index-accent"
+                  aria-label={t('moveNewFolderName')}
+                />
+                <button
+                  type="button"
+                  className={`${primaryButton} ${buttonSizeMd} shrink-0`}
+                  disabled={!canSubmitNew}
+                  onClick={submitNewFolder}
+                >
+                  {t('moveNewFolderConfirm')}
+                </button>
+                <button
+                  type="button"
+                  className={`${secondaryButton} ${buttonSizeMd} shrink-0`}
+                  disabled={busy !== null}
+                  onClick={cancelNewFolder}
+                >
+                  {t('importCancel')}
+                </button>
+              </div>
+              {newFolderPathPreview !== null && (
+                <p
+                  role="status"
+                  data-testid="move-new-folder-path"
+                  className="rounded-index border border-index-accent/20 bg-index-accent-soft px-2.5 py-2 text-xs leading-relaxed text-index-ink"
+                >
+                  {t('moveNewFolderWillCreate', newFolderPathPreview)}
+                </p>
+              )}
+            </div>
             <FolderPicker
               tree={tree}
               selectedId={parentFolderId}
@@ -363,14 +424,16 @@ function MoveBookmarksPanel({
           </div>
         )}
       </div>
-      <button
-        type="button"
-        className="inline-flex min-h-index-row w-full shrink-0 cursor-pointer items-center justify-center rounded-index bg-index-ink px-3 text-sm leading-caption font-medium text-index-canvas transition-colors duration-150 hover:bg-zinc-800 disabled:cursor-not-allowed disabled:opacity-40 focus-visible:outline focus-visible:ring-2 focus-visible:ring-index-accent motion-reduce:transition-none"
-        disabled={!canSubmit}
-        onClick={submit}
-      >
-        {t('moveConfirm')}
-      </button>
+      {mode === 'existing' && (
+        <button
+          type="button"
+          className="inline-flex min-h-index-row w-full shrink-0 cursor-pointer items-center justify-center rounded-index bg-index-ink px-3 text-sm leading-caption font-medium text-index-canvas transition-colors duration-150 hover:bg-zinc-800 disabled:cursor-not-allowed disabled:opacity-40 focus-visible:outline focus-visible:ring-2 focus-visible:ring-index-accent motion-reduce:transition-none"
+          disabled={!canSubmitExisting}
+          onClick={submitExisting}
+        >
+          {t('moveConfirm')}
+        </button>
+      )}
     </div>
   )
 }

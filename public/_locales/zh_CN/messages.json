@@ -275,8 +275,19 @@
   "moveNewFolderName": {
     "message": "新文件夹名称"
   },
+  "moveNewFolderConfirm": {
+    "message": "确认"
+  },
   "moveParentFolder": {
     "message": "新文件夹放在"
+  },
+  "moveNewFolderWillCreate": {
+    "message": "将创建：$path$",
+    "placeholders": {
+      "path": {
+        "content": "$1"
+      }
+    }
   },
   "folderPickerSearchPlaceholder": {
     "message": "搜索文件夹..."

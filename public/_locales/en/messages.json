@@ -275,8 +275,19 @@
   "moveNewFolderName": {
     "message": "New folder name"
   },
+  "moveNewFolderConfirm": {
+    "message": "Confirm"
+  },
   "moveParentFolder": {
     "message": "Place new folder in"
+  },
+  "moveNewFolderWillCreate": {
+    "message": "Will create: $path$",
+    "placeholders": {
+      "path": {
+        "content": "$1"
+      }
+    }
   },
   "folderPickerSearchPlaceholder": {
     "message": "Search folders…"
