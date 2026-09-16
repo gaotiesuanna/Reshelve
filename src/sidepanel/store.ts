@@ -1115,6 +1115,8 @@ export const useStore = create<State>((set, get) => ({
   },
 
   async goScan() {
+    // 与范围页按钮、步骤条同一道闸：空勾选不建扫描、不跳偏好。
+    if (get().checkedIds.size === 0) return
     const run = get().runSeq
     startTask(set, 'scan', { retryable: null, progress: null, logs: [] })
     const res = await send({ kind: 'scan', scopeRootIds: [...get().checkedIds] })

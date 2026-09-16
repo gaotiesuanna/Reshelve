@@ -122,8 +122,10 @@ describe('StepIndex', () => {
 
     await userEvent.click(screen.getByRole('button', { name: '5. 完成整理' }))
     expect(onSelect).not.toHaveBeenCalled()
-    expect(screen.getByRole('status').textContent).toContain('请先完成前面的步骤')
-    expect(screen.getByRole('status').textContent).toContain('完成整理')
+    const tip = screen.getByTestId('step-locked-tip')
+    expect(tip.textContent).toContain('请先完成前面的步骤')
+    expect(tip.textContent).toContain('完成整理')
+    expect(tip.className).toContain('bg-amber-50')
   })
 
   it('variant="sidebar" 时支持可交互步骤的点击回调', async () => {

@@ -124,6 +124,7 @@ describe('Shell 步骤条', () => {
   it('目录结构页点击偏好会回到偏好，且保留结构草稿', async () => {
     useStore.setState({
       step: 'structure',
+      checkedIds: new Set(['folder-1']),
       scan: {} as ScanResult,
       structureDraft: { locale: 'zh_CN' } as StructureDraft,
       busy: null,
@@ -135,6 +136,7 @@ describe('Shell 步骤条', () => {
     expect(useStore.getState().step).toBe('preferences')
     expect(useStore.getState().structureDraft).not.toBeNull()
   })
+
 })
 
 /**
@@ -375,9 +377,31 @@ describe('Shell 整理步骤导航', () => {
     expect(useStore.getState().step).toBe('scope')
   })
 
+  it('无勾选时即使留着过期扫描结果也不能进偏好', async () => {
+    // 扫过一次后 scan 还在；回到范围页把勾全撤掉时，旧结果不该继续给偏好放行——
+    // 否则偏好页「当前范围」计数是 0，开始分析也会拿空 scopeRootIds。
+    useStore.setState({
+      step: 'scope',
+      checkedIds: new Set(),
+      scan: {} as ScanResult,
+      plan: null,
+      structureDraft: null,
+      applyResult: null,
+      undoResult: null,
+      busy: null,
+    })
+    render(<Shell organizeContent={<div>范围页</div>}>{null}</Shell>)
+
+    await userEvent.click(screen.getByRole('button', { name: '2. 偏好' }))
+    expect(screen.getByRole('status').textContent).toContain('请先完成前面的步骤')
+    expect(useStore.getState().step).toBe('scope')
+  })
+
+
   it('已有扫描结果时可从后续步骤回到偏好', async () => {
     useStore.setState({
       step: 'review',
+      checkedIds: new Set(['folder-1']),
       scan: {} as ScanResult,
       plan: { rows: [], operations: [], warnings: [], scopeRootIds: [], unchanged: [] } as never,
       structureDraft: null,
@@ -389,6 +413,7 @@ describe('Shell 整理步骤导航', () => {
     await userEvent.click(screen.getByRole('button', { name: '2. 偏好' }))
     expect(useStore.getState().step).toBe('preferences')
   })
+
 
   it('已有方案时可从偏好跳到预览', async () => {
     useStore.setState({
@@ -412,7 +437,8 @@ describe('Shell 整理步骤导航', () => {
     useStore.setState({
       step: 'scope',
       checkedIds: new Set(['folder-1']),
-      scan: null,
+      // 即使上次 scan 还在，勾选可能已变，范围页出发必须重扫。
+      scan: {} as ScanResult,
       plan: null,
       busy: null,
       goScan,
@@ -422,6 +448,7 @@ describe('Shell 整理步骤导航', () => {
     await userEvent.click(screen.getByRole('button', { name: '2. 偏好' }))
     expect(goScan).toHaveBeenCalledTimes(1)
   })
+
 })
 
 

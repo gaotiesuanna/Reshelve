@@ -97,37 +97,65 @@ export function TransferStep() {
     else setExpanded(new Set(ids))
   }
 
+  const movePanel = moveOpen ? (
+    <aside
+      ref={movePanelRef}
+      id="move-destination-panel"
+      data-testid="move-destination-panel"
+      aria-label={t('moveDestinationLabel')}
+      className={[
+        'flex min-h-0 w-full shrink-0 flex-col overflow-hidden',
+        'rounded-[calc(var(--index-radius)+4px)] border border-index-line bg-index-surface-muted',
+        'shadow-[var(--index-shadow-soft)]',
+        // 高度上限与左侧 BookmarkWorkspace 同一把尺子（max-h-[48rem]），
+        // 再靠 md:items-stretch 拉齐；曾用 70vh 会在常见窗口高度下先截短右侧。
+        'max-h-[48rem] md:max-w-[28rem] md:flex-1',
+      ].join(' ')}
+    >
+      <MoveBookmarksPanel tree={tree} busy={busy} nodeIds={moveNodeIds} />
+    </aside>
+  ) : null
+
+
   const workspace = (
-    <BookmarkWorkspace
-      viewportLabel={t('bookmarkWorkspaceLabel')}
-      toolbar={(
-        <div className="flex gap-2 text-sm leading-caption">
-          <button
-            className="cursor-pointer rounded-index border border-index-line-strong bg-index-surface px-2 py-1 text-index-ink transition-colors duration-150 hover:bg-index-accent-soft focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-index-accent motion-reduce:transition-none"
-            onClick={() => setAllExpanded(allOpen ? [] : folderIds)}
-          >
-            {t(allOpen ? 'scopeCollapseAll' : 'scopeExpandAll')}
-          </button>
-          <label className="min-w-0 flex-1">
-            <span className="sr-only">{t('treeSearchLabel')}</span>
-            <input
-              type="search"
-              aria-label={t('treeSearchLabel')}
-              value={searchQuery}
-              onChange={(event) => changeSearchQuery(event.target.value)}
-              placeholder={t('treeSearchPlaceholder')}
-              className="w-full min-w-0 rounded-index border border-index-line-strong bg-index-surface px-2 py-1 text-index-ink outline-none placeholder:text-index-faint focus:border-index-accent focus:ring-1 focus:ring-index-accent"
-            />
-          </label>
-        </div>
-      )}
-      footer={(
-        <div className="space-y-3">
-          <div className="space-y-2">
+    <div
+      data-testid="transfer-workspace-row"
+      className={[
+        'flex min-h-0 w-full flex-1 flex-col gap-3',
+        moveOpen ? 'md:flex-row md:items-stretch' : '',
+      ].join(' ')}
+    >
+      <BookmarkWorkspace
+        className={moveOpen ? 'md:min-w-0 md:flex-[1.35] md:max-w-none' : ''}
+        viewportLabel={t('bookmarkWorkspaceLabel')}
+        toolbar={(
+          <div className="flex gap-2 text-sm leading-caption">
+            <button
+              className="cursor-pointer rounded-index border border-index-line-strong bg-index-surface px-2 py-1 text-index-ink transition-colors duration-150 hover:bg-index-accent-soft focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-index-accent motion-reduce:transition-none"
+              onClick={() => setAllExpanded(allOpen ? [] : folderIds)}
+            >
+              {t(allOpen ? 'scopeCollapseAll' : 'scopeExpandAll')}
+            </button>
+            <label className="min-w-0 flex-1">
+              <span className="sr-only">{t('treeSearchLabel')}</span>
+              <input
+                type="search"
+                aria-label={t('treeSearchLabel')}
+                value={searchQuery}
+                onChange={(event) => changeSearchQuery(event.target.value)}
+                placeholder={t('treeSearchPlaceholder')}
+                className="w-full min-w-0 rounded-index border border-index-line-strong bg-index-surface px-2 py-1 text-index-ink outline-none placeholder:text-index-faint focus:border-index-accent focus:ring-1 focus:ring-index-accent"
+              />
+            </label>
+          </div>
+        )}
+        footer={(
+          <div className="space-y-3">
             <div className="flex items-center gap-2">
               <button
                 type="button"
                 aria-expanded={moveOpen}
+                aria-controls={moveOpen ? 'move-destination-panel' : undefined}
                 disabled={!canMove}
                 onClick={() => setMoveOpen((prev) => !prev)}
                 className="flex min-h-index-row min-w-0 flex-1 cursor-pointer items-center justify-between gap-2 rounded-index border border-index-line bg-index-blue-soft px-3 text-sm leading-caption font-semibold text-index-ink transition-colors duration-150 hover:enabled:bg-index-blue-soft/70 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-index-blue disabled:cursor-not-allowed disabled:opacity-40 motion-reduce:transition-none"
@@ -153,60 +181,56 @@ export function TransferStep() {
                 </button>
               )}
             </div>
-            {moveOpen && (
-              <div ref={movePanelRef}>
-                <MoveBookmarksPanel tree={tree} busy={busy} nodeIds={moveNodeIds} />
+            <div className={segmentTrack} role="group">
+              <button
+                type="button"
+                className={`${segmentButton} ${transfer === 'export' ? segmentActive : ''}`}
+                aria-expanded={transfer === 'export'}
+                aria-pressed={transfer === 'export'}
+                disabled={busy !== null}
+                onClick={() => setTransfer((prev) => (prev === 'export' ? null : 'export'))}
+              >
+                <DownloadIcon className={`h-3.5 w-3.5 shrink-0 ${transfer === 'export' ? 'text-index-ink' : 'text-index-faint'}`} />
+                {t('exportToggle')}
+              </button>
+              <button
+                type="button"
+                className={`${segmentButton} ${transfer === 'import' ? segmentActive : ''}`}
+                aria-expanded={transfer === 'import'}
+                aria-pressed={transfer === 'import'}
+                disabled={busy !== null}
+                onClick={() => setTransfer((prev) => (prev === 'import' ? null : 'import'))}
+              >
+                <UploadIcon className={`h-3.5 w-3.5 shrink-0 ${transfer === 'import' ? 'text-index-ink' : 'text-index-faint'}`} />
+                {t('importToggle')}
+              </button>
+            </div>
+            {transfer !== null && (
+              <div ref={transferPanelRef}>
+                {transfer === 'export' ? <ExportPanel /> : <ImportPanel />}
               </div>
             )}
           </div>
-          <div className={segmentTrack} role="group">
-            <button
-              type="button"
-              className={`${segmentButton} ${transfer === 'export' ? segmentActive : ''}`}
-              aria-expanded={transfer === 'export'}
-              aria-pressed={transfer === 'export'}
-              disabled={busy !== null}
-              onClick={() => setTransfer((prev) => (prev === 'export' ? null : 'export'))}
-            >
-              <DownloadIcon className={`h-3.5 w-3.5 shrink-0 ${transfer === 'export' ? 'text-index-ink' : 'text-index-faint'}`} />
-              {t('exportToggle')}
-            </button>
-            <button
-              type="button"
-              className={`${segmentButton} ${transfer === 'import' ? segmentActive : ''}`}
-              aria-expanded={transfer === 'import'}
-              aria-pressed={transfer === 'import'}
-              disabled={busy !== null}
-              onClick={() => setTransfer((prev) => (prev === 'import' ? null : 'import'))}
-            >
-              <UploadIcon className={`h-3.5 w-3.5 shrink-0 ${transfer === 'import' ? 'text-index-ink' : 'text-index-faint'}`} />
-              {t('importToggle')}
-            </button>
-          </div>
-          {transfer !== null && (
-            <div ref={transferPanelRef}>
-              {transfer === 'export' ? <ExportPanel /> : <ImportPanel />}
-            </div>
+        )}
+      >
+        <div className="p-2">
+          <BookmarkTree
+            nodes={visibleNodes}
+            checkedIds={checkedIds}
+            onToggle={toggle}
+            selectedBookmarkIds={moveSelection}
+            onToggleBookmark={toggleBookmarkSelection}
+            expandedIds={visibleExpandedIds}
+            onToggleExpand={toggleExpand}
+            showBookmarks
+          />
+          {searchActive && !searchResult.hasMatches && (
+            <p className="px-2 py-3 text-center text-sm leading-caption text-neutral-500">{t('treeSearchEmpty')}</p>
           )}
         </div>
-      )}
-    >
-      <div className="p-2">
-        <BookmarkTree
-          nodes={visibleNodes}
-          checkedIds={checkedIds}
-          onToggle={toggle}
-          selectedBookmarkIds={moveSelection}
-          onToggleBookmark={toggleBookmarkSelection}
-          expandedIds={visibleExpandedIds}
-          onToggleExpand={toggleExpand}
-          showBookmarks
-        />
-        {searchActive && !searchResult.hasMatches && (
-          <p className="px-2 py-3 text-center text-sm leading-caption text-neutral-500">{t('treeSearchEmpty')}</p>
-        )}
-      </div>
-    </BookmarkWorkspace>
+      </BookmarkWorkspace>
+      {movePanel}
+    </div>
   )
 
   if (tabView) {
@@ -214,7 +238,7 @@ export function TransferStep() {
       <div className="flex min-h-full flex-col md:flex-row gap-3 md:gap-4">
         <aside
           data-testid="transfer-sidebar"
-          className="w-full md:w-20 lg:w-20 shrink-0 border-b md:border-b-0 md:border-r border-index-line pb-4 md:pb-0 pr-0 md:pr-3"
+          className="w-full md:w-25 md:min-w-25 md:max-w-25 shrink-0 overflow-hidden border-b md:border-b-0 md:border-r border-index-line pb-4 md:pb-0 pr-0 md:pr-3"
         >
           <div className="mb-3 px-2 text-xs font-semibold uppercase tracking-wider text-index-muted">
             {t('shellModeTransfer')}
@@ -287,7 +311,7 @@ function MoveBookmarksPanel({
   }
 
   return (
-    <div className="mt-2 space-y-2 rounded-index border border-index-line bg-index-surface-muted p-3">
+    <div className="flex min-h-0 flex-1 flex-col gap-2 p-3">
       <div className={segmentTrack} role="group" aria-label={t('moveDestinationLabel')}>
         <button
           type="button"
@@ -306,40 +330,42 @@ function MoveBookmarksPanel({
           {t('moveNewFolder')}
         </button>
       </div>
-      {mode === 'existing' ? (
-        <FolderPicker
-          tree={tree}
-          selectedId={targetFolderId}
-          onSelect={setExistingFolderId}
-          disabled={busy !== null}
-          label={t('moveDestinationLabel')}
-          name="move-existing-folder-target"
-        />
-      ) : (
-        <div className="space-y-2">
-          <label className="block text-sm leading-caption text-index-ink">
-            <span className="mb-1 block font-medium">{t('moveNewFolderName')}</span>
-            <input
-              type="text"
-              value={newFolderTitle}
-              onChange={(event) => setNewFolderTitle(event.target.value)}
-              className="min-h-index-row w-full rounded-index border border-index-line-strong bg-index-surface px-2 text-sm text-index-ink placeholder:text-index-faint focus-visible:outline focus-visible:ring-2 focus-visible:ring-index-accent"
-              aria-label={t('moveNewFolderName')}
-            />
-          </label>
+      <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain [scrollbar-gutter:stable]">
+        {mode === 'existing' ? (
           <FolderPicker
             tree={tree}
-            selectedId={parentFolderId}
-            onSelect={setNewFolderParentId}
+            selectedId={targetFolderId}
+            onSelect={setExistingFolderId}
             disabled={busy !== null}
-            label={t('moveParentFolder')}
-            name="move-new-folder-parent"
+            label={t('moveDestinationLabel')}
+            name="move-existing-folder-target"
           />
-        </div>
-      )}
+        ) : (
+          <div className="space-y-2">
+            <label className="block text-sm leading-caption text-index-ink">
+              <span className="mb-1 block font-medium">{t('moveNewFolderName')}</span>
+              <input
+                type="text"
+                value={newFolderTitle}
+                onChange={(event) => setNewFolderTitle(event.target.value)}
+                className="min-h-index-row w-full rounded-index border border-index-line-strong bg-index-surface px-2 text-sm text-index-ink placeholder:text-index-faint focus-visible:outline focus-visible:ring-2 focus-visible:ring-index-accent"
+                aria-label={t('moveNewFolderName')}
+              />
+            </label>
+            <FolderPicker
+              tree={tree}
+              selectedId={parentFolderId}
+              onSelect={setNewFolderParentId}
+              disabled={busy !== null}
+              label={t('moveParentFolder')}
+              name="move-new-folder-parent"
+            />
+          </div>
+        )}
+      </div>
       <button
         type="button"
-        className="inline-flex min-h-index-row w-full items-center justify-center rounded-index bg-index-ink px-3 text-sm leading-caption font-medium text-index-canvas transition-colors hover:bg-zinc-800 disabled:cursor-not-allowed disabled:opacity-40 focus-visible:outline focus-visible:ring-2 focus-visible:ring-index-accent"
+        className="inline-flex min-h-index-row w-full shrink-0 cursor-pointer items-center justify-center rounded-index bg-index-ink px-3 text-sm leading-caption font-medium text-index-canvas transition-colors duration-150 hover:bg-zinc-800 disabled:cursor-not-allowed disabled:opacity-40 focus-visible:outline focus-visible:ring-2 focus-visible:ring-index-accent motion-reduce:transition-none"
         disabled={!canSubmit}
         onClick={submit}
       >

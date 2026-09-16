@@ -60,6 +60,16 @@ afterEach(() => {
 })
 
 describe('DashboardStep', () => {
+  it('卡片宽度与 AI 整理书签工作区同上限，不铺满整屏', () => {
+    // BookmarkWorkspace 用 max-w-[54rem]；统计页以前没有上限，宽屏上域名和计数之间空出一长条。
+    const { container } = render(<DashboardStep />)
+    const card = container.querySelector('section')
+    expect(card).not.toBeNull()
+    expect(card!.className).toContain('max-w-[54rem]')
+    expect(card!.className).toContain('w-full')
+  })
+
+
   it('按书签数量列出 Top 域名，丢掉非 http 链接', () => {
     render(<DashboardStep />)
     expect(screen.getByText('github.com')).toBeTruthy()

@@ -174,12 +174,13 @@ describe('TransferStep', () => {
     expect(screen.getByText('没有找到相关书签')).toBeDefined()
   })
 
-  it('底部始终显示移动按钮；未选时禁用，选书签或文件夹后可展开', async () => {
+  it('底部始终显示移动按钮；未选时禁用，选后展开到工作区右侧', async () => {
     render(<TransferStep />)
     const moveButton = screen.getByRole('button', { name: /移动选中/ })
     expect((moveButton as HTMLButtonElement).disabled).toBe(true)
     expect(screen.getByText('先勾选书签或文件夹')).toBeDefined()
     expect(screen.queryByRole('radiogroup', { name: '移动到文件夹' })).toBeNull()
+    expect(screen.queryByTestId('move-destination-panel')).toBeNull()
 
     // 方框勾选文件夹即可启用移动
     await userEvent.click(screen.getByRole('checkbox', { name: 'react' }))
@@ -199,13 +200,34 @@ describe('TransferStep', () => {
     expect(screen.queryByRole('radiogroup', { name: '移动到文件夹' })).toBeNull()
 
     await userEvent.click(screen.getByRole('button', { name: /移动选中/ }))
-    expect(screen.getByRole('radiogroup', { name: '移动到文件夹' })).toBeDefined()
+    const movePanel = screen.getByTestId('move-destination-panel')
+    const footer = screen.getByTestId('bookmark-workspace-footer')
+    const row = screen.getByTestId('transfer-workspace-row')
+    expect(within(movePanel).getByRole('radiogroup', { name: '移动到文件夹' })).toBeDefined()
+    expect(footer.contains(movePanel)).toBe(false)
+    expect(row.contains(movePanel)).toBe(true)
+    expect(row.className).toContain('md:flex-row')
     expect(scrollIntoView).toHaveBeenCalled()
     expect((screen.getByRole('button', { name: '确认移动' }) as HTMLButtonElement).disabled).toBe(true)
 
     await userEvent.click(screen.getByText('工作常用'))
     expect((screen.getByRole('button', { name: '确认移动' }) as HTMLButtonElement).disabled).toBe(false)
   })
+
+  it('宽屏并排时移动面板与左侧工作区同高上限，不被 70vh 截短', async () => {
+    // 右侧若用 max-h-[min(48rem,70vh)]，窗口不到 ~1100px 高时 70vh 先撞线，
+    // 左侧仍是 max-h-[48rem]，并排就矮一截。
+    render(<TransferStep />)
+    await userEvent.click(screen.getByRole('checkbox', { name: 'react' }))
+    await userEvent.click(screen.getByRole('button', { name: /移动选中/ }))
+
+    const workspace = screen.getByTestId('bookmark-workspace')
+    const movePanel = screen.getByTestId('move-destination-panel')
+    expect(workspace.className).toContain('max-h-[48rem]')
+    expect(movePanel.className).toContain('max-h-[48rem]')
+    expect(movePanel.className).not.toContain('70vh')
+  })
+
 
   it('再点移动按钮收起面板；取消全部勾选后按钮仍在但禁用，重新勾选不自动展开', async () => {
     render(<TransferStep />)

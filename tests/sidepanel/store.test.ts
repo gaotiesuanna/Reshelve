@@ -1080,10 +1080,12 @@ describe('失败之后的重试', () => {
   })
 
   it('scan 失败同理', async () => {
+    useStore.setState({ checkedIds: new Set(['1']), retryable: null, error: null })
     vi.mocked(send).mockImplementation(() => Promise.resolve({ ok: false, error: 'x' }) as never)
     await useStore.getState().goScan()
     expect(useStore.getState().retryable).toBe('scan')
   })
+
 
   it('用户主动取消不算失败，不给重试', async () => {
     useStore.setState({ settings: { ...DEFAULT_SETTINGS, ...withLlm({ ...activeLlm(DEFAULT_SETTINGS), apiKey: 'sk-x' }) } })

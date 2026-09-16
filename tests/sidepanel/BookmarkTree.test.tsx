@@ -129,7 +129,10 @@ describe('BookmarkTree 展开收起', () => {
 
     const bookmarkCheckbox = screen.getByRole('checkbox', { name: '选择书签 A' }) as HTMLInputElement
     expect(bookmarkCheckbox.checked).toBe(true)
-    expect(screen.getByRole('link', { name: 'A' }).getAttribute('href')).toBe('https://a.dev')
+    const titleLink = screen.getByRole('link', { name: 'A' })
+    expect(titleLink.getAttribute('href')).toBe('https://a.dev')
+    // 标题至少 6ch，长 URL 不能把名字挤成一个字母
+    expect(titleLink.className).toContain('min-w-[6ch]')
     expect(screen.getByRole('link', { name: 'https://a.dev' }).getAttribute('href')).toBe('https://a.dev')
   })
 

@@ -52,7 +52,7 @@ export function StepIndex<K extends string>({
     const selectable = interactive && selectableKeys.includes(item.key)
     const className = [
       layout === 'sidebar'
-        ? 'flex w-full items-center rounded-index px-2.5 py-2 text-xs leading-body tabular-nums transition-colors text-left'
+        ? 'flex w-full min-w-0 items-center rounded-index px-2.5 py-2 text-xs leading-body tabular-nums transition-colors text-left break-words'
         : 'rounded-index px-2 py-1 text-xs leading-none tabular-nums transition-colors',
       current
         ? 'bg-index-accent-soft font-semibold text-index-ink ring-1 ring-index-accent/20'
@@ -94,8 +94,8 @@ export function StepIndex<K extends string>({
       data-testid="step-locked-tip"
       className={
         variant === 'sidebar'
-          ? 'mt-3 px-2 text-xs leading-relaxed text-index-muted'
-          : 'mt-2 text-xs leading-relaxed text-index-muted'
+          ? 'mt-3 rounded-index bg-amber-50 px-2.5 py-2 text-xs leading-relaxed text-index-muted'
+          : 'mt-2 rounded-index bg-amber-50 px-2.5 py-2 text-xs leading-relaxed text-index-muted'
       }
     >
       {lockedTip}
@@ -107,7 +107,7 @@ export function StepIndex<K extends string>({
       <div className="flex min-h-full flex-col md:flex-row gap-3 md:gap-4">
         <aside
           data-testid="step-sidebar"
-          className="w-full md:w-20 lg:w-20 shrink-0 border-b md:border-b-0 md:border-r border-index-line pb-4 md:pb-0 pr-0 md:pr-3"
+          className="w-full md:w-25 md:min-w-25 md:max-w-25 shrink-0 overflow-hidden border-b md:border-b-0 md:border-r border-index-line pb-4 md:pb-0 pr-0 md:pr-3"
         >
           <div className="mb-3 px-2 text-xs font-semibold uppercase tracking-wider text-index-muted">
             {t('shellStepsLabel')}

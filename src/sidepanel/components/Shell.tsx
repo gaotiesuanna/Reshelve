@@ -64,7 +64,9 @@ export function Shell({ children, organizeContent }: { children: ReactNode; orga
     if (busy !== null) return []
     const keys: Step[] = []
     if (step !== 'scope') keys.push('scope')
-    if (scan !== null || (step === 'scope' && checkedIds.size > 0)) keys.push('preferences')
+    // 偏好必须有勾选：扫过一次留下的 scan 不能在勾选被清空后继续放行，
+    // 否则偏好页「当前范围」是 0，开始分析也会拿空 scopeRootIds。
+    if (checkedIds.size > 0 && (scan !== null || step === 'scope')) keys.push('preferences')
     if (structureDraft !== null) keys.push('structure')
     if (plan !== null) keys.push('review')
     if (applyResult !== null || undoResult !== null) keys.push('result')
@@ -72,10 +74,15 @@ export function Shell({ children, organizeContent }: { children: ReactNode; orga
   })()
   const handleStepSelect = (target: Step): void => {
     if (target === step || busy !== null) return
-    // 范围 → 偏好：还没扫描过时走 goScan，把勾选变成扫描结果。
-    if (target === 'preferences' && scan === null) {
-      if (step === 'scope' && checkedIds.size > 0) void goScan()
-      return
+    if (target === 'preferences') {
+      // 空勾选绝不能进——selectableSteps 已挡一层，这里再守一次。
+      if (checkedIds.size === 0) return
+      // 范围页出发一律重扫：勾选相对上次 scan 可能已变，旧结果不能接着用。
+      if (step === 'scope') {
+        void goScan()
+        return
+      }
+      if (scan === null) return
     }
     // 已有对应状态的步骤之间自由跳，不清草稿——丢弃草稿仍走页面里的返回按钮。
     useStore.setState({ step: target })

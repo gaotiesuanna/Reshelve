@@ -80,21 +80,35 @@ function Row({
               href={node.url}
               target="_blank"
               rel="noreferrer"
-              className="min-w-0 truncate text-neutral-700 hover:text-index-accent hover:underline focus-visible:outline focus-visible:outline-2 focus-visible:outline-index-accent"
+              title={node.title}
+              // 标题至少保住 6 个字符宽，长 URL 只能吃剩余空间，不能把名字挤成一个字母。
+              className="min-w-[6ch] flex-1 basis-[6ch] truncate text-neutral-700 hover:text-index-accent hover:underline focus-visible:outline focus-visible:outline-2 focus-visible:outline-index-accent"
             >
               {node.title}
             </a>
-          ) : <span className="min-w-0 truncate text-neutral-700">{node.title}</span>}
+          ) : (
+            <span
+              title={node.title}
+              className="min-w-[6ch] flex-1 basis-[6ch] truncate text-neutral-700"
+            >
+              {node.title}
+            </span>
+          )}
           {safeUrl ? (
             <a
               href={node.url}
               target="_blank"
               rel="noreferrer"
-            className="ml-auto min-w-0 truncate text-sm leading-caption text-neutral-400 hover:text-index-accent hover:underline focus-visible:outline focus-visible:outline-2 focus-visible:outline-index-accent"
+              title={node.url}
+              className="ml-auto min-w-0 flex-1 truncate text-sm leading-caption text-neutral-400 hover:text-index-accent hover:underline focus-visible:outline focus-visible:outline-2 focus-visible:outline-index-accent"
             >
               {node.url}
             </a>
-          ) : <span className="ml-auto min-w-0 truncate text-sm leading-caption text-neutral-400">{node.url}</span>}
+          ) : (
+            <span title={node.url} className="ml-auto min-w-0 flex-1 truncate text-sm leading-caption text-neutral-400">
+              {node.url}
+            </span>
+          )}
         </div>
       </div>
     )
