@@ -31,7 +31,7 @@ function DuplicateGroupCard({ group }: { group: DuplicateGroup }) {
   const { cleanupKeep, cleanupSelection, setCleanupKeep, toggleCleanupItem } = useStore()
   const keepId = cleanupKeep[group.key] ?? group.keepId
   return (
-    <li className="space-y-2 rounded-index border border-index-line bg-index-surface p-3 shadow-sm">
+    <li className="space-y-2 rounded-index border border-index-line bg-index-surface-muted p-3">
       <ul className="space-y-2">
         {group.items.map((item) => (
           <li key={item.id} className="flex items-start gap-2">
@@ -282,56 +282,65 @@ export function CleanupStep() {
             </button>
           ))}
         </div>
+      </div>
 
-        {tab === 'stale' && (
-          <div role="tabpanel" id="cleanup-panel-stale" aria-labelledby="cleanup-tab-stale">
-            <StaleCleanupSection showHeading={false} />
-          </div>
-        )}
+      <section
+        data-testid="cleanup-task-card"
+        className="mt-4 rounded-[calc(var(--index-radius)+4px)] border border-index-line bg-index-surface shadow-[var(--index-shadow-soft)]"
+      >
+        <div className="space-y-4 p-4 sm:p-5">
+          {tab === 'stale' && (
+            <div role="tabpanel" id="cleanup-panel-stale" aria-labelledby="cleanup-tab-stale">
+              <StaleCleanupSection showHeading={false} />
+            </div>
+          )}
 
-        {tab === 'duplicates' && (
-          <div
-            role="tabpanel"
-            id="cleanup-panel-duplicates"
-            aria-labelledby="cleanup-tab-duplicates"
-            className="space-y-2"
-          >
-            {cleanupScan.duplicates.length === 0 ? (
-              <p className="text-sm leading-caption text-neutral-500">{t('cleanupNothingFound')}</p>
-            ) : (
-              <>
-                {exact.length > 0 && (
-                  <>
-                    <h3 className="text-xs text-neutral-500">{t('cleanupGroupExact')}</h3>
-                    <ul className="space-y-2">
-                      {exact.map((group) => <DuplicateGroupCard key={group.key} group={group} />)}
-                    </ul>
-                  </>
-                )}
+          {tab === 'duplicates' && (
+            <div
+              role="tabpanel"
+              id="cleanup-panel-duplicates"
+              aria-labelledby="cleanup-tab-duplicates"
+              className="space-y-3"
+            >
+              {cleanupScan.duplicates.length === 0 ? (
+                <p className="text-sm leading-caption text-neutral-500">{t('cleanupNothingFound')}</p>
+              ) : (
+                <>
+                  {exact.length > 0 && (
+                    <section className="space-y-2">
+                      <h3 className="text-xs font-medium text-neutral-600">{t('cleanupGroupExact')}</h3>
+                      <ul className="space-y-2">
+                        {exact.map((group) => <DuplicateGroupCard key={group.key} group={group} />)}
+                      </ul>
+                    </section>
+                  )}
 
-                {normalized.length > 0 && (
-                  <>
-                    <h3 className="text-xs text-neutral-500">{t('cleanupGroupNormalized')}</h3>
-                    <p className="text-xs leading-relaxed text-neutral-400">
-                      {t('cleanupGroupNormalizedHint')}
-                    </p>
-                    <ul className="space-y-2">
-                      {normalized.map((group) => <DuplicateGroupCard key={group.key} group={group} />)}
-                    </ul>
-                  </>
-                )}
-              </>
-            )}
-          </div>
-        )}
+                  {normalized.length > 0 && (
+                    <section className={exact.length > 0
+                      ? 'space-y-2 border-t border-index-line pt-3'
+                      : 'space-y-2'}
+                    >
+                      <h3 className="text-xs font-medium text-neutral-600">{t('cleanupGroupNormalized')}</h3>
+                      <p className="text-xs leading-relaxed text-neutral-500">
+                        {t('cleanupGroupNormalizedHint')}
+                      </p>
+                      <ul className="space-y-2">
+                        {normalized.map((group) => <DuplicateGroupCard key={group.key} group={group} />)}
+                      </ul>
+                    </section>
+                  )}
+                </>
+              )}
+            </div>
+          )}
 
-        {tab === 'links' && (
-          <div
-            role="tabpanel"
-            id="cleanup-panel-links"
-            aria-labelledby="cleanup-tab-links"
-            className="space-y-2"
-          >
+          {tab === 'links' && (
+            <div
+              role="tabpanel"
+              id="cleanup-panel-links"
+              aria-labelledby="cleanup-tab-links"
+              className="space-y-2"
+            >
             {linkCheckState === 'idle' && (
               <>
                 <p className="text-xs leading-relaxed text-neutral-500">{t('cleanupLinksExplain')}</p>
@@ -396,13 +405,13 @@ export function CleanupStep() {
                 )}
               </>
             )}
-          </div>
-        )}
+            </div>
+          )}
 
-        {tab !== 'aggregate' && willBeEmpty.length > 0 && (
-          <section className="space-y-2">
-            <h2 className="text-sm leading-caption font-medium text-neutral-700">{t('cleanupSectionEmpty')}</h2>
-            <ul className="space-y-1">
+          {tab !== 'aggregate' && willBeEmpty.length > 0 && (
+            <section className="space-y-2 border-t border-index-line pt-4">
+              <h2 className="text-sm leading-caption font-medium text-neutral-700">{t('cleanupSectionEmpty')}</h2>
+              <ul className="space-y-1">
               {willBeEmpty.map((folder) => (
                 <li key={folder.id} className="flex items-start gap-2">
                   <input
@@ -426,24 +435,39 @@ export function CleanupStep() {
                   </div>
                 </li>
               ))}
-            </ul>
-          </section>
-        )}
-        {tab === 'aggregate' && (
-          <div
-            role="tabpanel"
-            id="cleanup-panel-aggregate"
-            aria-labelledby="cleanup-tab-aggregate"
-          >
-            <AggregateCleanupSection />
+              </ul>
+            </section>
+          )}
+          {tab === 'aggregate' && (
+            <div
+              role="tabpanel"
+              id="cleanup-panel-aggregate"
+              aria-labelledby="cleanup-tab-aggregate"
+            >
+              <AggregateCleanupSection />
+            </div>
+          )}
+        </div>
+
+        {(tab === 'duplicates' || busy !== null) && (
+          <div className={[
+            'border-t border-index-line bg-index-surface px-4 py-4 sm:px-5 [&>[role=status]]:mt-0',
+            tab === 'aggregate' ? 'rounded-b-[calc(var(--index-radius)+3px)]' : '',
+          ].join(' ')}>
+            <ProgressPanel
+              status={progressStatus}
+              busy={busy}
+              progress={progress}
+              logs={logs}
+              {...(busyTask === 'check_links' ? { onCancel: () => void cancel() } : {})}
+            />
           </div>
         )}
-
-      </div>
-
       {tab !== 'aggregate' && (
-        /* 吸底的负外边距与 pb-4 的用意见 ScopeStep.tsx 底部那一大段注释，此处照抄 */
-        <div className="sticky -bottom-4 -mx-4 -mb-4 mt-auto space-y-2 border-t border-index-line bg-index-surface px-4 pb-4 pt-3 shadow-[0_-12px_24px_rgba(21,55,47,0.05)]">
+        <div
+          data-testid="cleanup-action-region"
+          className="space-y-2 rounded-b-[calc(var(--index-radius)+3px)] border-t border-index-line bg-index-surface-muted px-4 py-4 sm:px-5"
+        >
           {/* 撤销只有一个槽，清理会把上一次 AI 整理的快照覆盖掉。不静默覆盖 */}
           {undoAvailable && (
             <p className="text-xs leading-relaxed text-amber-700">
@@ -459,15 +483,7 @@ export function CleanupStep() {
           </button>
         </div>
       )}
-      {(tab === 'duplicates' || busy !== null) && (
-        <ProgressPanel
-          status={progressStatus}
-          busy={busy}
-          progress={progress}
-          logs={logs}
-          {...(busyTask === 'check_links' ? { onCancel: () => void cancel() } : {})}
-        />
-      )}
+      </section>
     </div>
   )
 }

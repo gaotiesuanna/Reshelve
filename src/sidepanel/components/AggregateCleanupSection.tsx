@@ -288,13 +288,16 @@ export function AggregateCleanupSection() {
       )}
 
       {matches.length > 0 && (
-        <div className="sticky -bottom-4 -mx-4 -mb-4 space-y-2 border-t border-neutral-200 bg-white px-4 pb-4 pt-3">
+        <div
+          data-testid="cleanup-aggregate-action-region"
+          className="space-y-2 border-t border-index-line pt-4"
+        >
           {undoAvailable && (
             <p className="text-xs leading-relaxed text-amber-700">{t('cleanupOverwriteUndoWarning')}</p>
           )}
           <button
             type="button"
-            className="w-full cursor-pointer rounded-md bg-neutral-800 py-2 text-base leading-body font-medium text-white transition-colors duration-150 hover:enabled:bg-neutral-900 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-neutral-400 focus-visible:ring-offset-1 disabled:cursor-not-allowed disabled:opacity-40 motion-reduce:transition-none"
+            className="w-full cursor-pointer rounded-index bg-index-ink py-2 text-base leading-body font-medium text-index-canvas shadow-sm transition-colors duration-150 hover:enabled:bg-zinc-800 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-index-accent focus-visible:ring-offset-1 disabled:cursor-not-allowed disabled:opacity-40 motion-reduce:transition-none"
             disabled={!canRun}
             onClick={() => void runAggregate({
               bookmarkIds: [...selected],

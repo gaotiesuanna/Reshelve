@@ -571,6 +571,35 @@ describe('CleanupStep 功能小 tab', () => {
     await openCleanupTab('重复收藏')
     expect(screen.getByText(/2 组重复/)).toBeDefined()
   })
+
+  it('把当前功能内容和执行操作收在同一张工作卡片里', async () => {
+    render(<CleanupStep />)
+    await openCleanupTab('重复收藏')
+
+    const card = screen.getByTestId('cleanup-task-card')
+    expect(card.className).toContain('bg-index-surface')
+    expect(within(card).getByRole('tabpanel', { name: '重复收藏' })).toBeDefined()
+    expect(within(card).getByRole('button', { name: '清理 2 项' })).toBeDefined()
+  })
+
+  it('执行区按正常内容流排列，不再吸底漂浮遮住列表', () => {
+    render(<CleanupStep />)
+
+    const actionRegion = screen.getByTestId('cleanup-action-region')
+    expect(actionRegion.className).not.toContain('sticky')
+    expect(actionRegion.className).not.toContain('-bottom-')
+  })
+
+  it('当前功能的进度也属于工作卡片，不落在卡片外面', async () => {
+    useStore.setState({
+      logs: [{ id: 1, phase: 'cleanup', level: 'info', message: '扫描完成：2 组重复、0 个空文件夹' }],
+    })
+    render(<CleanupStep />)
+    await openCleanupTab('重复收藏')
+
+    const card = screen.getByTestId('cleanup-task-card')
+    expect(within(card).getByRole('status')).toBeDefined()
+  })
 })
 
 describe('CleanupStep 默认勾选', () => {
@@ -595,6 +624,18 @@ describe('CleanupStep 默认勾选', () => {
     render(<CleanupStep />)
     await openCleanupTab('重复收藏')
     expect(screen.getByText(/默认不勾/)).toBeDefined()
+  })
+
+  it('只有可能相同时，第一个分区顶部不多画一道分隔线', async () => {
+    useStore.setState({
+      cleanupScan: { ...scan, duplicates: scan.duplicates.filter((group) => group.kind === 'normalized') },
+      cleanupSelection: { delete: new Set(), move: new Set(), staleMove: new Set() },
+    })
+    render(<CleanupStep />)
+    await openCleanupTab('重复收藏')
+
+    const section = screen.getByRole('heading', { name: '可能相同' }).parentElement
+    expect(section?.className).not.toContain('border-t')
   })
 })
 
@@ -691,6 +732,30 @@ describe('CleanupStep 内容聚合', () => {
     expect(screen.getByText('找到 2 条，已选 2 条')).toBeDefined()
     await userEvent.click(screen.getByRole('checkbox', { name: '聚合 NAS' }))
     expect(screen.getByText('找到 2 条，已选 1 条')).toBeDefined()
+  })
+
+  it('聚合操作区同样留在工作卡片内的正常内容流中', async () => {
+    useStore.setState({ cleanupScan: { ...scan, items: aggregateItems, folders: aggregateFolders } })
+    render(<CleanupStep />)
+    await openCleanupTab('内容聚合')
+    await userEvent.type(screen.getByRole('searchbox', { name: '匹配内容' }), '192.168.5.')
+
+    const card = screen.getByTestId('cleanup-task-card')
+    const actionRegion = within(card).getByTestId('cleanup-aggregate-action-region')
+    expect(actionRegion.className).not.toContain('sticky')
+    expect(actionRegion.className).not.toContain('-bottom-')
+    expect(within(actionRegion).getByRole('button', { name: '聚合 2 条收藏' })).toBeDefined()
+  })
+
+  it('工作卡片不裁掉绝对定位的目标文件夹下拉列表', async () => {
+    useStore.setState({ cleanupScan: { ...scan, items: aggregateItems, folders: aggregateFolders } })
+    render(<CleanupStep />)
+    await openCleanupTab('内容聚合')
+    await userEvent.type(screen.getByRole('searchbox', { name: '匹配内容' }), '192.168.5.')
+    await userEvent.click(screen.getByRole('combobox', { name: '新文件夹放在' }))
+
+    expect(screen.getByRole('listbox')).toBeDefined()
+    expect(screen.getByTestId('cleanup-task-card').className).not.toContain('overflow-hidden')
   })
 
   it('匹配超过 200 条时仍可完整选择，不用缩小用户要求的范围', async () => {
