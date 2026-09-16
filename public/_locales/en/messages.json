@@ -404,6 +404,12 @@
   "treeEditUrlLabel": {
     "message": "URL"
   },
+  "treeEditCancel": {
+    "message": "Cancel"
+  },
+  "treeEditSave": {
+    "message": "Save"
+  },
   "treeDeleteConfirm": {
     "message": "Delete “$title$”?",
     "placeholders": {

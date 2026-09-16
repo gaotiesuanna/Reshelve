@@ -60,13 +60,15 @@ afterEach(() => {
 })
 
 describe('DashboardStep', () => {
-  it('卡片宽度与 AI 整理书签工作区同上限，不铺满整屏', () => {
+  it('卡片宽度与 AI 整理书签工作区同上限，宽屏居中', () => {
     // BookmarkWorkspace 用 max-w-[54rem]；统计页以前没有上限，宽屏上域名和计数之间空出一长条。
+    // 统计是单卡内容，tab 全宽铺底时贴左会空出右侧大块，mx-auto 把它收回中间。
     const { container } = render(<DashboardStep />)
     const card = container.querySelector('section')
     expect(card).not.toBeNull()
     expect(card!.className).toContain('max-w-[54rem]')
     expect(card!.className).toContain('w-full')
+    expect(card!.className).toContain('mx-auto')
   })
 
 

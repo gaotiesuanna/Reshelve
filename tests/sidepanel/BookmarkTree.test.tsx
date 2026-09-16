@@ -1,3 +1,4 @@
+import { useState } from 'react'
 import { describe, it, expect, vi } from 'vitest'
 import { render, screen } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
@@ -212,6 +213,7 @@ describe('BookmarkTree 右键菜单', () => {
     onRename: vi.fn(async () => true),
     onEditBookmark: vi.fn(async () => true),
     onDelete: vi.fn(async () => true),
+    onDiscardNewFolder: vi.fn(async () => true),
     onEnsureExpanded: vi.fn(),
   })
 
@@ -224,6 +226,21 @@ describe('BookmarkTree 右键菜单', () => {
       ]},
     ]
   }
+
+  function addChildFolder(
+    tree: BookmarkNode[],
+    parentId: string,
+    child: BookmarkNode,
+  ): BookmarkNode[] {
+    return tree.map((node) => {
+      if (node.id === parentId) {
+        return { ...node, children: [...(node.children ?? []), child] }
+      }
+      if (node.children === undefined) return node
+      return { ...node, children: addChildFolder(node.children, parentId, child) }
+    })
+  }
+
 
   it('右键普通文件夹显示新建、重命名、删除', async () => {
     const user = userEvent.setup()
@@ -259,6 +276,52 @@ describe('BookmarkTree 右键菜单', () => {
     expect(edit.onEnsureExpanded).toHaveBeenCalledWith('10')
     expect(edit.onCreateFolder).toHaveBeenCalledWith('10')
   })
+
+  it('新建后 Esc 取消会丢弃刚建的文件夹', async () => {
+    const user = userEvent.setup()
+    const onDiscardNewFolder = vi.fn(async () => true)
+    const onRename = vi.fn(async () => true)
+    const onDelete = vi.fn(async () => true)
+
+    function Harness() {
+      const [nodes, setNodes] = useState(folderNodes())
+      return (
+        <BookmarkTree
+          nodes={nodes}
+          checkedIds={new Set()}
+          onToggle={vi.fn()}
+          expandedIds={new Set(['1', '10'])}
+          onToggleExpand={vi.fn()}
+          showBookmarks
+          edit={{
+            onCreateFolder: async (parentId) => {
+              setNodes((prev) => addChildFolder(prev, parentId, {
+                id: '999', parentId, title: '新建文件夹', children: [],
+              }))
+              return '999'
+            },
+            onRename,
+            onEditBookmark: vi.fn(async () => true),
+            onDelete,
+            onDiscardNewFolder,
+            onEnsureExpanded: vi.fn(),
+          }}
+        />
+      )
+    }
+
+    render(<Harness />)
+    await user.pointer({ keys: '[MouseRight>]', target: screen.getByText('react') })
+    await user.click(screen.getByRole('menuitem', { name: '新建子文件夹' }))
+    expect(screen.getByLabelText('重命名')).toBeDefined()
+
+    await user.keyboard('{Escape}')
+
+    expect(onDiscardNewFolder).toHaveBeenCalledWith('999')
+    expect(onRename).not.toHaveBeenCalled()
+    expect(onDelete).not.toHaveBeenCalled()
+  })
+
 
   it('永久根的重命名和删除禁用，仍可新建子文件夹', async () => {
     const user = userEvent.setup()
@@ -298,6 +361,49 @@ describe('BookmarkTree 右键菜单', () => {
 
     expect(edit.onEditBookmark).toHaveBeenCalledWith('100', 'Alpha', 'https://a.dev')
   })
+
+  it('Esc 退出书签编辑且不提交', async () => {
+    const user = userEvent.setup()
+    const edit = editHandlers()
+    renderTree({
+      nodes: folderNodes(),
+      expandedIds: new Set(['1', '10']),
+      edit,
+      showBookmarks: true,
+      onToggleBookmark: vi.fn(),
+    })
+
+    await user.pointer({ keys: '[MouseRight>]', target: screen.getByText('A') })
+    await user.click(screen.getByRole('menuitem', { name: '编辑' }))
+    const title = screen.getByLabelText('名称') as HTMLInputElement
+    await user.clear(title)
+    await user.type(title, '改了又反悔')
+    await user.keyboard('{Escape}')
+
+    expect(edit.onEditBookmark).not.toHaveBeenCalled()
+    expect(screen.queryByLabelText('名称')).toBeNull()
+    expect(screen.getByText('A')).toBeDefined()
+  })
+
+  it('取消按钮退出书签编辑且不提交', async () => {
+    const user = userEvent.setup()
+    const edit = editHandlers()
+    renderTree({
+      nodes: folderNodes(),
+      expandedIds: new Set(['1', '10']),
+      edit,
+      showBookmarks: true,
+      onToggleBookmark: vi.fn(),
+    })
+
+    await user.pointer({ keys: '[MouseRight>]', target: screen.getByText('A') })
+    await user.click(screen.getByRole('menuitem', { name: '编辑' }))
+    await user.click(screen.getByRole('button', { name: '取消' }))
+
+    expect(edit.onEditBookmark).not.toHaveBeenCalled()
+    expect(screen.queryByLabelText('名称')).toBeNull()
+  })
+
 
   it('重命名已有文件夹时回车提交', async () => {
     const user = userEvent.setup()

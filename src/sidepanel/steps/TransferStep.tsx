@@ -240,6 +240,7 @@ export function TransferStep() {
                 if (!window.confirm(message)) return false
                 return removeTreeNode(node.id)
               },
+              onDiscardNewFolder: (id) => removeTreeNode(id),
               onEnsureExpanded: (id) => {
                 if (visibleExpandedIds.has(id)) return
                 const next = new Set(visibleExpandedIds)

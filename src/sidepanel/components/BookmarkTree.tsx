@@ -10,9 +10,10 @@ export interface TreeEditHandlers {
   onRename: (id: string, title: string) => Promise<boolean>
   onEditBookmark: (id: string, title: string, url: string) => Promise<boolean>
   onDelete: (node: BookmarkNode) => Promise<boolean>
+  /** 取消「新建子文件夹」后的命名：无确认直接删掉刚建的空夹。 */
+  onDiscardNewFolder: (id: string) => Promise<boolean>
   onEnsureExpanded: (id: string) => void
 }
-
 interface Props {
   nodes: BookmarkNode[]
   checkedIds: Set<string>
@@ -33,7 +34,7 @@ type MenuState = {
 }
 
 type EditState =
-  | { id: string; mode: 'rename'; title: string }
+  | { id: string; mode: 'rename'; title: string; created?: boolean }
   | { id: string; mode: 'bookmark'; title: string; url: string }
 
 function countBookmarks(node: BookmarkNode): number {
@@ -89,16 +90,19 @@ type RowShared = {
   setEditing: (next: EditState | null) => void
   openMenu: (event: ReactMouseEvent, node: BookmarkNode) => void
   commitEdit: (state: EditState) => Promise<void>
+  cancelEdit: (state: EditState) => Promise<void>
 }
 
 function InlineRename({
   value,
   ariaLabel,
+  showCancel,
   onCommit,
   onCancel,
 }: {
   value: string
   ariaLabel: string
+  showCancel?: boolean
   onCommit: (next: string) => void
   onCancel: () => void
 }) {
@@ -123,24 +127,38 @@ function InlineRename({
   }
 
   return (
-    <input
-      ref={ref}
-      aria-label={ariaLabel}
-      value={draft}
-      onChange={(event) => setDraft(event.target.value)}
-      onKeyDown={(event) => {
-        if (event.key === 'Enter') {
-          event.preventDefault()
-          commit(draft)
-        } else if (event.key === 'Escape') {
-          event.preventDefault()
-          cancel()
-        }
-      }}
-      onBlur={() => commit(draft)}
-      onClick={(event) => event.stopPropagation()}
-      className="min-w-0 flex-1 rounded border border-index-accent bg-index-surface px-1.5 py-0.5 text-base leading-body text-index-ink outline-none ring-1 ring-index-accent"
-    />
+    <div className="flex min-w-0 flex-1 items-center gap-1.5">
+      <input
+        ref={ref}
+        aria-label={ariaLabel}
+        value={draft}
+        onChange={(event) => setDraft(event.target.value)}
+        onKeyDown={(event) => {
+          if (event.key === 'Enter') {
+            event.preventDefault()
+            commit(draft)
+          } else if (event.key === 'Escape') {
+            event.preventDefault()
+            cancel()
+          }
+        }}
+        onBlur={() => commit(draft)}
+        onClick={(event) => event.stopPropagation()}
+        className="min-w-0 flex-1 rounded border border-index-accent bg-index-surface px-1.5 py-0.5 text-base leading-body text-index-ink outline-none ring-1 ring-index-accent"
+      />
+      {showCancel === true && (
+        <button
+          type="button"
+          className="shrink-0 cursor-pointer rounded-index px-2 py-0.5 text-xs leading-caption text-index-muted hover:bg-index-surface-muted hover:text-index-ink focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-index-accent"
+          onMouseDown={(event) => {
+            event.preventDefault()
+            cancel()
+          }}
+        >
+          {t('treeEditCancel')}
+        </button>
+      )}
+    </div>
   )
 }
 
@@ -157,6 +175,7 @@ function BookmarkEditForm({
 }) {
   const [draftTitle, setDraftTitle] = useState(title)
   const [draftUrl, setDraftUrl] = useState(url)
+  const formRef = useRef<HTMLDivElement>(null)
   const titleRef = useRef<HTMLInputElement>(null)
   const done = useRef(false)
   useEffect(() => {
@@ -178,6 +197,7 @@ function BookmarkEditForm({
 
   return (
     <div
+      ref={formRef}
       className="flex min-w-0 flex-1 flex-col gap-1 py-1"
       onClick={(event) => event.stopPropagation()}
       onKeyDown={(event) => {
@@ -185,6 +205,12 @@ function BookmarkEditForm({
           event.preventDefault()
           cancel()
         }
+      }}
+      onBlur={(event) => {
+        const next = event.relatedTarget as Node | null
+        if (next !== null && formRef.current?.contains(next)) return
+        // 点到表单外：保存退出，避免卡在「名称」焦点上出不去
+        submit()
       }}
     >
       <label className="flex min-w-0 items-center gap-2">
@@ -215,13 +241,35 @@ function BookmarkEditForm({
               submit()
             }
           }}
-          onBlur={submit}
           className="min-w-0 flex-1 rounded border border-index-line bg-index-surface px-1.5 py-0.5 text-sm leading-caption outline-none focus:border-index-accent focus:ring-1 focus:ring-index-accent"
         />
       </label>
+      <div className="flex items-center justify-end gap-2 pl-12">
+        <button
+          type="button"
+          className="cursor-pointer rounded-index px-2 py-0.5 text-xs leading-caption text-index-muted hover:bg-index-surface-muted hover:text-index-ink focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-index-accent"
+          onMouseDown={(event) => {
+            event.preventDefault()
+            cancel()
+          }}
+        >
+          {t('treeEditCancel')}
+        </button>
+        <button
+          type="button"
+          className="cursor-pointer rounded-index bg-index-ink px-2 py-0.5 text-xs leading-caption font-medium text-index-canvas hover:bg-zinc-800 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-index-accent"
+          onMouseDown={(event) => {
+            event.preventDefault()
+            submit()
+          }}
+        >
+          {t('treeEditSave')}
+        </button>
+      </div>
     </div>
   )
 }
+
 
 function Row({
   node,
@@ -238,6 +286,7 @@ function Row({
   setEditing,
   openMenu,
   commitEdit,
+  cancelEdit,
 }: { node: BookmarkNode } & RowShared) {
   const contextProps = edit === undefined
     ? {}
@@ -341,8 +390,19 @@ function Row({
             <InlineRename
               value={editing.title}
               ariaLabel={t('treeMenuRename')}
-              onCommit={(title) => void commitEdit({ id: node.id, mode: 'rename', title })}
-              onCancel={() => setEditing(null)}
+              showCancel={editing.created === true}
+              onCommit={(title) => void commitEdit({
+                id: node.id,
+                mode: 'rename',
+                title,
+                created: editing.created,
+              })}
+              onCancel={() => void cancelEdit({
+                id: node.id,
+                mode: 'rename',
+                title: editing.title,
+                created: editing.created,
+              })}
             />
           </div>
         ) : (
@@ -376,6 +436,7 @@ function Row({
           setEditing={setEditing}
           openMenu={openMenu}
           commitEdit={commitEdit}
+          cancelEdit={cancelEdit}
         />
       ))}
     </div>
@@ -477,12 +538,20 @@ export function BookmarkTree({
     setMenu({ x: event.clientX, y: event.clientY, node })
   }
 
+  async function cancelEdit(state: EditState): Promise<void> {
+    if (edit === undefined) return
+    setEditing(null)
+    if (state.mode === 'rename' && state.created === true) {
+      await edit.onDiscardNewFolder(state.id)
+    }
+  }
+
   async function commitEdit(state: EditState): Promise<void> {
     if (edit === undefined) return
     if (state.mode === 'rename') {
       const title = state.title.trim()
       if (title === '') {
-        setEditing(null)
+        await cancelEdit(state)
         return
       }
       const node = findNode(nodes, state.id)
@@ -518,7 +587,12 @@ export function BookmarkTree({
       const createdId = await edit.onCreateFolder(node.id)
       if (createdId !== null) {
         edit.onEnsureExpanded(node.id)
-        setEditing({ id: createdId, mode: 'rename', title: t('treeNewFolderDefault') })
+        setEditing({
+          id: createdId,
+          mode: 'rename',
+          title: t('treeNewFolderDefault'),
+          created: true,
+        })
       }
       return
     }
@@ -547,7 +621,9 @@ export function BookmarkTree({
     setEditing,
     openMenu,
     commitEdit,
+    cancelEdit,
   }
+
 
   return (
     <div className="text-base leading-body">

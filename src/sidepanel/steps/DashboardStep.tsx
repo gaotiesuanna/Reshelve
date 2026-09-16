@@ -147,7 +147,7 @@ export function DashboardStep() {
   }
 
   return (
-    <section className="w-full max-w-[54rem] rounded-index border border-index-line bg-index-surface p-5 shadow-[var(--index-shadow-soft)]">
+    <section className="mx-auto w-full max-w-[54rem] rounded-index border border-index-line bg-index-surface p-5 shadow-[var(--index-shadow-soft)]">
 
       <header className="mb-4 flex items-start justify-between gap-3">
         <div className="min-w-0">
