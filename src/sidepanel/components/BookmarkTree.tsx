@@ -1,4 +1,4 @@
-import { useEffect, useId, useRef, useState, type MouseEvent as ReactMouseEvent } from 'react'
+import { useEffect, useId, useRef, useState, type DragEvent, type HTMLAttributes, type MouseEvent as ReactMouseEvent } from 'react'
 import type { BookmarkNode } from '@/core/ports'
 import { sanitizeUrl } from '@/core/sanitize'
 import { isImmutableFolder } from '@/engine/editNodes'
@@ -14,6 +14,12 @@ export interface TreeEditHandlers {
   onDiscardNewFolder: (id: string) => Promise<boolean>
   onEnsureExpanded: (id: string) => void
 }
+export interface TreeMoveHandlers {
+  nodeIds: string[]
+  disabled: boolean
+  canDrop: (nodeIds: string[], folderId: string) => boolean
+  onMove: (nodeIds: string[], folderId: string) => void
+}
 interface Props {
   nodes: BookmarkNode[]
   checkedIds: Set<string>
@@ -25,6 +31,7 @@ interface Props {
   showBookmarks?: boolean
   /** 浏览书签页打开右键菜单与行内编辑；范围勾选树不传。 */
   edit?: TreeEditHandlers
+  move?: TreeMoveHandlers
 }
 
 type MenuState = {
@@ -91,6 +98,9 @@ type RowShared = {
   openMenu: (event: ReactMouseEvent, node: BookmarkNode) => void
   commitEdit: (state: EditState) => Promise<void>
   cancelEdit: (state: EditState) => Promise<void>
+  move?: TreeMoveHandlers
+  dropTargetId: string | null
+  dragProps: (node: BookmarkNode, selected: boolean, isEditing: boolean) => HTMLAttributes<HTMLDivElement>
 }
 
 function InlineRename({
@@ -287,6 +297,9 @@ function Row({
   openMenu,
   commitEdit,
   cancelEdit,
+  move,
+  dropTargetId,
+  dragProps,
 }: { node: BookmarkNode } & RowShared) {
   const contextProps = edit === undefined
     ? {}
@@ -303,9 +316,11 @@ function Row({
 
     return (
       <div
+        data-bookmark-row={node.id}
+        {...dragProps(node, selected, isEditing)}
         className={[
           'flex min-w-0 items-center rounded py-0.5 pr-2 text-neutral-600 transition-colors',
-          selectable && !isEditing ? 'cursor-pointer' : '',
+          selectable && !isEditing ? (selected && move !== undefined && !move.disabled ? 'cursor-grab active:cursor-grabbing' : 'cursor-pointer') : '',
           selected ? 'bg-index-accent-soft' : 'hover:bg-neutral-100',
         ].filter(Boolean).join(' ')}
         style={{ paddingLeft: `${depth * 14 + 4}px` }}
@@ -341,6 +356,7 @@ function Row({
             </span>
             {safeUrl ? (
               <a
+                draggable={move === undefined ? undefined : false}
                 href={node.url}
                 target="_blank"
                 rel="noreferrer"
@@ -368,7 +384,13 @@ function Row({
   return (
     <div>
       <div
-        className="flex items-center rounded hover:bg-neutral-100"
+        data-bookmark-row={node.id}
+        data-drop-target={dropTargetId === node.id ? 'true' : undefined}
+        {...dragProps(node, checkedIds.has(node.id), isEditing)}
+        className={[
+          'flex items-center rounded transition-colors',
+          dropTargetId === node.id ? 'bg-index-accent-soft ring-2 ring-inset ring-index-accent' : 'hover:bg-neutral-100',
+        ].join(' ')}
         style={{ paddingLeft: `${depth * 14 + 4}px` }}
         {...contextProps}
       >
@@ -406,7 +428,7 @@ function Row({
             />
           </div>
         ) : (
-          <label className="flex min-w-0 flex-1 cursor-pointer items-center gap-2 py-1 pr-2">
+          <label className={`flex min-w-0 flex-1 items-center gap-2 py-1 pr-2 ${checkedIds.has(node.id) && move !== undefined && !move.disabled && !isImmutableFolder(node) ? 'cursor-grab active:cursor-grabbing' : 'cursor-pointer'}`}>
             <input
               type="checkbox"
               aria-label={node.title}
@@ -415,6 +437,7 @@ function Row({
               className="h-3.5 w-3.5 shrink-0"
             />
             <span className="truncate">{node.title}</span>
+            {dropTargetId === node.id && <span className="ml-auto shrink-0 text-xs font-medium text-index-accent">{t('moveDropHere')}</span>}
             <span className="ml-auto shrink-0 text-sm leading-caption text-neutral-400">{countBookmarks(node)}</span>
           </label>
         )}
@@ -437,6 +460,9 @@ function Row({
           openMenu={openMenu}
           commitEdit={commitEdit}
           cancelEdit={cancelEdit}
+          move={move}
+          dropTargetId={dropTargetId}
+          dragProps={dragProps}
         />
       ))}
     </div>
@@ -527,9 +553,118 @@ export function BookmarkTree({
   onToggleExpand,
   showBookmarks = false,
   edit,
+  move,
 }: Props) {
   const [menu, setMenu] = useState<MenuState | null>(null)
   const [editing, setEditing] = useState<EditState | null>(null)
+  const [dropTargetId, setDropTargetId] = useState<string | null>(null)
+  const [draggingIds, setDraggingIds] = useState<string[] | null>(null)
+  const dragSession = useRef<string[] | null>(null)
+  const hoverTarget = useRef<string | null>(null)
+  const expandTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const dragPreview = useRef<HTMLDivElement | null>(null)
+
+  function clearHover(): void {
+    if (expandTimer.current !== null) clearTimeout(expandTimer.current)
+    expandTimer.current = null
+    hoverTarget.current = null
+    setDropTargetId(null)
+  }
+
+  function clearDrag(): void {
+    clearHover()
+    dragSession.current = null
+    setDraggingIds(null)
+    dragPreview.current?.remove()
+    dragPreview.current = null
+  }
+
+  useEffect(() => {
+    if (move === undefined || move.disabled || editing !== null) clearDrag()
+  }, [move?.disabled, move === undefined, editing])
+
+  useEffect(() => () => {
+    if (expandTimer.current !== null) clearTimeout(expandTimer.current)
+    dragPreview.current?.remove()
+  }, [])
+
+  function dragProps(node: BookmarkNode, selected: boolean, isEditing: boolean): HTMLAttributes<HTMLDivElement> {
+    const draggable = move !== undefined && !move.disabled && selected
+      && !isEditing && editing === null && !isImmutableFolder(node)
+    const validTarget = (): boolean => move !== undefined && !move.disabled && editing === null
+      && dragSession.current !== null && node.url === undefined
+      && move.canDrop(dragSession.current, node.id)
+    return {
+      draggable,
+      onDragStart: (event) => {
+        if (!draggable || move === undefined) {
+          event.preventDefault()
+          return
+        }
+        event.stopPropagation()
+        clearDrag()
+        setMenu(null)
+        const ids = [...move.nodeIds]
+        dragSession.current = ids
+        setDraggingIds(ids)
+        event.dataTransfer.effectAllowed = 'move'
+        event.dataTransfer.setData('application/x-reshelve-bookmark-ids', JSON.stringify(ids))
+        const preview = document.createElement('div')
+        preview.textContent = t('moveDragCount', String(ids.length))
+        preview.className = 'fixed -left-[10000px] top-0 rounded-index border border-index-accent bg-index-accent-soft px-3 py-2 text-sm font-semibold text-index-ink shadow-lg'
+        document.body.appendChild(preview)
+        dragPreview.current = preview
+        event.dataTransfer.setDragImage(preview, 12, 12)
+      },
+      onDragOver: (event) => {
+        event.stopPropagation()
+        scrollWhileDragging(event)
+        if (!validTarget()) {
+          event.dataTransfer.dropEffect = 'none'
+          clearHover()
+          return
+        }
+        event.preventDefault()
+        event.dataTransfer.dropEffect = 'move'
+        if (hoverTarget.current === node.id) return
+        clearHover()
+        hoverTarget.current = node.id
+        setDropTargetId(node.id)
+        if (!expandedIds.has(node.id) && (node.children?.length ?? 0) > 0) {
+          expandTimer.current = setTimeout(() => {
+            expandTimer.current = null
+            if (hoverTarget.current === node.id) onToggleExpand(node.id)
+          }, 650)
+        }
+      },
+      onDragLeave: (event) => {
+        if (event.relatedTarget instanceof Node && event.currentTarget.contains(event.relatedTarget)) return
+        if (hoverTarget.current === node.id) clearHover()
+      },
+      onDrop: (event) => {
+        event.stopPropagation()
+        if (!validTarget()) {
+          clearDrag()
+          return
+        }
+        event.preventDefault()
+        const ids = dragSession.current!
+        clearDrag()
+        move!.onMove(ids, node.id)
+      },
+      onDragEnd: clearDrag,
+    }
+  }
+
+  function scrollWhileDragging(event: DragEvent<HTMLDivElement>): void {
+    if (dragSession.current === null) return
+    const viewport = event.currentTarget.closest<HTMLElement>('[data-testid="bookmark-workspace-viewport"]')
+    if (viewport === null) return
+    const { top, bottom } = viewport.getBoundingClientRect()
+    if (bottom <= top) return
+    if (event.clientY < top + 32) viewport.scrollTop -= 16
+    else if (event.clientY > bottom - 32) viewport.scrollTop += 16
+  }
 
   function openMenu(event: ReactMouseEvent, node: BookmarkNode): void {
     if (edit === undefined) return
@@ -622,11 +757,15 @@ export function BookmarkTree({
     openMenu,
     commitEdit,
     cancelEdit,
+    move,
+    dropTargetId,
+    dragProps,
   }
 
 
   return (
     <div className="text-base leading-body">
+      <span className="sr-only" role="status">{draggingIds === null ? '' : t('moveDragCount', String(draggingIds.length))}</span>
       {topLevelNodes(nodes).map((node) => (
         <Row key={node.id} node={node} depth={0} {...shared} />
       ))}

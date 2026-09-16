@@ -154,13 +154,13 @@
     "message": "Past 3 months"
   },
   "transferIntro": {
-    "message": "Search bookmarks or folders, export a selection, or move selected bookmarks into an existing or new folder."
+    "message": "Search bookmarks or folders, then select items to export or drag into a destination folder. You can also choose an existing or new folder from the footer."
   },
   "transferFeatureSearch": {
     "message": "Search folders, bookmarks, or URLs"
   },
   "transferFeatureMove": {
-    "message": "Square-check folders or round-check bookmarks, then move from the footer"
+    "message": "Square-check folders or round-check bookmarks, then drag into a folder or move from the footer"
   },
   "transferFeatureExport": {
     "message": "Square-check folders to export them"
@@ -2399,5 +2399,16 @@
   },
   "logCancelRequested": {
     "message": "Cancellation requested — finishing the current batch…"
+  },
+  "moveDropHere": {
+    "message": "Drop to move"
+  },
+  "moveDragCount": {
+    "message": "Move $count$ items",
+    "placeholders": {
+      "count": {
+        "content": "$1"
+      }
+    }
   }
 }

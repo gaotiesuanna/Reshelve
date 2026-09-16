@@ -154,13 +154,13 @@
     "message": "近三个月"
   },
   "transferIntro": {
-    "message": "搜索书签或文件夹，勾选后导出；也可以选中多个书签移动到已有或新建文件夹。"
+    "message": "搜索书签或文件夹，勾选后可导出，或拖到目标文件夹移动；底部也可选择已有或新建文件夹。"
   },
   "transferFeatureSearch": {
     "message": "搜索文件夹、书签或 URL"
   },
   "transferFeatureMove": {
-    "message": "方框勾选文件夹或圆点勾选书签，底部可移动"
+    "message": "方框勾选文件夹或圆点勾选书签，拖到目标文件夹，或从底部移动"
   },
   "transferFeatureExport": {
     "message": "方框勾选文件夹后导出"
@@ -2399,5 +2399,16 @@
   },
   "logCancelRequested": {
     "message": "已请求取消，正在结束当前批次…"
+  },
+  "moveDropHere": {
+    "message": "松开移入"
+  },
+  "moveDragCount": {
+    "message": "移动 $count$ 项",
+    "placeholders": {
+      "count": {
+        "content": "$1"
+      }
+    }
   }
 }

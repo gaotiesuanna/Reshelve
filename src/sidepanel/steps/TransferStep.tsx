@@ -3,7 +3,7 @@ import { t } from '@/i18n'
 import { BookmarkTree, filterBookmarkTree, topLevelNodes } from '../components/BookmarkTree'
 import { BookmarkWorkspace } from '../components/BookmarkWorkspace'
 import { ExportPanel } from '../components/ExportPanel'
-import { FolderPicker, findFolderPath } from '../components/FolderPicker'
+import { FolderPicker, findAncestorFolderIds, findFolderPath } from '../components/FolderPicker'
 import { ImportPanel } from '../components/ImportPanel'
 import { buttonSizeMd, primaryButton, secondaryButton, segmentActive, segmentButton, segmentTrack } from '../components/buttonStyles'
 import { ChevronDownIcon, DownloadIcon, UploadIcon } from '../components/icons'
@@ -32,7 +32,7 @@ function initialTransfer(): TransferPanel {
 export function TransferStep() {
   const {
     tree, checkedIds, toggle, moveSelection, toggleBookmarkSelection, busy,
-    updateTreeNode, removeTreeNode, createChildFolder,
+    updateTreeNode, removeTreeNode, createChildFolder, moveBookmarks,
   } = useStore()
   const [transfer, setTransfer] = useState<TransferPanel>(initialTransfer)
   const [expanded, setExpanded] = useState<Set<string> | null>(null)
@@ -64,6 +64,13 @@ export function TransferStep() {
     [tree, checkedIds, moveSelection],
   )
   const canMove = moveNodeIds.length > 0 && busy === null
+  const permanentFolderIds = new Set(topLevelNodes(tree).map((node) => node.id))
+  function canDrop(nodeIds: string[], folderId: string): boolean {
+    if (useStore.getState().busy !== null || nodeIds.length === 0 || folderId === '0') return false
+    const ancestors = findAncestorFolderIds(tree, folderId)
+    return ancestors !== null && nodeIds.every((id) => !permanentFolderIds.has(id)
+      && id !== folderId && !ancestors.includes(id))
+  }
   // 全部取消勾选后收起移动面板：下次重新勾选时不该自动弹开
   useEffect(() => {
     if (moveNodeIds.length === 0) setMoveOpen(false)
@@ -229,6 +236,14 @@ export function TransferStep() {
             expandedIds={visibleExpandedIds}
             onToggleExpand={toggleExpand}
             showBookmarks
+            move={{
+              nodeIds: moveNodeIds,
+              disabled: !canMove || moveNodeIds.some((id) => permanentFolderIds.has(id)),
+              canDrop,
+              onMove: (nodeIds, folderId) => {
+                void moveBookmarks({ nodeIds, destination: { kind: 'existing', folderId } })
+              },
+            }}
             edit={{
               onCreateFolder: (parentId) => createChildFolder(parentId),
               onRename: (id, title) => updateTreeNode(id, { title }),
