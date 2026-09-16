@@ -156,6 +156,21 @@
   "transferIntro": {
     "message": "搜索书签或文件夹，勾选后导出；也可以选中多个书签移动到已有或新建文件夹。"
   },
+  "transferFeatureSearch": {
+    "message": "搜索文件夹、书签或 URL"
+  },
+  "transferFeatureMove": {
+    "message": "圆点勾选书签，底部可移动到已有或新建文件夹"
+  },
+  "transferFeatureExport": {
+    "message": "方框勾选文件夹后导出"
+  },
+  "transferFeatureImport": {
+    "message": "导入书签到新建文件夹"
+  },
+  "moveSelectHint": {
+    "message": "先勾选书签"
+  },
   "shellStepsLabel": {
     "message": "整理步骤"
   },
@@ -195,6 +210,14 @@
   "shellStepResult": {
     "message": "结果"
   },
+  "shellStepLocked": {
+    "message": "请先完成前面的步骤，再进入「$step$」。",
+    "placeholders": {
+      "step": {
+        "content": "$1"
+      }
+    }
+  },
   "treeExpand": {
     "message": "展开 $name$",
     "placeholders": {
@@ -213,6 +236,9 @@
   },
   "treeSearchLabel": {
     "message": "搜索书签"
+  },
+  "bookmarkWorkspaceLabel": {
+    "message": "书签列表"
   },
   "treeSearchPlaceholder": {
     "message": "搜索文件夹、书签或 URL"

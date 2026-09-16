@@ -5,10 +5,11 @@ import type { DuplicateGroup } from '@/core/duplicates'
 import type { BookmarkItem } from '@/core/types'
 import { StaleCleanupSection } from '../components/StaleCleanupSection'
 import { AggregateCleanupSection } from '../components/AggregateCleanupSection'
+import { BookmarkWorkspace } from '../components/BookmarkWorkspace'
 import { ProgressPanel, type ProgressStatus } from '../components/ProgressPanel'
+import { isTabView } from '../lib/openInTab'
 import { useStore } from '../store'
 /**
- * 一条待处理的书签摊开三样：标题、完整 URL、完整路径。
  * URL 刻意不截断——「可能相同」那档全靠它看出两条到底差在哪，截了这一档就没法审。
  */
 function ItemLine({ item }: { item: BookmarkItem }) {
@@ -101,7 +102,7 @@ export function CleanupStep() {
     undoAvailable, runCleanupScan, runCleanup, toggleCleanupFolder, undo,
   } = useStore()
   const [tab, setTab] = useState<CleanupTab>('stale')
-
+  const tabView = isTabView()
   useEffect(() => { void runCleanupScan() }, [runCleanupScan])
 
   /**
@@ -255,38 +256,91 @@ export function CleanupStep() {
         ? 'completed'
         : null
 
-  return (
-    <div className="flex min-h-full flex-1 flex-col">
-      <div className="space-y-4">
-        {/* 这句话摆在三个标签之上，所以它对三个标签一起说，措辞就得三个都成立。
-            原文是「不需要模型，也不会发出任何网络请求」——后半句被「失效链接」
-            那个标签直接推翻，而它恰恰是靠发请求工作的。更糟的是，用户正是拿这句
-            判断要不要给「访问所有网站」的权限：页首说不联网、点进去要全网权限。
-            前半句留着（失效链接检查同样不调模型，这是没配接口也能用的凭据），
-            后半句改成点名哪一个要联网——比原来还多给一条信息。 */}
-        <p data-testid="cleanup-intro" className="text-sm leading-relaxed text-neutral-500">{t('cleanupIntro')}</p>
-
-        <div role="tablist" aria-label={t('cleanupTabListLabel')} className={subTabGroup}>
-          {CLEANUP_TABS.map((each) => (
+  const tabsNavigation = (
+    <div
+      role="tablist"
+      aria-label={t('cleanupTabListLabel')}
+      className={tabView ? 'flex flex-col space-y-1' : subTabGroup}
+    >
+      {CLEANUP_TABS.map((each) => {
+        const active = tab === each.key
+        if (tabView) {
+          return (
             <button
               key={each.key}
               type="button"
               role="tab"
               id={`cleanup-tab-${each.key}`}
               aria-controls={`cleanup-panel-${each.key}`}
-              aria-selected={tab === each.key}
-              className={tab === each.key ? subTabOn : subTabOff}
+              aria-selected={active}
+              className={[
+                'flex w-full items-center rounded-index px-2.5 py-2 text-xs leading-body tabular-nums transition-colors cursor-pointer',
+                active
+                  ? 'bg-index-accent-soft font-semibold text-index-ink ring-1 ring-index-accent/20'
+                  : 'font-medium text-index-muted hover:bg-index-surface-muted hover:text-index-ink',
+                'focus-visible:outline focus-visible:outline-2 focus-visible:outline-index-accent motion-reduce:transition-none',
+              ].join(' ')}
               onClick={() => setTab(each.key)}
             >
               {t(each.labelKey)}
             </button>
-          ))}
-        </div>
-      </div>
+          )
+        }
+        return (
+          <button
+            key={each.key}
+            type="button"
+            role="tab"
+            id={`cleanup-tab-${each.key}`}
+            aria-controls={`cleanup-panel-${each.key}`}
+            aria-selected={active}
+            className={active ? subTabOn : subTabOff}
+            onClick={() => setTab(each.key)}
+          >
+            {t(each.labelKey)}
+          </button>
+        )
+      })}
+    </div>
+  )
 
-      <section
-        data-testid="cleanup-task-card"
-        className="mt-4 rounded-[calc(var(--index-radius)+4px)] border border-index-line bg-index-surface shadow-[var(--index-shadow-soft)]"
+  const workspace = (
+    <BookmarkWorkspace
+      testId="cleanup-task-card"
+      viewportLabel={t('bookmarkWorkspaceLabel')}
+      className={tabView ? '' : 'mt-4'}
+      footer={(tab === 'duplicates' || busy !== null || tab !== 'aggregate') ? (
+          <div className="space-y-3">
+            {(tab === 'duplicates' || busy !== null) && (
+              <div className="[&>[role=status]]:mt-0">
+                <ProgressPanel
+                  status={progressStatus}
+                  busy={busy}
+                  progress={progress}
+                  logs={logs}
+                  {...(busyTask === 'check_links' ? { onCancel: () => void cancel() } : {})}
+                />
+              </div>
+            )}
+            {tab !== 'aggregate' && (
+              <div data-testid="cleanup-action-region" className="space-y-2">
+                {/* 撤销只有一个槽，清理会把上一次 AI 整理的快照覆盖掉。不静默覆盖 */}
+                {undoAvailable && (
+                  <p className="text-xs leading-relaxed text-amber-700">
+                    {t('cleanupOverwriteUndoWarning')}
+                  </p>
+                )}
+                <button
+                  className="w-full cursor-pointer rounded-index bg-index-ink py-2 text-base leading-body font-medium text-index-canvas shadow-sm hover:enabled:bg-zinc-800 disabled:cursor-not-allowed disabled:opacity-40"
+                  disabled={total === 0 || busy !== null}
+                  onClick={() => void runCleanup()}
+                >
+                  {plural(total, 'cleanupRunOne', 'cleanupRunOther', String(total))}
+                </button>
+              </div>
+            )}
+          </div>
+        ) : undefined}
       >
         <div className="space-y-4 p-4 sm:p-5">
           {tab === 'stale' && (
@@ -449,41 +503,36 @@ export function CleanupStep() {
           )}
         </div>
 
-        {(tab === 'duplicates' || busy !== null) && (
-          <div className={[
-            'border-t border-index-line bg-index-surface px-4 py-4 sm:px-5 [&>[role=status]]:mt-0',
-            tab === 'aggregate' ? 'rounded-b-[calc(var(--index-radius)+3px)]' : '',
-          ].join(' ')}>
-            <ProgressPanel
-              status={progressStatus}
-              busy={busy}
-              progress={progress}
-              logs={logs}
-              {...(busyTask === 'check_links' ? { onCancel: () => void cancel() } : {})}
-            />
-          </div>
-        )}
-      {tab !== 'aggregate' && (
-        <div
-          data-testid="cleanup-action-region"
-          className="space-y-2 rounded-b-[calc(var(--index-radius)+3px)] border-t border-index-line bg-index-surface-muted px-4 py-4 sm:px-5"
+    </BookmarkWorkspace>
+  )
+
+  if (tabView) {
+    return (
+      <div className="flex min-h-full flex-col md:flex-row gap-3 md:gap-4">
+        <aside
+          data-testid="cleanup-sidebar"
+          className="w-full md:w-36 lg:w-40 shrink-0 border-b md:border-b-0 md:border-r border-index-line pb-4 md:pb-0 pr-0 md:pr-3"
         >
-          {/* 撤销只有一个槽，清理会把上一次 AI 整理的快照覆盖掉。不静默覆盖 */}
-          {undoAvailable && (
-            <p className="text-xs leading-relaxed text-amber-700">
-              {t('cleanupOverwriteUndoWarning')}
-            </p>
-          )}
-          <button
-            className="w-full cursor-pointer rounded-index bg-index-ink py-2 text-base leading-body font-medium text-index-canvas shadow-sm hover:enabled:bg-zinc-800 disabled:cursor-not-allowed disabled:opacity-40"
-            disabled={total === 0 || busy !== null}
-            onClick={() => void runCleanup()}
-          >
-            {plural(total, 'cleanupRunOne', 'cleanupRunOther', String(total))}
-          </button>
+          <div className="mb-3 px-2 text-xs font-semibold uppercase tracking-wider text-index-muted">
+            {t('shellModeCleanup')}
+          </div>
+          {tabsNavigation}
+        </aside>
+        <div className="flex min-h-0 min-w-0 flex-1 flex-col space-y-4">
+          <p data-testid="cleanup-intro" className="text-sm leading-relaxed text-neutral-500">{t('cleanupIntro')}</p>
+          {workspace}
         </div>
-      )}
-      </section>
+      </div>
+    )
+  }
+
+  return (
+    <div className="flex h-full min-h-0 flex-1 flex-col">
+      <div className="space-y-4">
+        <p data-testid="cleanup-intro" className="text-sm leading-relaxed text-neutral-500">{t('cleanupIntro')}</p>
+        {tabsNavigation}
+      </div>
+      {workspace}
     </div>
   )
 }

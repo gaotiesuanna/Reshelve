@@ -62,7 +62,7 @@ describe('StepIndex', () => {
     }
   })
 
-  it('只把被允许返回的步骤渲染成按钮', async () => {
+  it('有 onSelect 时非当前步骤都可点；已开放的走回调，未开放的出提示', async () => {
     const onSelect = vi.fn()
     render(
       <StepIndex
@@ -75,12 +75,73 @@ describe('StepIndex', () => {
       </StepIndex>,
     )
 
-    const preferences = screen.getByRole('button', { name: '2. 设置偏好' })
-    expect(preferences).toBeDefined()
-    expect(screen.queryByRole('button', { name: '3. 确认结构' })).toBeNull()
+    expect(screen.getByRole('button', { name: '2. 设置偏好' })).toBeDefined()
+    expect(screen.getByRole('button', { name: '3. 确认结构' })).toBeDefined()
+    expect(screen.getByRole('button', { name: '1. 选择范围' })).toBeDefined()
+    expect(screen.getByRole('button', { name: '5. 完成整理' })).toBeDefined()
+    expect(screen.queryByRole('button', { name: '4. 预览修改' })).toBeNull()
     expect(screen.getAllByRole('listitem')).toHaveLength(5)
 
-    await userEvent.click(preferences)
+    await userEvent.click(screen.getByRole('button', { name: '2. 设置偏好' }))
+    expect(onSelect).toHaveBeenCalledWith('preferences')
+
+    onSelect.mockClear()
+    await userEvent.click(screen.getByRole('button', { name: '3. 确认结构' }))
+    expect(onSelect).not.toHaveBeenCalled()
+    expect(screen.getByRole('status').textContent).toContain('请先完成前面的步骤')
+    expect(screen.getByRole('status').textContent).toContain('确认结构')
+  })
+
+  it('variant="sidebar" 时渲染左侧侧边栏和主内容区', () => {
+    render(
+      <StepIndex items={items} currentKey="preferences" variant="sidebar">
+        <div>偏好设置表单</div>
+      </StepIndex>,
+    )
+
+    const sidebar = screen.getByTestId('step-sidebar')
+    expect(sidebar).toBeDefined()
+    expect(screen.getByText('偏好设置表单')).toBeDefined()
+    expect(screen.getByText(/设置偏好/).getAttribute('aria-current')).toBe('step')
+    expect(screen.getAllByRole('listitem')).toHaveLength(5)
+  })
+
+  it('variant="sidebar" 时未开放步骤点击只提示、不回调', async () => {
+    const onSelect = vi.fn()
+    render(
+      <StepIndex
+        items={items}
+        currentKey="scope"
+        selectableKeys={[]}
+        onSelect={onSelect}
+        variant="sidebar"
+      >
+        <div>范围</div>
+      </StepIndex>,
+    )
+
+    await userEvent.click(screen.getByRole('button', { name: '5. 完成整理' }))
+    expect(onSelect).not.toHaveBeenCalled()
+    expect(screen.getByRole('status').textContent).toContain('请先完成前面的步骤')
+    expect(screen.getByRole('status').textContent).toContain('完成整理')
+  })
+
+  it('variant="sidebar" 时支持可交互步骤的点击回调', async () => {
+    const onSelect = vi.fn()
+    render(
+      <StepIndex
+        items={items}
+        currentKey="review"
+        selectableKeys={['preferences']}
+        onSelect={onSelect}
+        variant="sidebar"
+      >
+        <div>预览</div>
+      </StepIndex>,
+    )
+
+    const btn = screen.getByRole('button', { name: '2. 设置偏好' })
+    await userEvent.click(btn)
     expect(onSelect).toHaveBeenCalledWith('preferences')
   })
 })

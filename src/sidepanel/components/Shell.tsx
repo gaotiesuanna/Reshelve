@@ -44,7 +44,6 @@ export function Shell({ children, organizeContent }: { children: ReactNode; orga
     logs,
     cancel,
     goScan,
-    backToPreferences,
     plan,
     structureDraft,
     applyResult,
@@ -54,21 +53,32 @@ export function Shell({ children, organizeContent }: { children: ReactNode; orga
     closeSettings,
     cleanupScan,
     checkedIds,
+    scan,
   } = useStore()
   const tabView = isTabView()
   // 取消按钮给不给，政策表说了算：后台真的在读这轮取消信号的请求才有按钮。
   const cancellable = busyTask !== null && TASK_SPECS[busyTask].cancellable
-  const selectableSteps: readonly Step[] = busy !== null
-    ? []
-    : step === 'scope' && checkedIds.size > 0
-      ? ['preferences']
-      : step === 'structure' && structureDraft !== null
-        ? ['preferences']
-        : []
+  // 步骤条「真能跳」的集合：有对应草稿/结果才能去，避免空页。
+  // 未进集合的步骤仍可点，StepIndex 只出提示、不回调。
+  const selectableSteps: readonly Step[] = (() => {
+    if (busy !== null) return []
+    const keys: Step[] = []
+    if (step !== 'scope') keys.push('scope')
+    if (scan !== null || (step === 'scope' && checkedIds.size > 0)) keys.push('preferences')
+    if (structureDraft !== null) keys.push('structure')
+    if (plan !== null) keys.push('review')
+    if (applyResult !== null || undoResult !== null) keys.push('result')
+    return keys.filter((key) => key !== step)
+  })()
   const handleStepSelect = (target: Step): void => {
-    if (target !== 'preferences') return
-    if (step === 'scope') void goScan()
-    else if (step === 'structure') backToPreferences()
+    if (target === step || busy !== null) return
+    // 范围 → 偏好：还没扫描过时走 goScan，把勾选变成扫描结果。
+    if (target === 'preferences' && scan === null) {
+      if (step === 'scope' && checkedIds.size > 0) void goScan()
+      return
+    }
+    // 已有对应状态的步骤之间自由跳，不清草稿——丢弃草稿仍走页面里的返回按钮。
+    useStore.setState({ step: target })
   }
   const progressStatus: ProgressStatus | null = busy !== null
     ? 'running'
@@ -99,7 +109,7 @@ export function Shell({ children, organizeContent }: { children: ReactNode; orga
             /* 设置不是第几步，步骤条显示出来会误导。返回和标题同一行：
                正文里再写一个「设置」会变成顶栏只剩返回、下面孤零零一个标题。 */
             <div className={tabView
-              ? 'flex min-h-[64px] items-center gap-4 border-b border-index-line bg-index-surface px-5 sm:gap-6 sm:px-8'
+              ? 'flex min-h-[64px] items-center gap-4 border-b border-index-line bg-index-surface px-3 sm:gap-6 sm:px-4 lg:px-5'
               : 'flex min-h-index-row items-center gap-2 px-3'}
             >
               {tabView && (
@@ -179,24 +189,25 @@ export function Shell({ children, organizeContent }: { children: ReactNode; orga
         </div>
       )}
       <main className={tabView
-        ? 'flex min-h-0 flex-1 flex-col overflow-y-auto bg-index-page px-5 py-6 sm:px-8 sm:py-8'
+        ? 'flex min-h-0 flex-1 flex-col overflow-y-auto bg-index-page px-3 py-6 sm:px-4 sm:py-8 lg:px-5'
         : 'flex min-h-0 flex-1 flex-col overflow-y-auto p-4'}
       >
         <div className={tabView
-          ? 'mx-auto flex min-h-full w-full max-w-7xl flex-1 flex-col'
-          : 'flex min-h-full flex-1 flex-col'}
+          ? 'mx-auto flex h-full min-h-0 w-full max-w-7xl flex-1 flex-col'
+          : 'flex h-full min-h-0 flex-1 flex-col'}
         >
           {settingsOpen ? <SettingsPanel /> : tabView && mode === 'organize' ? (
             <div
               data-testid="tab-workspace-split"
-              className="grid min-h-full gap-8 lg:grid-cols-[minmax(0,1fr)_minmax(20rem,24rem)] lg:items-stretch"
+              className="grid h-full min-h-0 gap-8 lg:grid-cols-[minmax(0,68rem)_minmax(20rem,1fr)] lg:items-stretch"
             >
-              <section data-testid="tab-bookmark-workspace" className="flex min-h-full min-w-0 flex-col">
+              <section data-testid="tab-bookmark-workspace" className="flex h-full min-h-0 min-w-0 flex-col">
                 <StepIndex
                   items={stepItems()}
                   currentKey={step}
                   selectableKeys={selectableSteps}
                   onSelect={handleStepSelect}
+                  variant="sidebar"
                 >
                   {organizeContent ?? children}
                 </StepIndex>
@@ -222,10 +233,12 @@ export function Shell({ children, organizeContent }: { children: ReactNode; orga
                 >
                   {organizeContent ?? children}
                 </StepIndex>
-              ) : tabView && mode === 'cleanup' ? (
-                /* 清理页的书签是主任务，不需要横跨整张标签页。
-                   宽屏把它固定在左半区，右侧保留给后续上下文信息；窄屏恢复单列。 */
-                <section data-testid="tab-cleanup-workspace" className="w-full lg:w-1/2">
+              ) : tabView && (mode === 'cleanup' || mode === 'transfer') ? (
+                /* 清理 / 浏览书签共用 BookmarkWorkspace 宽高；Shell 不再额外半屏约束。 */
+                <section
+                  data-testid={mode === 'cleanup' ? 'tab-cleanup-workspace' : 'tab-transfer-workspace'}
+                  className="flex h-full min-h-0 w-full flex-col"
+                >
                   {children}
                 </section>
               ) : children}

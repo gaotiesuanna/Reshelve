@@ -582,6 +582,20 @@ describe('CleanupStep 功能小 tab', () => {
     expect(within(card).getByRole('button', { name: '清理 2 项' })).toBeDefined()
   })
 
+  it('复用统一尺寸的书签工作区，并只让中间内容滚动', async () => {
+    render(<CleanupStep />)
+    await openCleanupTab('重复收藏')
+
+    const workspace = screen.getByTestId('cleanup-task-card')
+    const viewport = within(workspace).getByTestId('bookmark-workspace-viewport')
+    const footer = within(workspace).getByTestId('bookmark-workspace-footer')
+    expect(workspace.getAttribute('data-bookmark-workspace')).toBe('true')
+    expect(workspace.className).toContain('max-w-[54rem]')
+    expect(viewport.className).toContain('overflow-y-auto')
+    expect(within(viewport).getByRole('tabpanel', { name: '重复收藏' })).toBeDefined()
+    expect(within(footer).getByRole('button', { name: '清理 2 项' })).toBeDefined()
+  })
+
   it('执行区按正常内容流排列，不再吸底漂浮遮住列表', () => {
     render(<CleanupStep />)
 
@@ -1034,5 +1048,31 @@ describe('清理页页首的总述必须对三个标签都成立', () => {
   it('点名失效链接是要联网的那一个，而不是笼统带过', () => {
     render(<CleanupStep />)
     expect(screen.getByTestId('cleanup-intro').textContent ?? '').toMatch(/失效链接/)
+  })
+})
+
+describe('清理页标签形态下的侧边栏布局', () => {
+  it('在侧栏视图下不显示 cleanup-sidebar', () => {
+    window.history.pushState({}, '', '/')
+    render(<CleanupStep />)
+    expect(screen.queryByTestId('cleanup-sidebar')).toBeNull()
+  })
+
+  it('在标签页视图下展示 cleanup-sidebar 并支持切换分类', async () => {
+    window.history.pushState({}, '', '/?view=tab')
+    render(<CleanupStep />)
+
+    const sidebar = screen.getByTestId('cleanup-sidebar')
+    expect(sidebar).toBeDefined()
+    expect(within(sidebar).getAllByRole('tab')).toHaveLength(4)
+
+    const duplicatesTab = within(sidebar).getByRole('tab', { name: /重复收藏/ })
+    expect(duplicatesTab.getAttribute('aria-selected')).toBe('false')
+
+    await userEvent.click(duplicatesTab)
+    expect(duplicatesTab.getAttribute('aria-selected')).toBe('true')
+    expect(screen.getByRole('tabpanel', { name: /重复收藏/ })).toBeDefined()
+
+    window.history.pushState({}, '', '/')
   })
 })

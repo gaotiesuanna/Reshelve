@@ -156,6 +156,21 @@
   "transferIntro": {
     "message": "Search bookmarks or folders, export a selection, or move selected bookmarks into an existing or new folder."
   },
+  "transferFeatureSearch": {
+    "message": "Search folders, bookmarks, or URLs"
+  },
+  "transferFeatureMove": {
+    "message": "Use the round checkbox on a bookmark, then move it from the footer"
+  },
+  "transferFeatureExport": {
+    "message": "Square-check folders to export them"
+  },
+  "transferFeatureImport": {
+    "message": "Import bookmarks into a new folder"
+  },
+  "moveSelectHint": {
+    "message": "Select bookmarks first"
+  },
   "shellStepsLabel": {
     "message": "Organize steps"
   },
@@ -195,6 +210,14 @@
   "shellStepResult": {
     "message": "Result"
   },
+  "shellStepLocked": {
+    "message": "Finish the earlier steps before opening “$step$”.",
+    "placeholders": {
+      "step": {
+        "content": "$1"
+      }
+    }
+  },
   "treeExpand": {
     "message": "Expand $name$",
     "placeholders": {
@@ -213,6 +236,9 @@
   },
   "treeSearchLabel": {
     "message": "Search bookmarks"
+  },
+  "bookmarkWorkspaceLabel": {
+    "message": "Bookmark list"
   },
   "treeSearchPlaceholder": {
     "message": "Search folders, bookmarks, or URLs"

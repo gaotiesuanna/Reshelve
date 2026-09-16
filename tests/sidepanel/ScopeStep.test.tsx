@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest'
-import { render, screen } from '@testing-library/react'
+import { render, screen, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { ScopeStep } from '@/sidepanel/steps/ScopeStep'
 import { useStore } from '@/sidepanel/store'
@@ -48,6 +48,34 @@ beforeEach(() => {
 })
 
 describe('ScopeStep 主区与操作', () => {
+  it('把书签树和扫描操作放进共用的可滚动工作区', () => {
+    render(<ScopeStep />)
+
+    const workspace = screen.getByTestId('bookmark-workspace')
+    const viewport = screen.getByTestId('bookmark-workspace-viewport')
+    const footer = screen.getByTestId('bookmark-workspace-footer')
+    expect(workspace.contains(viewport)).toBe(true)
+    expect(viewport.className).toContain('overflow-y-auto')
+    expect(workspace.contains(footer)).toBe(true)
+    expect(footer.className).not.toContain('sticky')
+    expect(within(footer).getByRole('button', { name: /扫描选中的/ })).toBeDefined()
+  })
+
+  it('选中目录后把扫描结果放在扫描按钮下方，不藏到书签树滚动内容里', async () => {
+    render(<ScopeStep />)
+    await userEvent.click(screen.getByRole('checkbox', { name: 'react' }))
+
+    const footer = screen.getByTestId('bookmark-workspace-footer')
+    const viewport = screen.getByTestId('bookmark-workspace-viewport')
+    const scanButton = within(footer).getByRole('button', { name: /扫描选中的/ })
+    const result = within(footer).getByText('扫描结果')
+    expect(within(footer).getByText('/书签栏/react/')).toBeDefined()
+    expect(within(viewport).queryByText('扫描结果')).toBeNull()
+    expect(screen.queryByTestId('bookmark-workspace-summary')).toBeNull()
+    // 结果卡必须在按钮之后：compareDocumentPosition 的 FOLLOWING 位。
+    expect(scanButton.compareDocumentPosition(result) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+  })
+
   it('渲染范围区，勾选后主操作按钮可点', async () => {
     render(<ScopeStep />)
 
@@ -255,7 +283,7 @@ describe('ScopeStep 勾选后立刻显示范围统计', () => {
     await userEvent.click(screen.getByRole('checkbox', { name: 'react' }))
 
     const heading = screen.getByText('扫描结果')
-    const card = heading.closest('section')?.parentElement
+    const card = heading.closest('section')
     expect(card?.className).toContain('rounded-index')
     expect(card?.className).toContain('bg-index-surface')
     expect(card?.className).toContain('shadow-sm')

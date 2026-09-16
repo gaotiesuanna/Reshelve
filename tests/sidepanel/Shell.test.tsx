@@ -19,6 +19,7 @@ describe('Shell 设置入口', () => {
     render(<Shell organizeContent={<div>步骤内容</div>}>{null}</Shell>)
     expect(screen.getByText(/选范围/)).toBeDefined()
     expect(screen.getByText('步骤内容')).toBeDefined()
+    expect(screen.queryByTestId('step-sidebar')).toBeNull()
   })
 
   it('设置用线框返回标题替换整条主导航', async () => {
@@ -120,18 +121,19 @@ describe('Shell 步骤条', () => {
     expect(goScan).toHaveBeenCalledTimes(1)
   })
 
-  it('目录结构页点击偏好会返回已完成的偏好步骤', async () => {
-    const backToPreferences = vi.fn()
+  it('目录结构页点击偏好会回到偏好，且保留结构草稿', async () => {
     useStore.setState({
       step: 'structure',
-      structureDraft: {} as StructureDraft,
-      backToPreferences,
+      scan: {} as ScanResult,
+      structureDraft: { locale: 'zh_CN' } as StructureDraft,
+      busy: null,
     })
     render(<Shell organizeContent={<div>结构编辑器</div>}>{null}</Shell>)
 
     await userEvent.click(screen.getByRole('button', { name: /偏好/ }))
 
-    expect(backToPreferences).toHaveBeenCalledTimes(1)
+    expect(useStore.getState().step).toBe('preferences')
+    expect(useStore.getState().structureDraft).not.toBeNull()
   })
 })
 
@@ -230,14 +232,27 @@ describe('Shell 模式切换', () => {
     expect(screen.getByText('看板内容')).toBeDefined()
   })
 
-  it('标签页本地清理把书签主区限制在左半屏', () => {
+  it('标签页不再给本地清理单独设半屏宽度，宽度交给共用书签工作区', () => {
     window.history.pushState({}, '', '/?view=tab&mode=cleanup')
     useStore.setState({ mode: 'cleanup' })
     render(<Shell organizeContent={<div>步骤内容</div>}><div>清理内容</div></Shell>)
 
     const workspace = screen.getByTestId('tab-cleanup-workspace')
-    expect(workspace.className).toContain('lg:w-1/2')
+    expect(workspace.className).toContain('w-full')
+    expect(workspace.className).not.toContain('lg:w-1/2')
     expect(within(workspace).getByText('清理内容')).toBeDefined()
+    window.history.pushState({}, '', '/')
+  })
+
+  it('标签页浏览书签也走全宽工作区容器，宽度交给共用书签工作区', () => {
+    window.history.pushState({}, '', '/?view=tab&mode=transfer')
+    useStore.setState({ mode: 'transfer' })
+    render(<Shell organizeContent={<div>步骤内容</div>}><div>浏览内容</div></Shell>)
+
+    const workspace = screen.getByTestId('tab-transfer-workspace')
+    expect(workspace.className).toContain('w-full')
+    expect(workspace.className).not.toContain('lg:w-1/2')
+    expect(within(workspace).getByText('浏览内容')).toBeDefined()
     window.history.pushState({}, '', '/')
   })
 
@@ -326,7 +341,7 @@ describe('Shell 换成完整标签页', () => {
     window.history.pushState({}, '', '/')
   })
 
-  it('标签页整理把书签工作区放左侧、LLM 日志放右侧', () => {
+  it('标签页整理把书签工作区放左侧、LLM 日志放右侧，并使用左侧步骤目录', () => {
     window.history.pushState({}, '', '/?view=tab')
     render(<Shell organizeContent={<div>书签树</div>}>{null}</Shell>)
 
@@ -335,9 +350,80 @@ describe('Shell 换成完整标签页', () => {
     expect(within(screen.getByTestId('tab-bookmark-workspace')).getByText('书签树')).toBeDefined()
     expect(screen.getByTestId('tab-llm-log')).toBeDefined()
     expect(screen.getByRole('heading', { name: 'LLM 日志' })).toBeDefined()
+    expect(screen.getByTestId('step-sidebar')).toBeDefined()
     window.history.pushState({}, '', '/')
   })
 })
+
+describe('Shell 整理步骤导航', () => {
+  it('未完成前置时点后续步骤只提示，不跳转', async () => {
+    useStore.setState({
+      step: 'scope',
+      scan: null,
+      plan: null,
+      structureDraft: null,
+      applyResult: null,
+      undoResult: null,
+      checkedIds: new Set(),
+      busy: null,
+    })
+    render(<Shell organizeContent={<div>范围页</div>}>{null}</Shell>)
+
+    await userEvent.click(screen.getByRole('button', { name: '5. 结果' }))
+    expect(screen.getByRole('status').textContent).toContain('请先完成前面的步骤')
+    expect(screen.getByText('范围页')).toBeDefined()
+    expect(useStore.getState().step).toBe('scope')
+  })
+
+  it('已有扫描结果时可从后续步骤回到偏好', async () => {
+    useStore.setState({
+      step: 'review',
+      scan: {} as ScanResult,
+      plan: { rows: [], operations: [], warnings: [], scopeRootIds: [], unchanged: [] } as never,
+      structureDraft: null,
+      applyResult: null,
+      busy: null,
+    })
+    render(<Shell organizeContent={<div data-testid="current-step">复核页</div>}>{null}</Shell>)
+
+    await userEvent.click(screen.getByRole('button', { name: '2. 偏好' }))
+    expect(useStore.getState().step).toBe('preferences')
+  })
+
+  it('已有方案时可从偏好跳到预览', async () => {
+    useStore.setState({
+      step: 'preferences',
+      scan: {} as ScanResult,
+      plan: { rows: [], operations: [], warnings: [], scopeRootIds: [], unchanged: [] } as never,
+      structureDraft: null,
+      applyResult: null,
+      busy: null,
+    })
+    render(<Shell organizeContent={<div>偏好页</div>}>{null}</Shell>)
+
+    await userEvent.click(screen.getByRole('button', { name: '4. 预览' }))
+    expect(useStore.getState().step).toBe('review')
+  })
+
+  it('范围页已勾选时点偏好仍触发扫描前进', async () => {
+    const goScan = vi.fn(async () => {
+      useStore.setState({ step: 'preferences', scan: {} as ScanResult, busy: null })
+    })
+    useStore.setState({
+      step: 'scope',
+      checkedIds: new Set(['folder-1']),
+      scan: null,
+      plan: null,
+      busy: null,
+      goScan,
+    })
+    render(<Shell organizeContent={<div>范围页</div>}>{null}</Shell>)
+
+    await userEvent.click(screen.getByRole('button', { name: '2. 偏好' }))
+    expect(goScan).toHaveBeenCalledTimes(1)
+  })
+})
+
 
 /**
  * ProgressPanel 挂在 Shell 里是为了整理流程和「清理扫描还没回来」那一小段。

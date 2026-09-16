@@ -1,5 +1,5 @@
-import { describe, it, expect, beforeEach } from 'vitest'
-import { render, screen } from '@testing-library/react'
+import { afterEach, describe, it, expect, beforeEach, vi } from 'vitest'
+import { render, screen, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { TransferStep } from '@/sidepanel/steps/TransferStep'
 import { useStore } from '@/sidepanel/store'
@@ -20,7 +20,14 @@ const tree: BookmarkNode[] = [
   ]},
 ]
 
+const scrollIntoView = vi.fn()
+
 beforeEach(() => {
+  scrollIntoView.mockReset()
+  Object.defineProperty(HTMLElement.prototype, 'scrollIntoView', {
+    configurable: true,
+    value: scrollIntoView,
+  })
   useStore.setState({
     tree, checkedIds: new Set(), busy: null, error: null,
     importFile: null, importError: null, importDone: null,
@@ -28,7 +35,25 @@ beforeEach(() => {
   })
 })
 
+afterEach(() => {
+  Reflect.deleteProperty(HTMLElement.prototype, 'scrollIntoView')
+})
+
 describe('TransferStep', () => {
+  it('把书签树和导入导出操作放进共用工作区，操作区不再悬浮覆盖内容', () => {
+    render(<TransferStep />)
+
+    const workspace = screen.getByTestId('bookmark-workspace')
+    const viewport = screen.getByTestId('bookmark-workspace-viewport')
+    const footer = screen.getByTestId('bookmark-workspace-footer')
+    expect(workspace.contains(viewport)).toBe(true)
+    expect(viewport.className).toContain('overflow-y-auto')
+    expect(footer.className).not.toContain('sticky')
+    expect(footer.className).not.toContain('-bottom-')
+    expect(within(footer).getByRole('button', { name: '导出' })).toBeDefined()
+    expect(within(footer).getByRole('button', { name: '导入' })).toBeDefined()
+  })
+
   it('是独立页：有目录树和导入导出，没有扫描、也没有整理步骤文案', () => {
     render(<TransferStep />)
     expect(screen.getByText('书签栏')).toBeDefined()
@@ -49,6 +74,7 @@ describe('TransferStep', () => {
     expect(screen.getByRole('button', { name: '带文件夹结构' })).toBeDefined()
     expect(screen.getByRole('button', { name: '纯链接清单' })).toBeDefined()
     expect(screen.getByRole('button', { name: '浏览器书签文件' })).toBeDefined()
+    expect(scrollIntoView).toHaveBeenCalled()
 
     await userEvent.click(screen.getByRole('button', { name: '导出' }))
     expect(screen.queryByRole('button', { name: '带文件夹结构' })).toBeNull()
@@ -148,27 +174,31 @@ describe('TransferStep', () => {
     expect(screen.getByText('没有找到相关书签')).toBeDefined()
   })
 
-  it('选中书签后先出现移动按钮，点击按钮才展开文件夹选择器', async () => {
+  it('底部始终显示移动按钮；未选书签时禁用，选中后可展开文件夹选择器', async () => {
     render(<TransferStep />)
+    const moveButton = screen.getByRole('button', { name: /移动选中书签/ })
+    expect((moveButton as HTMLButtonElement).disabled).toBe(true)
+    expect(screen.queryByRole('radiogroup', { name: '移动到文件夹' })).toBeNull()
+
     const input = screen.getByRole('searchbox', { name: '搜索书签' })
     await userEvent.type(input, '.dev')
     await userEvent.click(screen.getByRole('checkbox', { name: '选择书签 A' }))
     await userEvent.click(screen.getByRole('checkbox', { name: '选择书签 B' }))
 
-    // 选中后只出现移动按钮，文件夹选择器不直接弹出
     expect(screen.getByText('已选中 2 条书签')).toBeDefined()
+    expect((screen.getByRole('button', { name: /移动选中书签/ }) as HTMLButtonElement).disabled).toBe(false)
     expect(screen.queryByRole('radiogroup', { name: '移动到文件夹' })).toBeNull()
 
     await userEvent.click(screen.getByRole('button', { name: /移动选中书签/ }))
     expect(screen.getByRole('radiogroup', { name: '移动到文件夹' })).toBeDefined()
+    expect(scrollIntoView).toHaveBeenCalled()
     expect((screen.getByRole('button', { name: '确认移动' }) as HTMLButtonElement).disabled).toBe(true)
 
-    // 点击工作常用文件夹选中目标
     await userEvent.click(screen.getByText('工作常用'))
     expect((screen.getByRole('button', { name: '确认移动' }) as HTMLButtonElement).disabled).toBe(false)
   })
 
-  it('再点移动按钮收起面板；取消全部勾选后按钮消失，重新勾选不自动展开', async () => {
+  it('再点移动按钮收起面板；取消全部勾选后按钮仍在但禁用，重新勾选不自动展开', async () => {
     render(<TransferStep />)
     await userEvent.type(screen.getByRole('searchbox', { name: '搜索书签' }), '.dev')
     await userEvent.click(screen.getByRole('checkbox', { name: '选择书签 A' }))
@@ -179,13 +209,15 @@ describe('TransferStep', () => {
     await userEvent.click(screen.getByRole('button', { name: /移动选中书签/ }))
     expect(screen.queryByRole('radiogroup', { name: '移动到文件夹' })).toBeNull()
 
-    // 取消勾选后按钮消失；重新勾选时面板不自动展开
+    // 取消勾选后按钮仍在，只是禁用；重新勾选时面板不自动展开
     await userEvent.click(screen.getByRole('checkbox', { name: '选择书签 A' }))
-    expect(screen.queryByRole('button', { name: /移动选中书签/ })).toBeNull()
+    const moveButton = screen.getByRole('button', { name: /移动选中书签/ })
+    expect((moveButton as HTMLButtonElement).disabled).toBe(true)
     await userEvent.click(screen.getByRole('checkbox', { name: '选择书签 A' }))
-    expect(screen.getByRole('button', { name: /移动选中书签/ })).toBeDefined()
+    expect((screen.getByRole('button', { name: /移动选中书签/ }) as HTMLButtonElement).disabled).toBe(false)
     expect(screen.queryByRole('radiogroup', { name: '移动到文件夹' })).toBeNull()
   })
+
 
   it('切换到新建文件夹时显示名称和父目录树选择器', async () => {
     render(<TransferStep />)
@@ -201,5 +233,30 @@ describe('TransferStep', () => {
     // 输入新文件夹名称后可确认移动
     await userEvent.type(screen.getByRole('textbox', { name: '新文件夹名称' }), '新分组')
     expect((screen.getByRole('button', { name: '确认移动' }) as HTMLButtonElement).disabled).toBe(false)
+  })
+})
+
+describe('浏览书签标签形态下的侧边栏布局', () => {
+  it('在侧栏视图下不显示 transfer-sidebar', () => {
+    window.history.pushState({}, '', '/')
+    render(<TransferStep />)
+    expect(screen.queryByTestId('transfer-sidebar')).toBeNull()
+  })
+
+  it('在标签页视图下展示功能说明侧栏，书签工作区仍在右侧', () => {
+    window.history.pushState({}, '', '/?view=tab')
+    render(<TransferStep />)
+
+    const sidebar = screen.getByTestId('transfer-sidebar')
+    expect(within(sidebar).getByText('浏览书签')).toBeDefined()
+    expect(within(sidebar).getByText('搜索文件夹、书签或 URL')).toBeDefined()
+    expect(within(sidebar).getByText(/圆点勾选书签/)).toBeDefined()
+    expect(within(sidebar).getByText(/导出/)).toBeDefined()
+    expect(within(sidebar).getByText(/导入/)).toBeDefined()
+
+    expect(screen.getByTestId('bookmark-workspace')).toBeDefined()
+    expect(screen.getByRole('button', { name: /移动选中书签/ })).toBeDefined()
+
+    window.history.pushState({}, '', '/')
   })
 })

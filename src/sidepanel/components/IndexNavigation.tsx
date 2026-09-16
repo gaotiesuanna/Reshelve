@@ -34,7 +34,7 @@ export function IndexNavigation<K extends string>({
     <div
       data-testid={isTab ? 'tab-app-header' : undefined}
       className={isTab
-        ? 'flex min-h-[64px] items-center gap-5 border-b border-index-line bg-index-surface px-5 sm:gap-8 sm:px-8'
+        ? 'flex min-h-[64px] items-center gap-5 border-b border-index-line bg-index-surface px-3 sm:gap-6 sm:px-4 lg:px-5'
         : 'flex min-w-0 items-stretch border-b border-index-line bg-index-surface'}
     >
       {isTab && (

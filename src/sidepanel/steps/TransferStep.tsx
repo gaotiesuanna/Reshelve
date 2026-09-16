@@ -1,18 +1,26 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { t } from '@/i18n'
 import { BookmarkTree, filterBookmarkTree, topLevelNodes } from '../components/BookmarkTree'
+import { BookmarkWorkspace } from '../components/BookmarkWorkspace'
 import { ExportPanel } from '../components/ExportPanel'
 import { FolderPicker } from '../components/FolderPicker'
 import { ImportPanel } from '../components/ImportPanel'
 import { segmentActive, segmentButton, segmentTrack } from '../components/buttonStyles'
-import { StickyActionBar } from '../components/IndexControls'
 import { ChevronDownIcon, DownloadIcon, UploadIcon } from '../components/icons'
+import { isTabView } from '../lib/openInTab'
 import { collectAllFolderIds, useStore } from '../store'
 import type { BookmarkNode } from '@/core/ports'
 import type { MoveBookmarksInput } from '@/engine/moveBookmarks'
 
 type TransferPanel = 'export' | 'import' | null
 type MovePanelMode = 'existing' | 'new'
+
+const TRANSFER_FEATURES = [
+  'transferFeatureSearch',
+  'transferFeatureMove',
+  'transferFeatureExport',
+  'transferFeatureImport',
+] as const
 
 
 function selectedIdsInTree(nodes: BookmarkNode[], selected: Set<string>): string[] {
@@ -40,8 +48,10 @@ export function TransferStep() {
   const [searchQuery, setSearchQuery] = useState('')
   const [moveOpen, setMoveOpen] = useState(false)
   const movePanelRef = useRef<HTMLDivElement>(null)
+  const transferPanelRef = useRef<HTMLDivElement>(null)
   const [expandedBeforeSearch, setExpandedBeforeSearch] = useState<Set<string> | null>(null)
   const [searchExpandedIds, setSearchExpandedIds] = useState<Set<string> | null>(null)
+  const tabView = isTabView()
   const defaultExpanded = useMemo(
     () => new Set(topLevelNodes(tree).map((node) => node.id)),
     [tree],
@@ -58,16 +68,17 @@ export function TransferStep() {
     : expandedIds
   const folderIds = collectAllFolderIds(visibleNodes)
   const allOpen = folderIds.length > 0 && folderIds.every((id) => visibleExpandedIds.has(id))
+  const canMove = moveSelection.size > 0 && busy === null
   // 全部取消勾选后收起移动面板：下次重新勾选时不该自动弹开
   useEffect(() => {
     if (moveSelection.size === 0) setMoveOpen(false)
   }, [moveSelection.size])
-  // 面板展开在文档流末尾（见 JSX 里 StickyActionBar 之后），长目录树下会落在视口外，
-  // 展开那一刻滚过去把它带进视野
   useEffect(() => {
-    // jsdom 里没有 scrollIntoView
     if (moveOpen) movePanelRef.current?.scrollIntoView?.({ block: 'nearest' })
   }, [moveOpen])
+  useEffect(() => {
+    if (transfer !== null) transferPanelRef.current?.scrollIntoView?.({ block: 'nearest' })
+  }, [transfer])
 
   function changeSearchQuery(value: string): void {
     const wasActive = searchQuery.trim().length > 0
@@ -94,14 +105,13 @@ export function TransferStep() {
     else setExpanded(new Set(ids))
   }
 
-  return (
-    <div className="flex min-h-full flex-1 flex-col">
-      <div className="space-y-3">
-        <p className="text-sm leading-relaxed text-neutral-500">{t('transferIntro')}</p>
-
-        <div className="flex gap-1 text-sm leading-caption">
+  const workspace = (
+    <BookmarkWorkspace
+      viewportLabel={t('bookmarkWorkspaceLabel')}
+      toolbar={(
+        <div className="flex gap-2 text-sm leading-caption">
           <button
-            className="rounded-index border border-index-line-strong bg-index-surface px-2 py-1 text-index-ink hover:bg-index-accent-soft"
+            className="cursor-pointer rounded-index border border-index-line-strong bg-index-surface px-2 py-1 text-index-ink transition-colors duration-150 hover:bg-index-accent-soft focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-index-accent motion-reduce:transition-none"
             onClick={() => setAllExpanded(allOpen ? [] : folderIds)}
           >
             {t(allOpen ? 'scopeCollapseAll' : 'scopeExpandAll')}
@@ -114,88 +124,117 @@ export function TransferStep() {
               value={searchQuery}
               onChange={(event) => changeSearchQuery(event.target.value)}
               placeholder={t('treeSearchPlaceholder')}
-              className="w-full min-w-0 rounded border px-2 py-1 outline-none focus:border-neutral-400 focus:ring-1 focus:ring-neutral-300"
+              className="w-full min-w-0 rounded-index border border-index-line-strong bg-index-surface px-2 py-1 text-index-ink outline-none placeholder:text-index-faint focus:border-index-accent focus:ring-1 focus:ring-index-accent"
             />
           </label>
         </div>
-
-        <div className="overflow-hidden rounded-index border border-index-line bg-index-surface shadow-sm">
-          <BookmarkTree
-            nodes={visibleNodes}
-            checkedIds={checkedIds}
-            onToggle={toggle}
-            selectedBookmarkIds={moveSelection}
-            onToggleBookmark={toggleBookmarkSelection}
-            expandedIds={visibleExpandedIds}
-            onToggleExpand={toggleExpand}
-            showBookmarks
-          />
-          {searchActive && !searchResult.hasMatches && (
-            <p className="px-2 py-3 text-center text-sm leading-caption text-neutral-500">{t('treeSearchEmpty')}</p>
-          )}
-        </div>
-      </div>
-      {/* 操作区钉在底部：书签上千条时目录树很长，导入导出不该被推到要滚半天才看得见的地方。
-          切换条和选项组直接铺在 sticky 栏里，不再套一层灰底卡片——那层 padding
-          会把「导出 / 导入」撑得比真按钮还壮。移动面板不放这里：钉底栏只会往上长、
-          把目录树盖掉，页面本身并不变高——它挪去了文档流末尾（见下）。 */}
-      <StickyActionBar>
-        {moveSelection.size > 0 && (
-          <div className="mb-3">
+      )}
+      footer={(
+        <div className="space-y-3">
+          <div className="space-y-2">
             <button
               type="button"
               aria-expanded={moveOpen}
-              disabled={busy !== null}
+              disabled={!canMove}
               onClick={() => setMoveOpen((prev) => !prev)}
-              className="flex min-h-index-row w-full items-center justify-between gap-2 rounded-index border border-index-line bg-index-blue-soft px-3 text-sm leading-caption font-semibold text-index-ink transition-colors hover:bg-index-blue-soft/70 focus-visible:outline focus-visible:ring-2 focus-visible:ring-index-blue disabled:cursor-not-allowed disabled:opacity-40"
+              className="flex min-h-index-row w-full cursor-pointer items-center justify-between gap-2 rounded-index border border-index-line bg-index-blue-soft px-3 text-sm leading-caption font-semibold text-index-ink transition-colors duration-150 hover:enabled:bg-index-blue-soft/70 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-index-blue disabled:cursor-not-allowed disabled:opacity-40 motion-reduce:transition-none"
             >
               <span>{t('moveSelectedBookmarks')}</span>
               <span className="flex items-center gap-1.5 text-xs font-normal text-index-muted">
-                {t('moveCount', String(moveSelection.size))}
+                {moveSelection.size > 0
+                  ? t('moveCount', String(moveSelection.size))
+                  : t('moveSelectHint')}
                 <ChevronDownIcon className={`h-3.5 w-3.5 shrink-0 transition-transform ${moveOpen ? 'rotate-180' : ''}`} />
               </span>
             </button>
+            {moveOpen && (
+              <div ref={movePanelRef}>
+                <MoveBookmarksPanel tree={tree} busy={busy} />
+              </div>
+            )}
           </div>
-        )}
-        <div className={segmentTrack} role="group">
-          <button
-            type="button"
-            className={`${segmentButton} ${transfer === 'export' ? segmentActive : ''}`}
-            aria-expanded={transfer === 'export'}
-            aria-pressed={transfer === 'export'}
-            disabled={busy !== null}
-            onClick={() => setTransfer((prev) => (prev === 'export' ? null : 'export'))}
-          >
-            <DownloadIcon className={`h-3.5 w-3.5 shrink-0 ${transfer === 'export' ? 'text-index-ink' : 'text-index-faint'}`} />
-            {t('exportToggle')}
-          </button>
-          <button
-            type="button"
-            className={`${segmentButton} ${transfer === 'import' ? segmentActive : ''}`}
-            aria-expanded={transfer === 'import'}
-            aria-pressed={transfer === 'import'}
-            disabled={busy !== null}
-            onClick={() => setTransfer((prev) => (prev === 'import' ? null : 'import'))}
-          >
-            <UploadIcon className={`h-3.5 w-3.5 shrink-0 ${transfer === 'import' ? 'text-index-ink' : 'text-index-faint'}`} />
-            {t('importToggle')}
-          </button>
-        </div>
-        {transfer !== null && (
-          <div className="mt-2">
-            {transfer === 'export' ? <ExportPanel /> : <ImportPanel />}
+          <div className={segmentTrack} role="group">
+            <button
+              type="button"
+              className={`${segmentButton} ${transfer === 'export' ? segmentActive : ''}`}
+              aria-expanded={transfer === 'export'}
+              aria-pressed={transfer === 'export'}
+              disabled={busy !== null}
+              onClick={() => setTransfer((prev) => (prev === 'export' ? null : 'export'))}
+            >
+              <DownloadIcon className={`h-3.5 w-3.5 shrink-0 ${transfer === 'export' ? 'text-index-ink' : 'text-index-faint'}`} />
+              {t('exportToggle')}
+            </button>
+            <button
+              type="button"
+              className={`${segmentButton} ${transfer === 'import' ? segmentActive : ''}`}
+              aria-expanded={transfer === 'import'}
+              aria-pressed={transfer === 'import'}
+              disabled={busy !== null}
+              onClick={() => setTransfer((prev) => (prev === 'import' ? null : 'import'))}
+            >
+              <UploadIcon className={`h-3.5 w-3.5 shrink-0 ${transfer === 'import' ? 'text-index-ink' : 'text-index-faint'}`} />
+              {t('importToggle')}
+            </button>
           </div>
-        )}
-      </StickyActionBar>
-      {/* 移动面板放在文档流里、钉底操作栏之后：点「移动选中书签」页面往下长出这一块，
-          目录树不被盖住。长目录树下用户正停在半中间，面板落在视口外，
-          展开那一刻滚过去把它带进视野（见上方 effect）。
-          mt-4 抵掉操作栏的 -mb-4，面板自己的 mt-2 再留出一道缝。 */}
-      {moveOpen && (
-        <div ref={movePanelRef} className="mt-4">
-          <MoveBookmarksPanel tree={tree} busy={busy} />
+          {transfer !== null && (
+            <div ref={transferPanelRef}>
+              {transfer === 'export' ? <ExportPanel /> : <ImportPanel />}
+            </div>
+          )}
         </div>
       )}
+    >
+      <div className="p-2">
+        <BookmarkTree
+          nodes={visibleNodes}
+          checkedIds={checkedIds}
+          onToggle={toggle}
+          selectedBookmarkIds={moveSelection}
+          onToggleBookmark={toggleBookmarkSelection}
+          expandedIds={visibleExpandedIds}
+          onToggleExpand={toggleExpand}
+          showBookmarks
+        />
+        {searchActive && !searchResult.hasMatches && (
+          <p className="px-2 py-3 text-center text-sm leading-caption text-neutral-500">{t('treeSearchEmpty')}</p>
+        )}
+      </div>
+    </BookmarkWorkspace>
+  )
+
+  if (tabView) {
+    return (
+      <div className="flex min-h-full flex-col md:flex-row gap-3 md:gap-4">
+        <aside
+          data-testid="transfer-sidebar"
+          className="w-full md:w-36 lg:w-40 shrink-0 border-b md:border-b-0 md:border-r border-index-line pb-4 md:pb-0 pr-0 md:pr-3"
+        >
+          <div className="mb-3 px-2 text-xs font-semibold uppercase tracking-wider text-index-muted">
+            {t('shellModeTransfer')}
+          </div>
+          <ul className="flex flex-col space-y-1" aria-label={t('shellModeTransfer')}>
+            {TRANSFER_FEATURES.map((key) => (
+              <li
+                key={key}
+                className="rounded-index px-2.5 py-2 text-xs leading-relaxed text-index-muted"
+              >
+                {t(key)}
+              </li>
+            ))}
+          </ul>
+        </aside>
+        <div className="flex min-h-0 min-w-0 flex-1 flex-col">
+          {workspace}
+        </div>
+      </div>
+    )
+  }
+
+  return (
+    <div className="flex h-full min-h-0 flex-1 flex-col">
+      <p className="mb-3 text-sm leading-relaxed text-neutral-500">{t('transferIntro')}</p>
+      {workspace}
     </div>
   )
 }

@@ -3,9 +3,9 @@ import { plural, t } from '@/i18n'
 import { countScopedBookmarks } from '@/core/export'
 import { scanTree, scopeFolderPaths } from '@/core/scan'
 import { BookmarkTree, topLevelNodes } from '../components/BookmarkTree'
-import { IndexSection } from '../components/IndexSection'
+import { BookmarkWorkspace } from '../components/BookmarkWorkspace'
 import { InlineStatus } from '../components/InlineStatus'
-import { PrimaryButton, SecondaryButton, StickyActionBar } from '../components/IndexControls'
+import { PrimaryButton, SecondaryButton } from '../components/IndexControls'
 import { isModelConfigured } from '@/llm/config'
 import { activeLlm } from '@/storage/settings'
 import { collectAllFolderIds, useStore } from '../store'
@@ -54,7 +54,7 @@ export function ScopeStep() {
   }
 
   return (
-    <div className="flex min-h-full flex-1 flex-col">
+    <div className="flex h-full min-h-0 flex-1 flex-col">
       <p className="mb-5 max-w-2xl text-sm leading-relaxed text-index-muted">{t('scopeIntro')}</p>
 
       {needModel && (
@@ -68,14 +68,69 @@ export function ScopeStep() {
         </div>
       )}
 
-      <div data-testid="scope-section">
-        <SecondaryButton
-          size="sm"
-          onClick={() => setExpanded(new Set(allOpen ? [] : folderIds))}
-        >
-          {t(allOpen ? 'scopeCollapseAll' : 'scopeExpandAll')}
-        </SecondaryButton>
-        <div className="mt-3 overflow-hidden rounded-index border border-index-line bg-index-surface shadow-sm">
+      <BookmarkWorkspace
+        viewportLabel={t('bookmarkWorkspaceLabel')}
+        toolbar={(
+          <SecondaryButton
+            size="sm"
+            onClick={() => setExpanded(new Set(allOpen ? [] : folderIds))}
+          >
+            {t(allOpen ? 'scopeCollapseAll' : 'scopeExpandAll')}
+          </SecondaryButton>
+        )}
+        footer={(
+          <div className="space-y-3">
+            <PrimaryButton
+              className="w-full"
+              disabled={checkedIds.size === 0 || busy !== null}
+              onClick={() => void goScan()}
+            >
+              {plural(
+                scopedCount,
+                'scopeScanOne',
+                'scopeScanOther',
+                String(scopedCount),
+                // 文件夹数降为附注，但仍要单独过一次 plural：英文的 folder/folders
+                // 由文件夹数决定，跟着书签数的单复数走会拼出「1 bookmark in 2 folder」
+                plural(
+                  checkedIds.size,
+                  'scopeScanFolderOne',
+                  'scopeScanFolderOther',
+                  String(checkedIds.size),
+                ),
+              )}
+            </PrimaryButton>
+            {preview !== null && (
+              <section className="rounded-index border border-index-line bg-index-surface p-3 shadow-sm">
+                <div className="flex items-center justify-between gap-3">
+                  <h3 className="text-sm font-semibold tracking-[-0.01em] text-index-ink">{t('prefsScanTitle')}</h3>
+                  <span className="shrink-0 rounded-full bg-index-surface-muted px-2 py-0.5 font-mono text-xs text-index-muted">
+                    {preview.stats.totalBookmarks}
+                  </span>
+                </div>
+                {preview.paths.length > 0 && (
+                  <div className="mt-2 flex min-w-0 gap-2 text-xs leading-caption">
+                    <span className="shrink-0 text-index-muted">{t('prefsScanScope')}</span>
+                    <ul className="max-h-10 min-w-0 flex-1 overflow-y-auto font-mono [overflow-wrap:anywhere]">
+                      {preview.paths.map((path) => <li key={path}>{path}</li>)}
+                    </ul>
+                  </div>
+                )}
+                <dl className="mt-3 grid grid-cols-3 gap-x-4 gap-y-1.5 text-xs leading-caption sm:grid-cols-4">
+                  <div className="flex items-baseline justify-between gap-2"><dt className="text-index-muted">{t('prefsStatBookmarks')}</dt><dd>{preview.stats.totalBookmarks}</dd></div>
+                  <div className="flex items-baseline justify-between gap-2"><dt className="text-index-muted">{t('prefsStatFolders')}</dt><dd>{preview.stats.totalFolders}</dd></div>
+                  <div className="flex items-baseline justify-between gap-2"><dt className="text-index-muted">{t('prefsStatEmpty')}</dt><dd>{preview.stats.emptyFolders}</dd></div>
+                  <div className="flex items-baseline justify-between gap-2"><dt className="text-index-muted">{t('prefsStatUntitled')}</dt><dd>{preview.stats.untitledBookmarks}</dd></div>
+                  <div className="flex items-baseline justify-between gap-2"><dt className="text-index-muted">{t('prefsStatDuplicates')}</dt><dd>{preview.stats.duplicateUrlGroups}</dd></div>
+                  <div className="flex items-baseline justify-between gap-2"><dt className="text-index-muted">{t('prefsStatDuplicateFolders')}</dt><dd>{preview.stats.duplicateFolderGroups}</dd></div>
+                  <div className="flex items-baseline justify-between gap-2"><dt className="text-index-muted">{t('prefsStatDepth')}</dt><dd>{preview.stats.maxDepth}</dd></div>
+                </dl>
+              </section>
+            )}
+          </div>
+        )}
+      >
+        <div data-testid="scope-section" className="p-2">
           <BookmarkTree
             nodes={tree}
             checkedIds={checkedIds}
@@ -84,58 +139,7 @@ export function ScopeStep() {
             onToggleExpand={toggleExpand}
           />
         </div>
-      </div>
-
-      {preview !== null && (
-        <div className="mt-4 overflow-hidden rounded-index border border-index-line bg-index-surface shadow-sm">
-          <IndexSection className="border-0" title={t('prefsScanTitle')} count={preview.stats.totalBookmarks}>
-            <div className="text-base leading-body">
-              {preview.paths.length > 0 && (
-                <div className="mb-2">
-                  <p className="text-sm leading-caption text-index-muted">{t('prefsScanScope')}</p>
-                  <ul>
-                    {preview.paths.map((path) => (
-                      <li key={path} className="break-words font-mono text-sm leading-caption [overflow-wrap:anywhere]">{path}</li>
-                    ))}
-                  </ul>
-                </div>
-              )}
-              <dl className="grid grid-cols-2 gap-x-6 gap-y-2 text-sm leading-caption">
-                <dt className="text-index-muted">{t('prefsStatBookmarks')}</dt><dd>{preview.stats.totalBookmarks}</dd>
-                <dt className="text-index-muted">{t('prefsStatFolders')}</dt><dd>{preview.stats.totalFolders}</dd>
-                <dt className="text-index-muted">{t('prefsStatEmpty')}</dt><dd>{preview.stats.emptyFolders}</dd>
-                <dt className="text-index-muted">{t('prefsStatUntitled')}</dt><dd>{preview.stats.untitledBookmarks}</dd>
-                <dt className="text-index-muted">{t('prefsStatDuplicates')}</dt><dd>{preview.stats.duplicateUrlGroups}</dd>
-                <dt className="text-index-muted">{t('prefsStatDuplicateFolders')}</dt><dd>{preview.stats.duplicateFolderGroups}</dd>
-                <dt className="text-index-muted">{t('prefsStatDepth')}</dt><dd>{preview.stats.maxDepth}</dd>
-              </dl>
-            </div>
-          </IndexSection>
-        </div>
-      )}
-
-      <StickyActionBar>
-        <PrimaryButton
-          className="w-full"
-          disabled={checkedIds.size === 0 || busy !== null}
-          onClick={() => void goScan()}
-        >
-          {plural(
-            scopedCount,
-            'scopeScanOne',
-            'scopeScanOther',
-            String(scopedCount),
-            // 文件夹数降为附注，但仍要单独过一次 plural：英文的 folder/folders
-            // 由文件夹数决定，跟着书签数的单复数走会拼出「1 bookmark in 2 folder」
-            plural(
-              checkedIds.size,
-              'scopeScanFolderOne',
-              'scopeScanFolderOther',
-              String(checkedIds.size),
-            ),
-          )}
-        </PrimaryButton>
-      </StickyActionBar>
+      </BookmarkWorkspace>
     </div>
   )
 }
