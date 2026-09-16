@@ -1,5 +1,10 @@
 import { describe, expect, it } from 'vitest'
-import { moveBookmarks, type MoveBookmarksInput } from '@/engine/moveBookmarks'
+import {
+  collectMoveNodeIds,
+  moveBookmarks,
+  type MoveBookmarksInput,
+} from '@/engine/moveBookmarks'
+import type { BookmarkNode } from '@/core/ports'
 import { createFakeBookmarks } from '../fakes/fake-bookmarks'
 import { createFakeStorage } from '../fakes/fake-storage'
 
@@ -10,6 +15,9 @@ function setup() {
         { id: '10', title: '来源', children: [
           { id: '100', title: 'A', url: 'https://a.dev' },
           { id: '101', title: 'B', url: 'https://b.dev' },
+          { id: '12', title: '子夹', children: [
+            { id: '120', title: 'C', url: 'https://c.dev' },
+          ]},
         ]},
         { id: '11', title: '归档', children: [] },
       ]},
@@ -19,7 +27,7 @@ function setup() {
 }
 
 function input(overrides: Partial<MoveBookmarksInput> = {}): MoveBookmarksInput {
-  return { bookmarkIds: ['100', '101'], destination: { kind: 'existing', folderId: '11' }, ...overrides }
+  return { nodeIds: ['100', '101'], destination: { kind: 'existing', folderId: '11' }, ...overrides }
 }
 
 describe('moveBookmarks', () => {
@@ -45,6 +53,31 @@ describe('moveBookmarks', () => {
     expect(result.createdFolder).toBe(true)
     expect(bookmarks.structure()).toContain('书签栏/归档/稍后阅读/A')
     expect(bookmarks.structure()).toContain('书签栏/归档/稍后阅读/B')
+  })
+
+  it('moves a whole folder and keeps its nested structure', async () => {
+    const { bookmarks, ports } = setup()
+
+    const result = await moveBookmarks(ports, input({ nodeIds: ['10'] }))
+
+    expect(result).toEqual({ moved: 1, targetFolderId: '11', createdFolder: false })
+    expect(bookmarks.structure()).toContain('书签栏/归档/来源/A')
+    expect(bookmarks.structure()).toContain('书签栏/归档/来源/子夹/C')
+    expect(bookmarks.structure()).not.toMatch(/书签栏\/来源/)
+  })
+
+  it('rejects moving a folder into itself or one of its descendants', async () => {
+    const { ports } = setup()
+
+    await expect(moveBookmarks(ports, input({
+      nodeIds: ['10'],
+      destination: { kind: 'existing', folderId: '12' },
+    }))).rejects.toThrow('invalidTarget')
+
+    await expect(moveBookmarks(ports, input({
+      nodeIds: ['10'],
+      destination: { kind: 'existing', folderId: '10' },
+    }))).rejects.toThrow('invalidTarget')
   })
 
   it('does not leave an empty new folder when a selected bookmark disappeared', async () => {
@@ -73,5 +106,27 @@ describe('moveBookmarks', () => {
     expect(bookmarks.structure()).toContain('书签栏/来源/A')
     expect(bookmarks.structure()).toContain('书签栏/来源/B')
     expect(bookmarks.structure()).not.toContain('失败后清理')
+  })
+})
+
+describe('collectMoveNodeIds', () => {
+  const tree: BookmarkNode[] = [
+    { id: '0', title: '', children: [
+      { id: '1', title: '书签栏', children: [
+        { id: '10', title: '来源', children: [
+          { id: '100', title: 'A', url: 'https://a.dev' },
+          { id: '12', title: '子夹', children: [
+            { id: '120', title: 'C', url: 'https://c.dev' },
+          ]},
+        ]},
+        { id: '11', title: '归档', children: [] },
+      ]},
+    ]},
+  ]
+
+  it('takes topmost checked folders and bookmark picks outside them', () => {
+    expect(collectMoveNodeIds(tree, new Set(['10', '12']), new Set(['100', '120']))).toEqual(['10'])
+    expect(collectMoveNodeIds(tree, new Set(['12']), new Set(['100']))).toEqual(['12', '100'])
+    expect(collectMoveNodeIds(tree, new Set(), new Set(['100', '120']))).toEqual(['100', '120'])
   })
 })

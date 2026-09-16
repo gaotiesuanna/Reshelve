@@ -74,6 +74,7 @@ function describeMoveError(error: MoveBookmarksError): string {
     case 'missingTarget': return t('moveErrMissingTarget')
     case 'emptyFolderName': return t('moveErrEmptyFolderName')
     case 'missingParent': return t('moveErrMissingParent')
+    case 'invalidTarget': return t('moveErrInvalidTarget')
   }
 }
 

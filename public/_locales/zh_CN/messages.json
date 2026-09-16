@@ -160,7 +160,7 @@
     "message": "搜索文件夹、书签或 URL"
   },
   "transferFeatureMove": {
-    "message": "圆点勾选书签，底部可移动到已有或新建文件夹"
+    "message": "方框勾选文件夹或圆点勾选书签，底部可移动"
   },
   "transferFeatureExport": {
     "message": "方框勾选文件夹后导出"
@@ -169,7 +169,7 @@
     "message": "导入书签到新建文件夹"
   },
   "moveSelectHint": {
-    "message": "先勾选书签"
+    "message": "先勾选书签或文件夹"
   },
   "shellStepsLabel": {
     "message": "整理步骤"
@@ -255,10 +255,10 @@
     }
   },
   "moveSelectedBookmarks": {
-    "message": "移动选中书签"
+    "message": "移动选中项"
   },
   "busyMovingBookmarks": {
-    "message": "正在移动书签…"
+    "message": "正在移动…"
   },
   "moveDestinationLabel": {
     "message": "移动到文件夹"
@@ -307,7 +307,7 @@
     "message": "确认移动"
   },
   "moveCount": {
-    "message": "已选中 $count$ 条书签",
+    "message": "已选中 $count$ 项",
     "placeholders": {
       "count": {
         "content": "$1"
@@ -315,7 +315,7 @@
     }
   },
   "moveDone": {
-    "message": "已移动 $count$ 条书签",
+    "message": "已移动 $count$ 项",
     "placeholders": {
       "count": {
         "content": "$1"
@@ -334,10 +334,10 @@
     "message": "书签已移动，但刷新列表失败，请重新打开此页。"
   },
   "moveErrEmptySelection": {
-    "message": "没有选择要移动的书签。"
+    "message": "没有选择要移动的书签或文件夹。"
   },
   "moveErrMissingBookmark": {
-    "message": "部分选中的书签已不存在，请刷新后重试。"
+    "message": "部分选中的项目已不存在，请刷新后重试。"
   },
   "moveErrMissingTarget": {
     "message": "移动目标文件夹不存在。"
@@ -347,6 +347,9 @@
   },
   "moveErrMissingParent": {
     "message": "新文件夹的父目录不存在。"
+  },
+  "moveErrInvalidTarget": {
+    "message": "不能把文件夹移到它自己或其子文件夹里。"
   },
   "scopeNeedModel": {
     "message": "书签怎么分类，由你自己配的模型说了算——现在还没配。挑一个预设，粘上 API Key，就这两步。"

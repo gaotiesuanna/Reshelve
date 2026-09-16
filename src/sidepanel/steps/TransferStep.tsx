@@ -10,7 +10,7 @@ import { ChevronDownIcon, DownloadIcon, UploadIcon } from '../components/icons'
 import { isTabView } from '../lib/openInTab'
 import { collectAllFolderIds, useStore } from '../store'
 import type { BookmarkNode } from '@/core/ports'
-import type { MoveBookmarksInput } from '@/engine/moveBookmarks'
+import { collectMoveNodeIds, type MoveBookmarksInput } from '@/engine/moveBookmarks'
 
 type TransferPanel = 'export' | 'import' | null
 type MovePanelMode = 'existing' | 'new'
@@ -23,18 +23,6 @@ const TRANSFER_FEATURES = [
 ] as const
 
 
-function selectedIdsInTree(nodes: BookmarkNode[], selected: Set<string>): string[] {
-  const ids: string[] = []
-  function visit(node: BookmarkNode): void {
-    if (node.url !== undefined) {
-      if (selected.has(node.id)) ids.push(node.id)
-      return
-    }
-    for (const child of node.children ?? []) visit(child)
-  }
-  for (const node of nodes) visit(node)
-  return ids
-}
 
 function initialTransfer(): TransferPanel {
   const { importFile, importError, importDone } = useStore.getState()
@@ -68,11 +56,15 @@ export function TransferStep() {
     : expandedIds
   const folderIds = collectAllFolderIds(visibleNodes)
   const allOpen = folderIds.length > 0 && folderIds.every((id) => visibleExpandedIds.has(id))
-  const canMove = moveSelection.size > 0 && busy === null
+  const moveNodeIds = useMemo(
+    () => collectMoveNodeIds(tree, checkedIds, moveSelection),
+    [tree, checkedIds, moveSelection],
+  )
+  const canMove = moveNodeIds.length > 0 && busy === null
   // 全部取消勾选后收起移动面板：下次重新勾选时不该自动弹开
   useEffect(() => {
-    if (moveSelection.size === 0) setMoveOpen(false)
-  }, [moveSelection.size])
+    if (moveNodeIds.length === 0) setMoveOpen(false)
+  }, [moveNodeIds.length])
   useEffect(() => {
     if (moveOpen) movePanelRef.current?.scrollIntoView?.({ block: 'nearest' })
   }, [moveOpen])
@@ -132,24 +124,38 @@ export function TransferStep() {
       footer={(
         <div className="space-y-3">
           <div className="space-y-2">
-            <button
-              type="button"
-              aria-expanded={moveOpen}
-              disabled={!canMove}
-              onClick={() => setMoveOpen((prev) => !prev)}
-              className="flex min-h-index-row w-full cursor-pointer items-center justify-between gap-2 rounded-index border border-index-line bg-index-blue-soft px-3 text-sm leading-caption font-semibold text-index-ink transition-colors duration-150 hover:enabled:bg-index-blue-soft/70 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-index-blue disabled:cursor-not-allowed disabled:opacity-40 motion-reduce:transition-none"
-            >
-              <span>{t('moveSelectedBookmarks')}</span>
-              <span className="flex items-center gap-1.5 text-xs font-normal text-index-muted">
-                {moveSelection.size > 0
-                  ? t('moveCount', String(moveSelection.size))
-                  : t('moveSelectHint')}
-                <ChevronDownIcon className={`h-3.5 w-3.5 shrink-0 transition-transform ${moveOpen ? 'rotate-180' : ''}`} />
-              </span>
-            </button>
+            <div className="flex items-center gap-2">
+              <button
+                type="button"
+                aria-expanded={moveOpen}
+                disabled={!canMove}
+                onClick={() => setMoveOpen((prev) => !prev)}
+                className="flex min-h-index-row min-w-0 flex-1 cursor-pointer items-center justify-between gap-2 rounded-index border border-index-line bg-index-blue-soft px-3 text-sm leading-caption font-semibold text-index-ink transition-colors duration-150 hover:enabled:bg-index-blue-soft/70 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-index-blue disabled:cursor-not-allowed disabled:opacity-40 motion-reduce:transition-none"
+              >
+                <span>{t('moveSelectedBookmarks')}</span>
+                <span className="flex items-center gap-1.5 text-xs font-normal text-index-muted">
+                  {moveNodeIds.length > 0
+                    ? t('moveCount', String(moveNodeIds.length))
+                    : t('moveSelectHint')}
+                  <ChevronDownIcon className={`h-3.5 w-3.5 shrink-0 transition-transform ${moveOpen ? 'rotate-180' : ''}`} />
+                </span>
+              </button>
+              {canMove && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    useStore.setState({ checkedIds: new Set(), moveSelection: new Set() })
+                    setMoveOpen(false)
+                  }}
+                  className="inline-flex h-8 shrink-0 cursor-pointer items-center rounded-index px-2 text-xs leading-caption text-index-muted transition-colors duration-150 hover:bg-index-surface-muted hover:text-index-ink focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-index-accent motion-reduce:transition-none"
+                >
+                  {t('importCancel')}
+                </button>
+              )}
+            </div>
             {moveOpen && (
               <div ref={movePanelRef}>
-                <MoveBookmarksPanel tree={tree} busy={busy} />
+                <MoveBookmarksPanel tree={tree} busy={busy} nodeIds={moveNodeIds} />
               </div>
             )}
           </div>
@@ -208,7 +214,7 @@ export function TransferStep() {
       <div className="flex min-h-full flex-col md:flex-row gap-3 md:gap-4">
         <aside
           data-testid="transfer-sidebar"
-          className="w-full md:w-36 lg:w-40 shrink-0 border-b md:border-b-0 md:border-r border-index-line pb-4 md:pb-0 pr-0 md:pr-3"
+          className="w-full md:w-20 lg:w-20 shrink-0 border-b md:border-b-0 md:border-r border-index-line pb-4 md:pb-0 pr-0 md:pr-3"
         >
           <div className="mb-3 px-2 text-xs font-semibold uppercase tracking-wider text-index-muted">
             {t('shellModeTransfer')}
@@ -239,7 +245,15 @@ export function TransferStep() {
   )
 }
 
-function MoveBookmarksPanel({ tree, busy }: { tree: BookmarkNode[]; busy: string | null }) {
+function MoveBookmarksPanel({
+  tree,
+  busy,
+  nodeIds,
+}: {
+  tree: BookmarkNode[]
+  busy: string | null
+  nodeIds: string[]
+}) {
   const moveBookmarks = useStore((state) => state.moveBookmarks)
   const [mode, setMode] = useState<MovePanelMode>('existing')
   const [existingFolderId, setExistingFolderId] = useState('')
@@ -260,9 +274,8 @@ function MoveBookmarksPanel({ tree, busy }: { tree: BookmarkNode[]; busy: string
   }, [tree])
   const targetFolderId = existingFolderId
   const parentFolderId = newFolderParentId || fallbackFolderId
-  const selectedCount = useStore((state) => state.moveSelection.size)
   const canSubmit = busy === null
-    && selectedCount > 0
+    && nodeIds.length > 0
     && (mode === 'existing' ? targetFolderId !== '' : newFolderTitle.trim() !== '' && parentFolderId !== '')
 
   function submit(): void {
@@ -270,8 +283,7 @@ function MoveBookmarksPanel({ tree, busy }: { tree: BookmarkNode[]; busy: string
     const destination: MoveBookmarksInput['destination'] = mode === 'existing'
       ? { kind: 'existing', folderId: targetFolderId }
       : { kind: 'new', parentId: parentFolderId, title: newFolderTitle }
-    const bookmarkIds = selectedIdsInTree(tree, useStore.getState().moveSelection)
-    void moveBookmarks({ bookmarkIds, destination })
+    void moveBookmarks({ nodeIds, destination })
   }
 
   return (

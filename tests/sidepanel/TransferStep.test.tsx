@@ -143,7 +143,7 @@ describe('TransferStep', () => {
     expect(screen.getByText('https://b.dev')).toBeDefined()
 
     await userEvent.click(screen.getByRole('checkbox', { name: '选择书签 A' }))
-    expect(screen.getByText('已选中 1 条书签')).toBeDefined()
+    expect(screen.getByText('已选中 1 项')).toBeDefined()
   })
 
   it('搜索时自动展开命中路径，清空后恢复搜索前的展开状态', async () => {
@@ -174,22 +174,31 @@ describe('TransferStep', () => {
     expect(screen.getByText('没有找到相关书签')).toBeDefined()
   })
 
-  it('底部始终显示移动按钮；未选书签时禁用，选中后可展开文件夹选择器', async () => {
+  it('底部始终显示移动按钮；未选时禁用，选书签或文件夹后可展开', async () => {
     render(<TransferStep />)
-    const moveButton = screen.getByRole('button', { name: /移动选中书签/ })
+    const moveButton = screen.getByRole('button', { name: /移动选中/ })
     expect((moveButton as HTMLButtonElement).disabled).toBe(true)
+    expect(screen.getByText('先勾选书签或文件夹')).toBeDefined()
     expect(screen.queryByRole('radiogroup', { name: '移动到文件夹' })).toBeNull()
+
+    // 方框勾选文件夹即可启用移动
+    await userEvent.click(screen.getByRole('checkbox', { name: 'react' }))
+    expect(screen.getByText('已选中 1 项')).toBeDefined()
+    expect((screen.getByRole('button', { name: /移动选中/ }) as HTMLButtonElement).disabled).toBe(false)
+
+    await userEvent.click(screen.getByRole('checkbox', { name: 'react' }))
+    expect((screen.getByRole('button', { name: /移动选中/ }) as HTMLButtonElement).disabled).toBe(true)
 
     const input = screen.getByRole('searchbox', { name: '搜索书签' })
     await userEvent.type(input, '.dev')
     await userEvent.click(screen.getByRole('checkbox', { name: '选择书签 A' }))
     await userEvent.click(screen.getByRole('checkbox', { name: '选择书签 B' }))
 
-    expect(screen.getByText('已选中 2 条书签')).toBeDefined()
-    expect((screen.getByRole('button', { name: /移动选中书签/ }) as HTMLButtonElement).disabled).toBe(false)
+    expect(screen.getByText('已选中 2 项')).toBeDefined()
+    expect((screen.getByRole('button', { name: /移动选中/ }) as HTMLButtonElement).disabled).toBe(false)
     expect(screen.queryByRole('radiogroup', { name: '移动到文件夹' })).toBeNull()
 
-    await userEvent.click(screen.getByRole('button', { name: /移动选中书签/ }))
+    await userEvent.click(screen.getByRole('button', { name: /移动选中/ }))
     expect(screen.getByRole('radiogroup', { name: '移动到文件夹' })).toBeDefined()
     expect(scrollIntoView).toHaveBeenCalled()
     expect((screen.getByRole('button', { name: '确认移动' }) as HTMLButtonElement).disabled).toBe(true)
@@ -203,27 +212,43 @@ describe('TransferStep', () => {
     await userEvent.type(screen.getByRole('searchbox', { name: '搜索书签' }), '.dev')
     await userEvent.click(screen.getByRole('checkbox', { name: '选择书签 A' }))
 
-    await userEvent.click(screen.getByRole('button', { name: /移动选中书签/ }))
+    await userEvent.click(screen.getByRole('button', { name: /移动选中/ }))
     expect(screen.getByRole('radiogroup', { name: '移动到文件夹' })).toBeDefined()
 
-    await userEvent.click(screen.getByRole('button', { name: /移动选中书签/ }))
+    await userEvent.click(screen.getByRole('button', { name: /移动选中/ }))
     expect(screen.queryByRole('radiogroup', { name: '移动到文件夹' })).toBeNull()
 
     // 取消勾选后按钮仍在，只是禁用；重新勾选时面板不自动展开
     await userEvent.click(screen.getByRole('checkbox', { name: '选择书签 A' }))
-    const moveButton = screen.getByRole('button', { name: /移动选中书签/ })
+    const moveButton = screen.getByRole('button', { name: /移动选中/ })
     expect((moveButton as HTMLButtonElement).disabled).toBe(true)
     await userEvent.click(screen.getByRole('checkbox', { name: '选择书签 A' }))
-    expect((screen.getByRole('button', { name: /移动选中书签/ }) as HTMLButtonElement).disabled).toBe(false)
+    expect((screen.getByRole('button', { name: /移动选中/ }) as HTMLButtonElement).disabled).toBe(false)
     expect(screen.queryByRole('radiogroup', { name: '移动到文件夹' })).toBeNull()
   })
 
+  it('移动条右侧取消会清空勾选并收起面板', async () => {
+    render(<TransferStep />)
+    await userEvent.click(screen.getByRole('checkbox', { name: 'react' }))
+    await userEvent.type(screen.getByRole('searchbox', { name: '搜索书签' }), '.dev')
+    await userEvent.click(screen.getByRole('checkbox', { name: '选择书签 A' }))
+    await userEvent.click(screen.getByRole('button', { name: /移动选中/ }))
+    expect(screen.getByRole('radiogroup', { name: '移动到文件夹' })).toBeDefined()
+
+    await userEvent.click(screen.getByRole('button', { name: '取消' }))
+
+    expect(useStore.getState().checkedIds.size).toBe(0)
+    expect(useStore.getState().moveSelection.size).toBe(0)
+    expect(screen.queryByRole('radiogroup', { name: '移动到文件夹' })).toBeNull()
+    expect((screen.getByRole('button', { name: /移动选中/ }) as HTMLButtonElement).disabled).toBe(true)
+    expect(screen.queryByRole('button', { name: '取消' })).toBeNull()
+  })
 
   it('切换到新建文件夹时显示名称和父目录树选择器', async () => {
     render(<TransferStep />)
     await userEvent.type(screen.getByRole('searchbox', { name: '搜索书签' }), '.dev')
     await userEvent.click(screen.getByRole('checkbox', { name: '选择书签 A' }))
-    await userEvent.click(screen.getByRole('button', { name: /移动选中书签/ }))
+    await userEvent.click(screen.getByRole('button', { name: /移动选中/ }))
     await userEvent.click(screen.getByRole('button', { name: '新建文件夹' }))
 
     expect(screen.getByRole('textbox', { name: '新文件夹名称' })).toBeDefined()
@@ -250,12 +275,12 @@ describe('浏览书签标签形态下的侧边栏布局', () => {
     const sidebar = screen.getByTestId('transfer-sidebar')
     expect(within(sidebar).getByText('浏览书签')).toBeDefined()
     expect(within(sidebar).getByText('搜索文件夹、书签或 URL')).toBeDefined()
-    expect(within(sidebar).getByText(/圆点勾选书签/)).toBeDefined()
+    expect(within(sidebar).getByText(/方框勾选文件夹或圆点勾选书签/)).toBeDefined()
     expect(within(sidebar).getByText(/导出/)).toBeDefined()
     expect(within(sidebar).getByText(/导入/)).toBeDefined()
 
     expect(screen.getByTestId('bookmark-workspace')).toBeDefined()
-    expect(screen.getByRole('button', { name: /移动选中书签/ })).toBeDefined()
+    expect(screen.getByRole('button', { name: /移动选中/ })).toBeDefined()
 
     window.history.pushState({}, '', '/')
   })

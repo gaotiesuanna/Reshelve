@@ -192,10 +192,7 @@ export function Shell({ children, organizeContent }: { children: ReactNode; orga
         ? 'flex min-h-0 flex-1 flex-col overflow-y-auto bg-index-page px-3 py-6 sm:px-4 sm:py-8 lg:px-5'
         : 'flex min-h-0 flex-1 flex-col overflow-y-auto p-4'}
       >
-        <div className={tabView
-          ? 'mx-auto flex h-full min-h-0 w-full max-w-7xl flex-1 flex-col'
-          : 'flex h-full min-h-0 flex-1 flex-col'}
-        >
+        <div className="flex h-full min-h-0 w-full flex-1 flex-col">
           {settingsOpen ? <SettingsPanel /> : tabView && mode === 'organize' ? (
             <div
               data-testid="tab-workspace-split"
@@ -263,8 +260,8 @@ export function Shell({ children, organizeContent }: { children: ReactNode; orga
       </main>
     </>
   )
-  // 完整标签页是主工作区：全宽铺底，正文在 main 内保持可读的最大宽度。
-  // 侧栏仍然是紧凑画布，保持原样铺满。
+  // 完整标签页是主工作区：全宽铺底，侧栏与顶栏品牌左缘对齐，不再 max-w 居中把目录挤进中间。
+  // 扩展侧栏仍然是紧凑画布，保持原样铺满。
   return tabView ? (
     <div className="h-full bg-index-page text-index-ink">
       <div

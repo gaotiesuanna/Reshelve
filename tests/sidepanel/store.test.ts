@@ -503,7 +503,7 @@ describe('手动移动书签', () => {
     })
 
     await useStore.getState().moveBookmarks({
-      bookmarkIds: ['100'], destination: { kind: 'existing', folderId: '11' },
+      nodeIds: ['100'], destination: { kind: 'existing', folderId: '11' },
     })
 
     expect(useStore.getState().moveSelection).toEqual(new Set())
@@ -519,7 +519,7 @@ describe('手动移动书签', () => {
       : Promise.resolve({ ok: false, error: '后台没了' }) as never)
 
     await useStore.getState().moveBookmarks({
-      bookmarkIds: ['100'], destination: { kind: 'existing', folderId: '11' },
+      nodeIds: ['100'], destination: { kind: 'existing', folderId: '11' },
     })
 
     expect(useStore.getState().moveSelection).toEqual(new Set())
@@ -530,7 +530,7 @@ describe('手动移动书签', () => {
     vi.mocked(send).mockResolvedValue({ ok: false, error: '目标文件夹不存在' } as never)
 
     await useStore.getState().moveBookmarks({
-      bookmarkIds: ['100'], destination: { kind: 'existing', folderId: '11' },
+      nodeIds: ['100'], destination: { kind: 'existing', folderId: '11' },
     })
 
     expect(useStore.getState().moveSelection).toEqual(new Set(['100']))

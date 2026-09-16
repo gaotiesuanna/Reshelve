@@ -107,7 +107,7 @@ export function StepIndex<K extends string>({
       <div className="flex min-h-full flex-col md:flex-row gap-3 md:gap-4">
         <aside
           data-testid="step-sidebar"
-          className="w-full md:w-36 lg:w-40 shrink-0 border-b md:border-b-0 md:border-r border-index-line pb-4 md:pb-0 pr-0 md:pr-3"
+          className="w-full md:w-20 lg:w-20 shrink-0 border-b md:border-b-0 md:border-r border-index-line pb-4 md:pb-0 pr-0 md:pr-3"
         >
           <div className="mb-3 px-2 text-xs font-semibold uppercase tracking-wider text-index-muted">
             {t('shellStepsLabel')}
