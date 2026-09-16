@@ -222,6 +222,12 @@ export function Shell({ children, organizeContent }: { children: ReactNode; orga
                 >
                   {organizeContent ?? children}
                 </StepIndex>
+              ) : tabView && mode === 'cleanup' ? (
+                /* 清理页的书签是主任务，不需要横跨整张标签页。
+                   宽屏把它固定在左半区，右侧保留给后续上下文信息；窄屏恢复单列。 */
+                <section data-testid="tab-cleanup-workspace" className="w-full lg:w-1/2">
+                  {children}
+                </section>
               ) : children}
               {/* 清理扫描结果属于「重复收藏」那一格，由 CleanupStep 自己画。
                   扫描还没回来时 CleanupStep 是 null，进度仍由这里顶上。

@@ -230,6 +230,17 @@ describe('Shell 模式切换', () => {
     expect(screen.getByText('看板内容')).toBeDefined()
   })
 
+  it('标签页本地清理把书签主区限制在左半屏', () => {
+    window.history.pushState({}, '', '/?view=tab&mode=cleanup')
+    useStore.setState({ mode: 'cleanup' })
+    render(<Shell organizeContent={<div>步骤内容</div>}><div>清理内容</div></Shell>)
+
+    const workspace = screen.getByTestId('tab-cleanup-workspace')
+    expect(workspace.className).toContain('lg:w-1/2')
+    expect(within(workspace).getByText('清理内容')).toBeDefined()
+    window.history.pushState({}, '', '/')
+  })
+
   // busy 是单槽，切过去也什么都干不了，还会让人以为切换失灵，所以忙的时候禁用
   it('忙的时候四个模式按钮都禁用', () => {
     useStore.setState({ busy: '正在分析…', busyTask: 'analyze' })
