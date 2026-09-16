@@ -2,6 +2,7 @@ import { PHASE_LABELS } from '@/background/events'
 import { plural, t } from '@/i18n'
 import { useLayoutEffect, useRef, type ReactNode } from 'react'
 import type { LogLine, Progress } from '../store'
+import { DiagnosticText } from './DiagnosticText'
 import {
   LEVEL_CLASS,
   STATUS_CLASS,
@@ -116,7 +117,7 @@ export function LogPanel({ status, busy, progress, logs, onCancel }: Props) {
             {logs.map((line) => (
               <li key={line.id} className={`whitespace-pre-wrap break-words ${LEVEL_CLASS[line.level]}`}>
                 <span className="mr-1 font-mono text-[0.6875rem] text-index-faint">[{t(PHASE_LABELS[line.phase])}]</span>
-                {line.message}
+                <DiagnosticText message={line.message} />
               </li>
             ))}
           </ul>

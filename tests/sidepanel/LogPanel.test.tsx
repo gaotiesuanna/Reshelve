@@ -1,5 +1,5 @@
 import { describe, it, expect, vi } from 'vitest'
-import { fireEvent, render, screen } from '@testing-library/react'
+import { fireEvent, render, screen, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { LogPanel } from '@/sidepanel/components/LogPanel'
 import type { LogLine } from '@/sidepanel/store'
@@ -24,6 +24,23 @@ describe('LogPanel', () => {
     expect(screen.getByText('正在提取标签…')).toBeDefined()
     expect(screen.getByText('第 2 批稍慢，继续等待')).toBeDefined()
     expect(screen.getByTestId('llm-log-progress').textContent).toContain('分类12/30')
+  })
+
+  it('超长错误默认只展示摘要，原文可展开查看', () => {
+    const message = `分类批次 1/7 失败：${'{"results":' + 'x'.repeat(600) + '}'}`
+    render(
+      <LogPanel
+        status="failed"
+        busy={null}
+        progress={null}
+        logs={[{ id: 3, phase: 'classify', level: 'error', message }]}
+      />,
+    )
+
+    const details = screen.getByText('查看原始错误').closest('details')
+    expect(details).not.toBeNull()
+    expect(details?.open).toBe(false)
+    expect(within(details!).getByText(message)).toBeDefined()
   })
 
   it('任务可取消时显示取消按钮', async () => {

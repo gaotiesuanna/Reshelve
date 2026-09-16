@@ -738,6 +738,9 @@
       }
     }
   },
+  "diagnosticShowDetails": {
+    "message": "查看原始错误"
+  },
   "llmLogTitle": {
     "message": "LLM 日志"
   },

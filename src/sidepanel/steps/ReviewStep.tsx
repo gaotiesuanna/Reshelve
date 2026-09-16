@@ -8,6 +8,7 @@ import type { MessageKey } from '@/i18n/messages'
 import { downloadJson } from '../lib/download'
 import { useStore } from '../store'
 import { ChevronDownIcon, DownloadIcon } from '../components/icons'
+import { DiagnosticText } from '../components/DiagnosticText'
 import { IndexSection } from '../components/IndexSection'
 import { InlineStatus } from '../components/InlineStatus'
 import { GhostButton, PrimaryButton, SecondaryButton, StickyActionBar } from '../components/IndexControls'
@@ -212,9 +213,9 @@ export function ReviewStep() {
       {plan.warnings.length > 0 && (
         <div className="mt-3">
           <InlineStatus tone="warning">
-            <ul className="space-y-1">
+              <ul className="space-y-1">
               {plan.warnings.map((warning) => (
-                <li key={warning}>{warning}</li>
+                <li key={warning}><DiagnosticText message={warning} /></li>
               ))}
             </ul>
           </InlineStatus>

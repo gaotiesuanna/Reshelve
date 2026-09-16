@@ -738,6 +738,9 @@
       }
     }
   },
+  "diagnosticShowDetails": {
+    "message": "View raw error"
+  },
   "llmLogTitle": {
     "message": "LLM logs"
   },

@@ -49,6 +49,19 @@ describe('ReviewStep', () => {
     expect(screen.getByText('值得看一眼')).toBeDefined()
   })
 
+  it('超长分类警告默认只显示摘要，原始错误可展开', () => {
+    const detail = '{"results":' + 'x'.repeat(600) + '}'
+    useStore.setState({
+      plan: { ...plan, warnings: [`25 个书签分类失败，已保持原位。原因：${detail}`] },
+    })
+    render(<ReviewStep />)
+
+    expect(screen.getByText('25 个书签分类失败，已保持原位。原因：')).toBeDefined()
+    const details = screen.getByText('查看原始错误').closest('details')
+    expect(details).not.toBeNull()
+    expect(details?.open).toBe(false)
+  })
+
   it('复选框反映已接受状态', () => {
     render(<ReviewStep />)
     expect((screen.getByRole('checkbox', { name: 'React 官网' }) as HTMLInputElement).checked).toBe(true)
