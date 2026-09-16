@@ -27,6 +27,12 @@ import {
 import { findBookmarksBar } from '@/core/import'
 import { importTree } from '@/engine/importTree'
 import { moveBookmarks, MoveBookmarksError } from '@/engine/moveBookmarks'
+import {
+  createChildFolder,
+  EditNodesError,
+  removeTreeNode,
+  updateTreeNode,
+} from '@/engine/editNodes'
 import { classifyBookmarks } from '@/llm/classify'
 import { FolderDesignError } from '@/llm/folders'
 import type { EmitProgress, ProgressPhase } from './events'
@@ -75,6 +81,18 @@ function describeMoveError(error: MoveBookmarksError): string {
     case 'emptyFolderName': return t('moveErrEmptyFolderName')
     case 'missingParent': return t('moveErrMissingParent')
     case 'invalidTarget': return t('moveErrInvalidTarget')
+  }
+}
+
+function describeEditError(error: EditNodesError): string {
+  switch (error.code) {
+    case 'missingNode': return t('treeEditErrMissing')
+    case 'immutableFolder': return t('treeEditErrImmutable')
+    case 'emptyTitle': return t('treeEditErrEmptyTitle')
+    case 'emptyUrl': return t('treeEditErrEmptyUrl')
+    case 'invalidUrl': return t('treeEditErrInvalidUrl')
+    case 'notFolder': return t('treeEditErrNotFolder')
+    case 'notBookmark': return t('treeEditErrNotBookmark')
   }
 }
 
@@ -452,6 +470,36 @@ export async function handle(
           return { ok: true, kind: 'move_bookmarks', result }
         } catch (error) {
           if (error instanceof MoveBookmarksError) return { ok: false, error: describeMoveError(error) }
+          throw error
+        }
+      }
+
+      case 'update_tree_node': {
+        try {
+          const node = await updateTreeNode(ports, request.id, request.changes)
+          return { ok: true, kind: 'update_tree_node', node }
+        } catch (error) {
+          if (error instanceof EditNodesError) return { ok: false, error: describeEditError(error) }
+          throw error
+        }
+      }
+
+      case 'remove_tree_node': {
+        try {
+          await removeTreeNode(ports, request.id)
+          return { ok: true, kind: 'remove_tree_node' }
+        } catch (error) {
+          if (error instanceof EditNodesError) return { ok: false, error: describeEditError(error) }
+          throw error
+        }
+      }
+
+      case 'create_child_folder': {
+        try {
+          const node = await createChildFolder(ports, request.parentId, request.title)
+          return { ok: true, kind: 'create_child_folder', node }
+        } catch (error) {
+          if (error instanceof EditNodesError) return { ok: false, error: describeEditError(error) }
           throw error
         }
       }

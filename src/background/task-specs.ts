@@ -63,6 +63,10 @@ export const TASK_SPECS: Readonly<Record<Request['kind'], TaskSpec>> = {
   apply_cleanup: { exclusive: true, cancellable: false, busyLabel: 'busyApplying' },
   apply_aggregate: { exclusive: true, cancellable: false, busyLabel: 'busyAggregating' },
   move_bookmarks: { exclusive: true, cancellable: false, busyLabel: 'busyMovingBookmarks' },
+  // 浏览树的单节点改动：改的是同一棵书签树，必须独占；瞬时完成，不给 busy 文案。
+  update_tree_node: { exclusive: true, cancellable: false, busyLabel: null },
+  remove_tree_node: { exclusive: true, cancellable: false, busyLabel: null },
+  create_child_folder: { exclusive: true, cancellable: false, busyLabel: null },
   /**
    * 「重新开始」的前半步：清持久化分类缓存。动的正是 analyze 在写的那份缓存，
    * 所以独占；但它秒回且紧跟着就进 analyze，不给 busy 文案也不给取消。

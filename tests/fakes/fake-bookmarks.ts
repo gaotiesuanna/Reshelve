@@ -114,7 +114,11 @@ export function createFakeBookmarks(initial: TreeSpec[]): FakeBookmarks {
     },
     async update(id, changes) {
       const entry = must(id)
-      entry.title = changes.title
+      if (changes.title !== undefined) entry.title = changes.title
+      if (changes.url !== undefined) {
+        if (entry.url === undefined) throw new Error(`无法给文件夹设 URL: ${id}`)
+        entry.url = changes.url
+      }
       return toNode(entry, false)
     },
     async remove(id) {
@@ -122,6 +126,15 @@ export function createFakeBookmarks(initial: TreeSpec[]): FakeBookmarks {
       if (entry.childIds.length > 0) throw new Error(`无法删除非空文件夹: ${id}`)
       detach(entry)
       entries.delete(id)
+    },
+    async removeTree(id) {
+      const kill = (targetId: string): void => {
+        const entry = must(targetId)
+        for (const childId of [...entry.childIds]) kill(childId)
+        detach(entry)
+        entries.delete(targetId)
+      }
+      kill(id)
     },
   }
 

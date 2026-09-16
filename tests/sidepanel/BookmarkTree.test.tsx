@@ -119,8 +119,8 @@ describe('BookmarkTree 展开收起', () => {
     expect(screen.queryByText('A')).toBeNull()
   })
 
-  it('书签行提供独立选择框，并把标题和 URL 渲染为可点击链接', () => {
-    renderTree({
+  it('书签行：标题不是链接，只有 URL 可打开；选中行有底色', () => {
+    const { unmount } = renderTree({
       showBookmarks: true,
       selectedBookmarkIds: new Set(['100']),
       onToggleBookmark: vi.fn(),
@@ -129,16 +129,42 @@ describe('BookmarkTree 展开收起', () => {
 
     const bookmarkCheckbox = screen.getByRole('checkbox', { name: '选择书签 A' }) as HTMLInputElement
     expect(bookmarkCheckbox.checked).toBe(true)
-    const titleLink = screen.getByRole('link', { name: 'A' })
-    expect(titleLink.getAttribute('href')).toBe('https://a.dev')
+    expect(screen.queryByRole('link', { name: 'A' })).toBeNull()
+    const title = screen.getByText('A')
     // 标题至少 6ch，长 URL 不能把名字挤成一个字母
-    expect(titleLink.className).toContain('min-w-[6ch]')
+    expect(title.className).toContain('min-w-[6ch]')
     expect(screen.getByRole('link', { name: 'https://a.dev' }).getAttribute('href')).toBe('https://a.dev')
+    expect(title.closest('div[style*="padding-left"]')!.className).toContain('bg-index-accent-soft')
+    unmount()
+
+    renderTree({
+      showBookmarks: true,
+      onToggleBookmark: vi.fn(),
+      expandedIds: new Set(['1', '10']),
+    })
+    expect(screen.getByText('A').closest('div[style*="padding-left"]')!.className).toContain('hover:bg-neutral-100')
+  })
+
+  it('点击书签行或标题切换选中，点击 URL 不切换选中', async () => {
+    const user = userEvent.setup()
+    const onToggleBookmark = vi.fn()
+    renderTree({
+      showBookmarks: true,
+      onToggleBookmark,
+      expandedIds: new Set(['1', '10']),
+    })
+
+    await user.click(screen.getByText('A'))
+    expect(onToggleBookmark).toHaveBeenCalledWith('100')
+    expect(onToggleBookmark).toHaveBeenCalledTimes(1)
+
+    await user.click(screen.getByRole('link', { name: 'https://a.dev' }))
+    expect(onToggleBookmark).toHaveBeenCalledTimes(1)
   })
 
   it('书签行预留箭头占位，勾选框与同级文件夹对齐以体现层级', () => {
     renderTree({ showBookmarks: true, expandedIds: new Set(['1', '10']) })
-    const row = screen.getByRole('link', { name: 'A' }).closest('div[style*="padding-left"]')!
+    const row = screen.getByText('A').closest('div[style*="padding-left"]')!
     // 文件夹行的勾选框在「内边距 + 20px 展开箭头」之后；书签行必须有同样的占位，
     // 否则子书签看起来比父文件夹还靠左，层级关系丢失
     expect(row.firstElementChild?.className).toContain('h-5 w-5')
@@ -177,5 +203,118 @@ describe('BookmarkTree 展开收起', () => {
     expect(result.nodes).toBe(nodes)
     expect(result.hasMatches).toBe(false)
     expect(result.expandedIds).toEqual(new Set())
+  })
+})
+
+describe('BookmarkTree 右键菜单', () => {
+  const editHandlers = () => ({
+    onCreateFolder: vi.fn(async () => '999'),
+    onRename: vi.fn(async () => true),
+    onEditBookmark: vi.fn(async () => true),
+    onDelete: vi.fn(async () => true),
+    onEnsureExpanded: vi.fn(),
+  })
+
+  function folderNodes(): BookmarkNode[] {
+    return [
+      { id: '1', parentId: '0', title: '书签栏', children: [
+        { id: '10', parentId: '1', title: 'react', children: [
+          { id: '100', parentId: '10', title: 'A', url: 'https://a.dev' },
+        ]},
+      ]},
+    ]
+  }
+
+  it('右键普通文件夹显示新建、重命名、删除', async () => {
+    const user = userEvent.setup()
+    const edit = editHandlers()
+    renderTree({
+      nodes: folderNodes(),
+      expandedIds: new Set(['1']),
+      edit,
+      showBookmarks: true,
+    })
+
+    await user.pointer({ keys: '[MouseRight>]', target: screen.getByText('react') })
+
+    const menu = screen.getByTestId('bookmark-tree-menu')
+    expect(menu.textContent).toContain('新建子文件夹')
+    expect(menu.textContent).toContain('重命名')
+    expect(menu.textContent).toContain('删除')
+  })
+
+  it('新建子文件夹会展开父目录并请求创建', async () => {
+    const user = userEvent.setup()
+    const edit = editHandlers()
+    renderTree({
+      nodes: folderNodes(),
+      expandedIds: new Set(['1']),
+      edit,
+      showBookmarks: true,
+    })
+
+    await user.pointer({ keys: '[MouseRight>]', target: screen.getByText('react') })
+    await user.click(screen.getByRole('menuitem', { name: '新建子文件夹' }))
+
+    expect(edit.onEnsureExpanded).toHaveBeenCalledWith('10')
+    expect(edit.onCreateFolder).toHaveBeenCalledWith('10')
+  })
+
+  it('永久根的重命名和删除禁用，仍可新建子文件夹', async () => {
+    const user = userEvent.setup()
+    const edit = editHandlers()
+    renderTree({
+      nodes: folderNodes(),
+      expandedIds: new Set(['1']),
+      edit,
+    })
+
+    await user.pointer({ keys: '[MouseRight>]', target: screen.getByText('书签栏') })
+
+    expect(screen.getByRole('menuitem', { name: '重命名' })).toHaveProperty('disabled', true)
+    expect(screen.getByRole('menuitem', { name: '删除' })).toHaveProperty('disabled', true)
+    expect(screen.getByRole('menuitem', { name: '新建子文件夹' })).toHaveProperty('disabled', false)
+  })
+
+  it('右键书签显示编辑与删除，确认重命名会提交', async () => {
+    const user = userEvent.setup()
+    const edit = editHandlers()
+    renderTree({
+      nodes: folderNodes(),
+      expandedIds: new Set(['1', '10']),
+      edit,
+      showBookmarks: true,
+      onToggleBookmark: vi.fn(),
+    })
+
+    await user.pointer({ keys: '[MouseRight>]', target: screen.getByText('A') })
+    expect(screen.queryByRole('menuitem', { name: '新建子文件夹' })).toBeNull()
+    await user.click(screen.getByRole('menuitem', { name: '编辑' }))
+
+    const title = screen.getByLabelText('名称') as HTMLInputElement
+    await user.clear(title)
+    await user.type(title, 'Alpha')
+    await user.keyboard('{Enter}')
+
+    expect(edit.onEditBookmark).toHaveBeenCalledWith('100', 'Alpha', 'https://a.dev')
+  })
+
+  it('重命名已有文件夹时回车提交', async () => {
+    const user = userEvent.setup()
+    const edit = editHandlers()
+    renderTree({
+      nodes: folderNodes(),
+      expandedIds: new Set(['1']),
+      edit,
+    })
+
+    await user.pointer({ keys: '[MouseRight>]', target: screen.getByText('react') })
+    await user.click(screen.getByRole('menuitem', { name: '重命名' }))
+    const input = screen.getByLabelText('重命名') as HTMLInputElement
+    await user.clear(input)
+    await user.type(input, '前端')
+    await user.keyboard('{Enter}')
+
+    expect(edit.onRename).toHaveBeenCalledWith('10', '前端')
   })
 })

@@ -38,6 +38,9 @@ const bookmarks: BookmarksApi = {
   async remove(id) {
     await chrome.bookmarks.remove(id)
   },
+  async removeTree(id) {
+    await chrome.bookmarks.removeTree(id)
+  },
 }
 
 const storage: StorageApi = {

@@ -94,6 +94,10 @@ export type Request =
    */
   | { kind: 'reclassify'; plan: OrganizePlan; bookmarkIds: string[] }
   | { kind: 'move_bookmarks'; input: MoveBookmarksInput }
+  | { kind: 'update_tree_node'; id: string; changes: { title?: string; url?: string } }
+  | { kind: 'remove_tree_node'; id: string }
+  | { kind: 'create_child_folder'; parentId: string; title: string }
+
 
 
 export type AnalyzeResponse =
@@ -123,6 +127,9 @@ export type Response =
   | { ok: true; kind: 'check_links'; results: LinkResult[] }
   | { ok: true; kind: 'reclassify'; plan: OrganizePlan }
   | { ok: true; kind: 'move_bookmarks'; result: MoveBookmarksResult }
+  | { ok: true; kind: 'update_tree_node'; node: BookmarkNode }
+  | { ok: true; kind: 'remove_tree_node' }
+  | { ok: true; kind: 'create_child_folder'; node: BookmarkNode }
   | { ok: true; kind: 'open_app_tab' }
   /** 当前后台任务的完整记录（含在途进度与终态载荷）；没有就是 null。 */
   | { ok: true; kind: 'get_task'; record: TaskRecord | null }

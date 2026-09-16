@@ -10,7 +10,7 @@ import { ChevronDownIcon, DownloadIcon, UploadIcon } from '../components/icons'
 import { isTabView } from '../lib/openInTab'
 import { collectAllFolderIds, useStore } from '../store'
 import type { BookmarkNode } from '@/core/ports'
-import { collectMoveNodeIds, type MoveBookmarksInput } from '@/engine/moveBookmarks'
+import { collectMoveNodeIds } from '@/engine/moveBookmarks'
 
 type TransferPanel = 'export' | 'import' | null
 type MovePanelMode = 'existing' | 'new'
@@ -30,7 +30,10 @@ function initialTransfer(): TransferPanel {
 }
 
 export function TransferStep() {
-  const { tree, checkedIds, toggle, moveSelection, toggleBookmarkSelection, busy } = useStore()
+  const {
+    tree, checkedIds, toggle, moveSelection, toggleBookmarkSelection, busy,
+    updateTreeNode, removeTreeNode, createChildFolder,
+  } = useStore()
   const [transfer, setTransfer] = useState<TransferPanel>(initialTransfer)
   const [expanded, setExpanded] = useState<Set<string> | null>(null)
   const [searchQuery, setSearchQuery] = useState('')
@@ -151,17 +154,44 @@ export function TransferStep() {
         )}
         footer={(
           <div className="space-y-3">
-            <div className="flex items-center gap-2">
+            <div
+              data-testid="transfer-footer-actions"
+              className="flex flex-wrap items-center gap-2"
+            >
+              <div className={`${segmentTrack} min-w-0 flex-1`} role="group">
+                <button
+                  type="button"
+                  className={`${segmentButton} ${transfer === 'export' ? segmentActive : ''}`}
+                  aria-expanded={transfer === 'export'}
+                  aria-pressed={transfer === 'export'}
+                  disabled={busy !== null}
+                  onClick={() => setTransfer((prev) => (prev === 'export' ? null : 'export'))}
+                >
+                  <DownloadIcon className={`h-3.5 w-3.5 shrink-0 ${transfer === 'export' ? 'text-index-ink' : 'text-index-faint'}`} />
+                  {t('exportToggle')}
+                </button>
+                <button
+                  type="button"
+                  className={`${segmentButton} ${transfer === 'import' ? segmentActive : ''}`}
+                  aria-expanded={transfer === 'import'}
+                  aria-pressed={transfer === 'import'}
+                  disabled={busy !== null}
+                  onClick={() => setTransfer((prev) => (prev === 'import' ? null : 'import'))}
+                >
+                  <UploadIcon className={`h-3.5 w-3.5 shrink-0 ${transfer === 'import' ? 'text-index-ink' : 'text-index-faint'}`} />
+                  {t('importToggle')}
+                </button>
+              </div>
               <button
                 type="button"
                 aria-expanded={moveOpen}
                 aria-controls={moveOpen ? 'move-destination-panel' : undefined}
                 disabled={!canMove}
                 onClick={() => setMoveOpen((prev) => !prev)}
-                className="flex min-h-index-row min-w-0 flex-1 cursor-pointer items-center justify-between gap-2 rounded-index border border-index-line bg-index-blue-soft px-3 text-sm leading-caption font-semibold text-index-ink transition-colors duration-150 hover:enabled:bg-index-blue-soft/70 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-index-blue disabled:cursor-not-allowed disabled:opacity-40 motion-reduce:transition-none"
+                className="inline-flex h-8 shrink-0 cursor-pointer items-center gap-1.5 rounded-index border border-index-line bg-index-blue-soft px-2.5 text-sm leading-caption font-semibold text-index-ink transition-colors duration-150 hover:enabled:bg-index-blue-soft/70 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-index-blue disabled:cursor-not-allowed disabled:opacity-40 motion-reduce:transition-none"
               >
                 <span>{t('moveSelectedBookmarks')}</span>
-                <span className="flex items-center gap-1.5 text-xs font-normal text-index-muted">
+                <span className="flex items-center gap-1 text-xs font-normal text-index-muted">
                   {moveNodeIds.length > 0
                     ? t('moveCount', String(moveNodeIds.length))
                     : t('moveSelectHint')}
@@ -181,30 +211,6 @@ export function TransferStep() {
                 </button>
               )}
             </div>
-            <div className={segmentTrack} role="group">
-              <button
-                type="button"
-                className={`${segmentButton} ${transfer === 'export' ? segmentActive : ''}`}
-                aria-expanded={transfer === 'export'}
-                aria-pressed={transfer === 'export'}
-                disabled={busy !== null}
-                onClick={() => setTransfer((prev) => (prev === 'export' ? null : 'export'))}
-              >
-                <DownloadIcon className={`h-3.5 w-3.5 shrink-0 ${transfer === 'export' ? 'text-index-ink' : 'text-index-faint'}`} />
-                {t('exportToggle')}
-              </button>
-              <button
-                type="button"
-                className={`${segmentButton} ${transfer === 'import' ? segmentActive : ''}`}
-                aria-expanded={transfer === 'import'}
-                aria-pressed={transfer === 'import'}
-                disabled={busy !== null}
-                onClick={() => setTransfer((prev) => (prev === 'import' ? null : 'import'))}
-              >
-                <UploadIcon className={`h-3.5 w-3.5 shrink-0 ${transfer === 'import' ? 'text-index-ink' : 'text-index-faint'}`} />
-                {t('importToggle')}
-              </button>
-            </div>
             {transfer !== null && (
               <div ref={transferPanelRef}>
                 {transfer === 'export' ? <ExportPanel /> : <ImportPanel />}
@@ -223,6 +229,25 @@ export function TransferStep() {
             expandedIds={visibleExpandedIds}
             onToggleExpand={toggleExpand}
             showBookmarks
+            edit={{
+              onCreateFolder: (parentId) => createChildFolder(parentId),
+              onRename: (id, title) => updateTreeNode(id, { title }),
+              onEditBookmark: (id, title, url) => updateTreeNode(id, { title, url }),
+              onDelete: async (node) => {
+                const message = node.url === undefined
+                  ? t('treeDeleteFolderConfirm', node.title)
+                  : t('treeDeleteConfirm', node.title)
+                if (!window.confirm(message)) return false
+                return removeTreeNode(node.id)
+              },
+              onEnsureExpanded: (id) => {
+                if (visibleExpandedIds.has(id)) return
+                const next = new Set(visibleExpandedIds)
+                next.add(id)
+                if (searchActive) setSearchExpandedIds(next)
+                else setExpanded(next)
+              },
+            }}
           />
           {searchActive && !searchResult.hasMatches && (
             <p className="px-2 py-3 text-center text-sm leading-caption text-neutral-500">{t('treeSearchEmpty')}</p>

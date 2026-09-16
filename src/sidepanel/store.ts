@@ -594,6 +594,12 @@ interface State {
   toggle(id: string): void
   toggleBookmarkSelection(id: string): void
   moveBookmarks(input: MoveBookmarksInput): Promise<void>
+  /** 浏览树：改名 / 改书签 URL。成功 true。 */
+  updateTreeNode(id: string, changes: { title?: string; url?: string }): Promise<boolean>
+  /** 浏览树：删除书签或文件夹（含后代）。成功 true。 */
+  removeTreeNode(id: string): Promise<boolean>
+  /** 浏览树：在 parent 下新建子文件夹，返回新 id；失败 null。 */
+  createChildFolder(parentId: string): Promise<string | null>
   goScan(): Promise<void>
   setSettings(settings: Settings): Promise<void>
   setModeOverride(mode: OrganizeMode | null): void
@@ -1012,6 +1018,12 @@ export const useStore = create<State>((set, get) => ({
         set({ ...base, busy: null, busyTask: null, moveSelection: new Set() })
         return void (await get().refreshTree())
       }
+      case 'update_tree_node':
+      case 'remove_tree_node':
+      case 'create_child_folder': {
+        set({ ...base, busy: null, busyTask: null })
+        return void (await get().refreshTree())
+      }
       default:
         return set(base)
     }
@@ -1113,6 +1125,65 @@ export const useStore = create<State>((set, get) => ({
       },
     })
   },
+
+  async updateTreeNode(id, changes) {
+    const run = get().runSeq
+    let ok = false
+    startTask(set, 'update_tree_node')
+    await runTask(get, set, {
+      kind: 'update_tree_node',
+      request: { kind: 'update_tree_node', id, changes },
+      run,
+      failMessage: (error) => t('treeEditError', error),
+      onOk: async () => {
+        ok = true
+        set({ busy: null, busyTask: null, error: null })
+        if (!await get().refreshTree()) set({ error: t('treeEditRefreshError') })
+      },
+    })
+    return ok
+  },
+
+  async removeTreeNode(id) {
+    const run = get().runSeq
+    let ok = false
+    startTask(set, 'remove_tree_node')
+    await runTask(get, set, {
+      kind: 'remove_tree_node',
+      request: { kind: 'remove_tree_node', id },
+      run,
+      failMessage: (error) => t('treeEditError', error),
+      onOk: async () => {
+        ok = true
+        set({ busy: null, busyTask: null, error: null })
+        if (!await get().refreshTree()) set({ error: t('treeEditRefreshError') })
+      },
+    })
+    return ok
+  },
+
+  async createChildFolder(parentId) {
+    const run = get().runSeq
+    let createdId: string | null = null
+    startTask(set, 'create_child_folder')
+    await runTask(get, set, {
+      kind: 'create_child_folder',
+      request: {
+        kind: 'create_child_folder',
+        parentId,
+        title: t('treeNewFolderDefault'),
+      },
+      run,
+      failMessage: (error) => t('treeEditError', error),
+      onOk: async (res) => {
+        createdId = res.node.id
+        set({ busy: null, busyTask: null, error: null })
+        if (!await get().refreshTree()) set({ error: t('treeEditRefreshError') })
+      },
+    })
+    return createdId
+  },
+
 
   async goScan() {
     // 与范围页按钮、步骤条同一道闸：空勾选不建扫描、不跳偏好。

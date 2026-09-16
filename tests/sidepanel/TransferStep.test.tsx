@@ -139,7 +139,8 @@ describe('TransferStep', () => {
   it('浏览模式展开文件夹也显示其中的书签，可直接勾选用于移动', async () => {
     render(<TransferStep />)
     await userEvent.click(screen.getByRole('button', { name: '展开 react' }))
-    expect(screen.getByRole('link', { name: 'A' }).getAttribute('href')).toBe('https://a.dev')
+    expect(screen.getByText('A')).toBeDefined()
+    expect(screen.getByRole('link', { name: 'https://a.dev' }).getAttribute('href')).toBe('https://a.dev')
     expect(screen.getByText('https://b.dev')).toBeDefined()
 
     await userEvent.click(screen.getByRole('checkbox', { name: '选择书签 A' }))
@@ -172,6 +173,18 @@ describe('TransferStep', () => {
     await userEvent.clear(input)
     await userEvent.type(input, 'does-not-exist')
     expect(screen.getByText('没有找到相关书签')).toBeDefined()
+  })
+
+  it('移动按钮与导出导入同一行并在右侧', () => {
+    render(<TransferStep />)
+    const actions = screen.getByTestId('transfer-footer-actions')
+    const exportBtn = within(actions).getByRole('button', { name: /导出/ })
+    const importBtn = within(actions).getByRole('button', { name: /导入/ })
+    const moveBtn = within(actions).getByRole('button', { name: /移动选中/ })
+
+    expect(exportBtn.compareDocumentPosition(importBtn) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+    expect(importBtn.compareDocumentPosition(moveBtn) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+    expect((moveBtn as HTMLButtonElement).disabled).toBe(true)
   })
 
   it('底部始终显示移动按钮；未选时禁用，选后展开到工作区右侧', async () => {

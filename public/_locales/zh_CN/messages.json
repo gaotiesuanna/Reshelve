@@ -362,6 +362,76 @@
   "moveErrInvalidTarget": {
     "message": "不能把文件夹移到它自己或其子文件夹里。"
   },
+  "treeEditErrMissing": {
+    "message": "该项已不存在，请刷新后重试。"
+  },
+  "treeEditErrImmutable": {
+    "message": "系统文件夹不能重命名或删除。"
+  },
+  "treeEditErrEmptyTitle": {
+    "message": "名称不能为空。"
+  },
+  "treeEditErrEmptyUrl": {
+    "message": "URL 不能为空。"
+  },
+  "treeEditErrInvalidUrl": {
+    "message": "URL 格式无效。"
+  },
+  "treeEditErrNotFolder": {
+    "message": "只能在文件夹下新建子文件夹。"
+  },
+  "treeEditErrNotBookmark": {
+    "message": "只有书签才能修改 URL。"
+  },
+  "treeMenuNewFolder": {
+    "message": "新建子文件夹"
+  },
+  "treeMenuRename": {
+    "message": "重命名"
+  },
+  "treeMenuEdit": {
+    "message": "编辑"
+  },
+  "treeMenuDelete": {
+    "message": "删除"
+  },
+  "treeNewFolderDefault": {
+    "message": "新建文件夹"
+  },
+  "treeEditTitleLabel": {
+    "message": "名称"
+  },
+  "treeEditUrlLabel": {
+    "message": "URL"
+  },
+  "treeDeleteConfirm": {
+    "message": "确定删除「$title$」？",
+    "placeholders": {
+      "title": {
+        "content": "$1"
+      }
+    }
+  },
+  "treeDeleteFolderConfirm": {
+    "message": "确定删除文件夹「$title$」及其全部内容？此操作不可撤销。",
+    "placeholders": {
+      "title": {
+        "content": "$1"
+      }
+    }
+  },
+  "treeEditError": {
+    "message": "操作失败：$error$",
+    "placeholders": {
+      "error": {
+        "content": "$1"
+      }
+    }
+  },
+  "treeEditRefreshError": {
+    "message": "已修改，但刷新列表失败，请重新打开此页。"
+  },
+
   "scopeNeedModel": {
     "message": "书签怎么分类，由你自己配的模型说了算——现在还没配。挑一个预设，粘上 API Key，就这两步。"
   },

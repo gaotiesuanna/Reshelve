@@ -15,8 +15,10 @@ export interface BookmarksApi {
   /** 传了 url 建书签，没传建文件夹。 */
   create(arg: { parentId: string; title: string; index?: number; url?: string }): Promise<BookmarkNode>
   move(id: string, dest: { parentId?: string; index?: number }): Promise<BookmarkNode>
-  update(id: string, changes: { title: string }): Promise<BookmarkNode>
+  update(id: string, changes: { title?: string; url?: string }): Promise<BookmarkNode>
   remove(id: string): Promise<void>
+  /** 删除文件夹及其全部后代；书签请用 remove。 */
+  removeTree(id: string): Promise<void>
 }
 
 export interface StorageApi {

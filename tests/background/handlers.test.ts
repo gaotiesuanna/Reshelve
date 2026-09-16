@@ -4191,3 +4191,46 @@ describe('check_links', () => {
     expect(calls).toEqual(['https://gone.com/p'])
   })
 })
+
+describe('tree node edits', () => {
+  it('update_tree_node renames a folder', async () => {
+    const { fake, ports, deps } = setup()
+    const res = await handle(ports, {
+      kind: 'update_tree_node',
+      id: '10',
+      changes: { title: '前端' },
+    }, deps)
+    expect(res).toMatchObject({ ok: true, kind: 'update_tree_node', node: { id: '10', title: '前端' } })
+    expect(fake.structure()).toContain('书签栏/前端/')
+  })
+
+  it('update_tree_node rejects permanent roots with a localized error', async () => {
+    const { ports, deps } = setup()
+    const res = await handle(ports, {
+      kind: 'update_tree_node',
+      id: '1',
+      changes: { title: '改名' },
+    }, deps)
+    expect(res).toMatchObject({ ok: false, error: t('treeEditErrImmutable') })
+  })
+
+  it('create_child_folder nests under the parent', async () => {
+    const { fake, ports, deps } = setup()
+    const res = await handle(ports, {
+      kind: 'create_child_folder',
+      parentId: '10',
+      title: '新建文件夹',
+    }, deps) as { ok: true; kind: 'create_child_folder'; node: { id: string; title: string; parentId?: string } }
+    expect(res.ok).toBe(true)
+    expect(res.node.title).toBe('新建文件夹')
+    expect(res.node.parentId).toBe('10')
+    expect(fake.structure()).toContain('书签栏/react/新建文件夹/')
+  })
+
+  it('remove_tree_node deletes a non-empty folder tree', async () => {
+    const { fake, ports, deps } = setup()
+    const res = await handle(ports, { kind: 'remove_tree_node', id: '11' }, deps)
+    expect(res).toEqual({ ok: true, kind: 'remove_tree_node' })
+    expect(fake.structure()).not.toContain('杂项')
+  })
+})

@@ -539,6 +539,60 @@ describe('手动移动书签', () => {
   })
 })
 
+describe('浏览树节点编辑', () => {
+  beforeEach(() => {
+    vi.mocked(send).mockReset()
+    useStore.setState({ tree, busy: null, busyTask: null, error: null })
+  })
+
+  it('createChildFolder 成功后返回新 id 并刷新树', async () => {
+    vi.mocked(send).mockImplementation((request: { kind: string }) => {
+      if (request.kind === 'create_child_folder') {
+        return Promise.resolve({
+          ok: true,
+          kind: 'create_child_folder',
+          node: { id: '999', parentId: '10', title: '新建文件夹' },
+        }) as never
+      }
+      return Promise.resolve({ ok: true, kind: 'get_tree', tree }) as never
+    })
+
+    const id = await useStore.getState().createChildFolder('10')
+
+    expect(id).toBe('999')
+    expect(useStore.getState().busy).toBeNull()
+    expect(vi.mocked(send).mock.calls.map(([request]) => (request as { kind: string }).kind)).toEqual([
+      'create_child_folder', 'get_tree',
+    ])
+  })
+
+  it('updateTreeNode 失败时返回 false 并写错误', async () => {
+    vi.mocked(send).mockResolvedValue({ ok: false, error: '系统文件夹不能重命名或删除。' } as never)
+
+    const ok = await useStore.getState().updateTreeNode('1', { title: 'x' })
+
+    expect(ok).toBe(false)
+    expect(useStore.getState().error).toContain('系统文件夹')
+  })
+
+  it('removeTreeNode 成功后刷新树', async () => {
+    vi.mocked(send).mockImplementation((request: { kind: string }) => {
+      if (request.kind === 'remove_tree_node') {
+        return Promise.resolve({ ok: true, kind: 'remove_tree_node' }) as never
+      }
+      return Promise.resolve({ ok: true, kind: 'get_tree', tree }) as never
+    })
+
+    const ok = await useStore.getState().removeTreeNode('10')
+
+    expect(ok).toBe(true)
+    expect(vi.mocked(send).mock.calls.map(([request]) => (request as { kind: string }).kind)).toEqual([
+      'remove_tree_node', 'get_tree',
+    ])
+  })
+})
+
+
 /**
  * 分析要跑好几分钟，而偏好页的「返回」在这期间是能点的。点了就是 reset()：
  * 这一轮作废、退回选范围页。几分钟后分析回来，它的结果属于一个用户已经放弃的
