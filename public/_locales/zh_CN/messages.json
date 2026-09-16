@@ -569,6 +569,9 @@
   "cleanupAggregateQueryPlaceholder": {
     "message": "例如：127.1.2."
   },
+  "cleanupAggregateQuickTagsLabel": {
+    "message": "快捷标签"
+  },
   "cleanupAggregateNoMatches": {
     "message": "没有标题或网址包含这段内容。"
   },

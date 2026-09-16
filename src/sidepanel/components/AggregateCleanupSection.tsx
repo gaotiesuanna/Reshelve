@@ -1,11 +1,36 @@
 import { useEffect, useMemo, useState } from 'react'
+import type { Locale } from '@/core/locale'
 import { bookmarksMatchingContent } from '@/core/cleanup'
 import { plural, t } from '@/i18n'
 import { CheckCircleIcon, ChevronDownIcon } from './icons'
 import { useStore } from '../store'
 
+interface PresetTagDef {
+  key: string
+  label: string
+  query: string
+  folderTitle: string
+}
+
+interface SuggestedTag extends PresetTagDef {
+  count: number
+}
+
+function getPresetDefinitions(locale: Locale): PresetTagDef[] {
+  const isZh = locale === 'zh_CN'
+  return [
+    { key: 'github', label: 'GitHub', query: 'github', folderTitle: 'GitHub' },
+    { key: 'youtube', label: 'YouTube', query: 'youtube', folderTitle: 'YouTube' },
+    { key: 'csdn', label: 'CSDN', query: 'csdn', folderTitle: 'CSDN' },
+    { key: 'bilibili', label: 'Bilibili', query: 'bilibili', folderTitle: 'Bilibili' },
+    { key: 'zhihu', label: isZh ? '知乎' : 'Zhihu', query: 'zhihu', folderTitle: isZh ? '知乎' : 'Zhihu' },
+    { key: 'juejin', label: isZh ? '掘金' : 'Juejin', query: 'juejin', folderTitle: isZh ? '掘金' : 'Juejin' },
+    { key: 'stackoverflow', label: 'Stack Overflow', query: 'stackoverflow', folderTitle: 'Stack Overflow' },
+  ]
+}
+
 export function AggregateCleanupSection() {
-  const { cleanupScan, busy, undoAvailable, runAggregate } = useStore()
+  const { cleanupScan, busy, undoAvailable, runAggregate, locale } = useStore()
   const [query, setQuery] = useState('')
   const [folderTitle, setFolderTitle] = useState('')
   const [parentId, setParentId] = useState<string | null>(cleanupScan?.scopeRootIds[0] ?? null)
@@ -36,6 +61,69 @@ export function AggregateCleanupSection() {
     if (needle === '') return folderOptions
     return folderOptions.filter((option) => option.label.toLocaleLowerCase().includes(needle))
   }, [folderOptions, parentQuery])
+  const suggestedTags = useMemo<SuggestedTag[]>(() => {
+    const items = cleanupScan?.items ?? []
+    const presets = getPresetDefinitions(locale)
+
+    const presetTags: SuggestedTag[] = presets.map((preset) => ({
+      ...preset,
+      count: bookmarksMatchingContent(items, preset.query).length,
+    }))
+
+    const coveredQueries = new Set(presets.map((p) => p.query.toLowerCase()))
+    const domainCounts = new Map<string, number>()
+    for (const item of items) {
+      try {
+        const host = new URL(item.url).hostname.replace(/^www\./, '').toLowerCase()
+        if (host && !Array.from(coveredQueries).some((q) => host.includes(q))) {
+          domainCounts.set(host, (domainCounts.get(host) ?? 0) + 1)
+        }
+      } catch {
+        // 忽略无效网址
+      }
+    }
+
+    const extraDomainTags: SuggestedTag[] = Array.from(domainCounts.entries())
+      .filter(([_, count]) => count >= 3)
+      .sort((a, b) => b[1] - a[1])
+      .slice(0, 3)
+      .map(([domain, count]) => {
+        const mainPart = domain.split('.')[0] ?? domain
+        const capitalized = mainPart.charAt(0).toUpperCase() + mainPart.slice(1)
+        return {
+          key: `domain-${domain}`,
+          label: domain,
+          query: domain,
+          folderTitle: capitalized,
+          count,
+        }
+      })
+
+    const withMatches = presetTags.filter((p) => p.count > 0).sort((a, b) => b.count - a.count)
+    const withoutMatches = presetTags.filter((p) => p.count === 0)
+
+    return [...withMatches, ...extraDomainTags, ...withoutMatches]
+  }, [cleanupScan, locale])
+
+  const allPresetFolderTitles = useMemo(
+    () => new Set(suggestedTags.map((t) => t.folderTitle)),
+    [suggestedTags],
+  )
+
+  const handleSelectTag = (tag: SuggestedTag): void => {
+    const isCurrentlyActive = query.trim().toLocaleLowerCase() === tag.query.toLocaleLowerCase()
+    if (isCurrentlyActive) {
+      setQuery('')
+      if (folderTitle.trim() === tag.folderTitle) {
+        setFolderTitle('')
+      }
+    } else {
+      setQuery(tag.query)
+      if (folderTitle.trim() === '' || allPresetFolderTitles.has(folderTitle.trim())) {
+        setFolderTitle(tag.folderTitle)
+      }
+    }
+  }
   const selectedParentLabel = parentId === null
     ? parentText
     : folderOptions.find((option) => option.folder.id === parentId)?.label ?? parentText
@@ -115,6 +203,43 @@ export function AggregateCleanupSection() {
           className="w-full rounded-md border border-neutral-300 px-2.5 py-2 text-sm font-normal text-neutral-800 outline-none transition-colors duration-150 placeholder:text-neutral-400 focus:border-neutral-500 focus:ring-1 focus:ring-neutral-300 motion-reduce:transition-none"
         />
       </label>
+      <div className="space-y-1.5">
+        <div className="text-xs text-neutral-500">
+          {t('cleanupAggregateQuickTagsLabel')}
+        </div>
+        <div className="flex flex-wrap gap-1.5" role="group" aria-label={t('cleanupAggregateQuickTagsLabel')}>
+          {suggestedTags.map((tag) => {
+            const isActive = query.trim().toLocaleLowerCase() === tag.query.toLocaleLowerCase()
+            return (
+              <button
+                key={tag.key}
+                type="button"
+                aria-pressed={isActive}
+                onClick={() => handleSelectTag(tag)}
+                className={[
+                  'inline-flex cursor-pointer items-center gap-1 rounded-full px-2.5 py-1 text-xs transition-colors duration-150 motion-reduce:transition-none focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-neutral-400',
+                  isActive
+                    ? 'bg-neutral-800 font-medium text-white shadow-sm hover:bg-neutral-900'
+                    : 'border border-neutral-200 bg-neutral-50 font-normal text-neutral-600 hover:border-neutral-300 hover:bg-neutral-100 hover:text-neutral-900',
+                ].join(' ')}
+              >
+                <span>{tag.label}</span>
+                {tag.count > 0 && (
+                  <span
+                    className={[
+                      'rounded-full px-1.5 py-0.5 text-[10px] leading-none',
+                      isActive ? 'bg-neutral-700 text-neutral-200' : 'bg-neutral-200/80 text-neutral-500',
+                    ].join(' ')}
+                  >
+                    {tag.count}
+                  </span>
+                )}
+              </button>
+            )
+          })}
+        </div>
+      </div>
+
 
       {query.trim() !== '' && matches.length === 0 && (
         <p className="rounded-md bg-neutral-50 px-3 py-2 text-xs leading-relaxed text-neutral-500">

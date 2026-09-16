@@ -569,6 +569,9 @@
   "cleanupAggregateQueryPlaceholder": {
     "message": "For example: 127.1.2."
   },
+  "cleanupAggregateQuickTagsLabel": {
+    "message": "Quick tags"
+  },
   "cleanupAggregateNoMatches": {
     "message": "No bookmark title or URL contains that text."
   },

@@ -732,6 +732,52 @@ describe('CleanupStep 内容聚合', () => {
     { id: '10', title: '目录甲', parentId: '1', index: 0, path: ['书签栏'], depth: 1, level: 2 },
     { id: '11', title: '目录乙', parentId: '1', index: 1, path: ['书签栏'], depth: 1, level: 2 },
   ]
+  const tagsItems: BookmarkItem[] = [
+    item({ id: 'gh-1', title: 'React repo', url: 'https://github.com/facebook/react', parentId: '10', currentPath: ['书签栏', '目录甲'] }),
+    item({ id: 'gh-2', title: 'Vue repo', url: 'https://github.com/vuejs/core', parentId: '10', currentPath: ['书签栏', '目录甲'] }),
+    item({ id: 'yt-1', title: 'Vite tutorial', url: 'https://www.youtube.com/watch?v=123', parentId: '10', currentPath: ['书签栏', '目录甲'] }),
+    item({ id: 'cs-1', title: 'Java 基础', url: 'https://blog.csdn.net/article/1', parentId: '11', currentPath: ['书签栏', '目录乙'] }),
+    item({ id: 'vx-1', title: 'v2ex 帖子 1', url: 'https://v2ex.com/t/1', parentId: '11', currentPath: ['书签栏', '目录乙'] }),
+    item({ id: 'vx-2', title: 'v2ex 帖子 2', url: 'https://v2ex.com/t/2', parentId: '11', currentPath: ['书签栏', '目录乙'] }),
+    item({ id: 'vx-3', title: 'v2ex 帖子 3', url: 'https://v2ex.com/t/3', parentId: '11', currentPath: ['书签栏', '目录乙'] }),
+  ]
+
+  it('展示快捷标签（包含 github、youtube、csdn 等），并支持一键筛选与反选', async () => {
+    useStore.setState({ cleanupScan: { ...scan, items: tagsItems, folders: aggregateFolders } })
+    render(<CleanupStep />)
+    await openCleanupTab('内容聚合')
+
+    expect(screen.getByRole('button', { name: /GitHub/ })).toBeDefined()
+    expect(screen.getByRole('button', { name: /YouTube/ })).toBeDefined()
+    expect(screen.getByRole('button', { name: /CSDN/ })).toBeDefined()
+    expect(screen.getByRole('button', { name: /Bilibili/ })).toBeDefined()
+    expect(screen.getByRole('button', { name: /v2ex\.com/ })).toBeDefined()
+
+    const githubBtn = screen.getByRole('button', { name: /GitHub/ })
+    expect(within(githubBtn).getByText('2')).toBeDefined()
+
+    await userEvent.click(githubBtn)
+
+    const searchInput = screen.getByRole('searchbox', { name: '匹配内容' }) as HTMLInputElement
+    expect(searchInput.value).toBe('github')
+    expect(screen.getByText('React repo')).toBeDefined()
+    expect(screen.getByText('Vue repo')).toBeDefined()
+    expect(screen.queryByText('Vite tutorial')).toBeNull()
+    expect((screen.getByRole('textbox', { name: '聚合文件夹名称' }) as HTMLInputElement).value).toBe('GitHub')
+    expect(githubBtn.getAttribute('aria-pressed')).toBe('true')
+
+    await userEvent.click(githubBtn)
+    expect(searchInput.value).toBe('')
+    expect(screen.queryByText('React repo')).toBeNull()
+    expect(githubBtn.getAttribute('aria-pressed')).toBe('false')
+
+    const csdnBtn = screen.getByRole('button', { name: /CSDN/ })
+    await userEvent.click(csdnBtn)
+    expect(searchInput.value).toBe('csdn')
+    expect(screen.getByText('Java 基础')).toBeDefined()
+    expect((screen.getByRole('textbox', { name: '聚合文件夹名称' }) as HTMLInputElement).value).toBe('CSDN')
+  })
+
 
   it('输入内容后在本地预览标题或网址匹配，并允许排除单条', async () => {
     useStore.setState({ cleanupScan: { ...scan, items: aggregateItems, folders: aggregateFolders } })
