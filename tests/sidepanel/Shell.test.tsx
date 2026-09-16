@@ -93,11 +93,7 @@ describe('Shell 进度取消', () => {
   })
 })
 
-/**
- * 步骤条是只读的进度指示，不是导航——所以它刻意不长成按钮的样子。
- * 代价是「现在在第几步」只剩字重、颜色与展开内容在传达，读屏那边什么都收不到，
- * aria-current 是唯一能被程序读到的载体，得有测试守着。
- */
+/** 步骤条只开放当前流程中安全可达的步骤，避免把用户带到缺少数据的空页面。 */
 describe('Shell 步骤条', () => {
   it('只有当前步骤带 aria-current', () => {
     useStore.setState({ step: 'review' })
@@ -112,6 +108,30 @@ describe('Shell 步骤条', () => {
     expect(screen.getAllByRole('listitem')).toHaveLength(5)
     expect(screen.getByText(/确认结构/).getAttribute('aria-current')).toBe('step')
     expect(screen.getByText('结构编辑器')).toBeDefined()
+  })
+
+  it('选好目录后点击偏好会复用扫描动作进入下一步', async () => {
+    const goScan = vi.fn()
+    useStore.setState({ checkedIds: new Set(['folder-1']), goScan })
+    render(<Shell organizeContent={<div>范围编辑器</div>}>{null}</Shell>)
+
+    await userEvent.click(screen.getByRole('button', { name: /偏好/ }))
+
+    expect(goScan).toHaveBeenCalledTimes(1)
+  })
+
+  it('目录结构页点击偏好会返回已完成的偏好步骤', async () => {
+    const backToPreferences = vi.fn()
+    useStore.setState({
+      step: 'structure',
+      structureDraft: {} as StructureDraft,
+      backToPreferences,
+    })
+    render(<Shell organizeContent={<div>结构编辑器</div>}>{null}</Shell>)
+
+    await userEvent.click(screen.getByRole('button', { name: /偏好/ }))
+
+    expect(backToPreferences).toHaveBeenCalledTimes(1)
   })
 })
 

@@ -8,10 +8,15 @@ export type StepIndexItem<K extends string> = {
 export function StepIndex<K extends string>({
   items,
   currentKey,
+  selectableKeys = [],
+  onSelect,
   children,
 }: {
   items: readonly StepIndexItem<K>[]
   currentKey: K
+  /** 只开放当前流程已满足前置条件的步骤，避免任意跳转造成空页面或丢草稿。 */
+  selectableKeys?: readonly K[]
+  onSelect?: (key: K) => void
   children: React.ReactNode
 }): React.JSX.Element {
   const currentIndex = items.findIndex((item) => item.key === currentKey)
@@ -22,23 +27,37 @@ export function StepIndex<K extends string>({
         {items.map((item, index) => {
           const current = index === currentIndex
           const completed = currentIndex >= 0 && index < currentIndex
+          const selectable = !current && onSelect !== undefined && selectableKeys.includes(item.key)
+          const className = [
+            'rounded-index px-2 py-1 text-xs leading-none tabular-nums transition-colors',
+            current
+              ? 'bg-index-accent-soft font-semibold text-index-ink ring-1 ring-index-accent/20'
+              : completed
+                ? 'font-medium text-index-muted'
+                : 'font-medium text-index-faint',
+            selectable
+              ? 'cursor-pointer hover:bg-index-accent-soft hover:text-index-ink focus-visible:outline focus-visible:outline-2 focus-visible:outline-index-accent motion-reduce:transition-none'
+              : 'block',
+          ].join(' ')
+          const content = `${index + 1}. ${item.label}`
           return (
             <li key={item.key}>
-              {/* 只读进度，不是导航——刻意不长成按钮。当前步靠字重和底色给视觉，
-                  aria-current 给读屏，序号和标题都是真文本，两边读到的是同一句。 */}
-              <span
-                {...(current ? { 'aria-current': 'step' as const } : {})}
-                className={[
-                  'block rounded-index px-2 py-1 text-xs leading-none tabular-nums transition-colors',
-                  current
-                    ? 'bg-index-accent-soft font-semibold text-index-ink ring-1 ring-index-accent/20'
-                    : completed
-                      ? 'font-medium text-index-muted'
-                      : 'font-medium text-index-faint',
-                ].join(' ')}
-              >
-                {index + 1}. {item.label}
-              </span>
+              {selectable ? (
+                <button
+                  type="button"
+                  className={className}
+                  onClick={() => onSelect(item.key)}
+                >
+                  {content}
+                </button>
+              ) : (
+                <span
+                  {...(current ? { 'aria-current': 'step' as const } : {})}
+                  className={className}
+                >
+                  {content}
+                </span>
+              )}
             </li>
           )
         })}

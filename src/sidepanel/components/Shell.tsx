@@ -43,6 +43,8 @@ export function Shell({ children, organizeContent }: { children: ReactNode; orga
     progress,
     logs,
     cancel,
+    goScan,
+    backToPreferences,
     plan,
     structureDraft,
     applyResult,
@@ -56,6 +58,18 @@ export function Shell({ children, organizeContent }: { children: ReactNode; orga
   const tabView = isTabView()
   // 取消按钮给不给，政策表说了算：后台真的在读这轮取消信号的请求才有按钮。
   const cancellable = busyTask !== null && TASK_SPECS[busyTask].cancellable
+  const selectableSteps: readonly Step[] = busy !== null
+    ? []
+    : step === 'scope' && checkedIds.size > 0
+      ? ['preferences']
+      : step === 'structure' && structureDraft !== null
+        ? ['preferences']
+        : []
+  const handleStepSelect = (target: Step): void => {
+    if (target !== 'preferences') return
+    if (step === 'scope') void goScan()
+    else if (step === 'structure') backToPreferences()
+  }
   const progressStatus: ProgressStatus | null = busy !== null
     ? 'running'
     : error !== null
@@ -178,7 +192,12 @@ export function Shell({ children, organizeContent }: { children: ReactNode; orga
               className="grid min-h-full gap-8 lg:grid-cols-[minmax(0,1fr)_minmax(20rem,24rem)] lg:items-stretch"
             >
               <section data-testid="tab-bookmark-workspace" className="flex min-h-full min-w-0 flex-col">
-                <StepIndex items={stepItems()} currentKey={step}>
+                <StepIndex
+                  items={stepItems()}
+                  currentKey={step}
+                  selectableKeys={selectableSteps}
+                  onSelect={handleStepSelect}
+                >
                   {organizeContent ?? children}
                 </StepIndex>
               </section>
@@ -195,7 +214,14 @@ export function Shell({ children, organizeContent }: { children: ReactNode; orga
           ) : (
             <>
               {mode === 'organize' ? (
-                <StepIndex items={stepItems()} currentKey={step}>{organizeContent ?? children}</StepIndex>
+                <StepIndex
+                  items={stepItems()}
+                  currentKey={step}
+                  selectableKeys={selectableSteps}
+                  onSelect={handleStepSelect}
+                >
+                  {organizeContent ?? children}
+                </StepIndex>
               ) : children}
               {/* 清理扫描结果属于「重复收藏」那一格，由 CleanupStep 自己画。
                   扫描还没回来时 CleanupStep 是 null，进度仍由这里顶上。

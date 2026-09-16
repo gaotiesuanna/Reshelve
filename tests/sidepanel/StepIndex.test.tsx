@@ -1,5 +1,6 @@
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
 import { render, screen } from '@testing-library/react'
+import userEvent from '@testing-library/user-event'
 import { StepIndex, type StepIndexItem } from '@/sidepanel/components/StepIndex'
 
 type StepKey = 'scope' | 'preferences' | 'structure' | 'review' | 'result'
@@ -61,14 +62,25 @@ describe('StepIndex', () => {
     }
   })
 
-  it('是只读进度而不是可以任意跳转的按钮列表', () => {
+  it('只把被允许返回的步骤渲染成按钮', async () => {
+    const onSelect = vi.fn()
     render(
-      <StepIndex items={items} currentKey="review">
+      <StepIndex
+        items={items}
+        currentKey="review"
+        selectableKeys={['preferences']}
+        onSelect={onSelect}
+      >
         <div>修改预览</div>
       </StepIndex>,
     )
 
-    expect(screen.queryAllByRole('button')).toHaveLength(0)
+    const preferences = screen.getByRole('button', { name: '2. 设置偏好' })
+    expect(preferences).toBeDefined()
+    expect(screen.queryByRole('button', { name: '3. 确认结构' })).toBeNull()
     expect(screen.getAllByRole('listitem')).toHaveLength(5)
+
+    await userEvent.click(preferences)
+    expect(onSelect).toHaveBeenCalledWith('preferences')
   })
 })
