@@ -250,4 +250,15 @@ describe('ScopeStep 勾选后立刻显示范围统计', () => {
     expect(screen.getByText('最深层级').nextElementSibling?.textContent).toBe('1')
   })
 
+  it('把扫描结果放进和书签树一致的结果卡片', async () => {
+    render(<ScopeStep />)
+    await userEvent.click(screen.getByRole('checkbox', { name: 'react' }))
+
+    const heading = screen.getByText('扫描结果')
+    const card = heading.closest('section')?.parentElement
+    expect(card?.className).toContain('rounded-index')
+    expect(card?.className).toContain('bg-index-surface')
+    expect(card?.className).toContain('shadow-sm')
+  })
+
 })

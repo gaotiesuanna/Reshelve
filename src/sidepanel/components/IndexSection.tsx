@@ -5,12 +5,14 @@ export function IndexSection({
   count,
   expanded = false,
   onToggle,
+  className = 'border-b border-index-line',
   children,
 }: {
   title: string
   count?: ReactNode
   expanded?: boolean
   onToggle?: () => void
+  className?: string
   children?: ReactNode
 }): React.JSX.Element {
   const detailId = useId()
@@ -18,7 +20,7 @@ export function IndexSection({
   const showDetails = !hasToggle || expanded
 
   return (
-    <section className="border-b border-index-line">
+    <section className={className}>
       <h3 className="flex min-h-12 items-center gap-2 px-1 py-2 text-sm font-semibold tracking-[-0.01em] text-index-ink">
         <span className="min-w-0 flex-1 truncate">{title}</span>
         {count !== undefined && <span className="shrink-0 rounded-full bg-index-surface-muted px-2 py-0.5 text-xs font-mono text-index-muted">{count}</span>}

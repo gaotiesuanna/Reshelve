@@ -87,29 +87,31 @@ export function ScopeStep() {
       </div>
 
       {preview !== null && (
-        <IndexSection title={t('prefsScanTitle')} count={preview.stats.totalBookmarks}>
-          <div className="text-base leading-body">
-            {preview.paths.length > 0 && (
-              <div className="mb-2">
-                <p className="text-sm leading-caption text-index-muted">{t('prefsScanScope')}</p>
-                <ul>
-                  {preview.paths.map((path) => (
-                    <li key={path} className="break-words font-mono text-sm leading-caption [overflow-wrap:anywhere]">{path}</li>
-                  ))}
-                </ul>
-              </div>
-            )}
-            <dl className="grid grid-cols-2 gap-x-6 gap-y-2 text-sm leading-caption">
-              <dt className="text-index-muted">{t('prefsStatBookmarks')}</dt><dd>{preview.stats.totalBookmarks}</dd>
-              <dt className="text-index-muted">{t('prefsStatFolders')}</dt><dd>{preview.stats.totalFolders}</dd>
-              <dt className="text-index-muted">{t('prefsStatEmpty')}</dt><dd>{preview.stats.emptyFolders}</dd>
-              <dt className="text-index-muted">{t('prefsStatUntitled')}</dt><dd>{preview.stats.untitledBookmarks}</dd>
-              <dt className="text-index-muted">{t('prefsStatDuplicates')}</dt><dd>{preview.stats.duplicateUrlGroups}</dd>
-              <dt className="text-index-muted">{t('prefsStatDuplicateFolders')}</dt><dd>{preview.stats.duplicateFolderGroups}</dd>
-              <dt className="text-index-muted">{t('prefsStatDepth')}</dt><dd>{preview.stats.maxDepth}</dd>
-            </dl>
-          </div>
-        </IndexSection>
+        <div className="mt-4 overflow-hidden rounded-index border border-index-line bg-index-surface shadow-sm">
+          <IndexSection className="border-0" title={t('prefsScanTitle')} count={preview.stats.totalBookmarks}>
+            <div className="text-base leading-body">
+              {preview.paths.length > 0 && (
+                <div className="mb-2">
+                  <p className="text-sm leading-caption text-index-muted">{t('prefsScanScope')}</p>
+                  <ul>
+                    {preview.paths.map((path) => (
+                      <li key={path} className="break-words font-mono text-sm leading-caption [overflow-wrap:anywhere]">{path}</li>
+                    ))}
+                  </ul>
+                </div>
+              )}
+              <dl className="grid grid-cols-2 gap-x-6 gap-y-2 text-sm leading-caption">
+                <dt className="text-index-muted">{t('prefsStatBookmarks')}</dt><dd>{preview.stats.totalBookmarks}</dd>
+                <dt className="text-index-muted">{t('prefsStatFolders')}</dt><dd>{preview.stats.totalFolders}</dd>
+                <dt className="text-index-muted">{t('prefsStatEmpty')}</dt><dd>{preview.stats.emptyFolders}</dd>
+                <dt className="text-index-muted">{t('prefsStatUntitled')}</dt><dd>{preview.stats.untitledBookmarks}</dd>
+                <dt className="text-index-muted">{t('prefsStatDuplicates')}</dt><dd>{preview.stats.duplicateUrlGroups}</dd>
+                <dt className="text-index-muted">{t('prefsStatDuplicateFolders')}</dt><dd>{preview.stats.duplicateFolderGroups}</dd>
+                <dt className="text-index-muted">{t('prefsStatDepth')}</dt><dd>{preview.stats.maxDepth}</dd>
+              </dl>
+            </div>
+          </IndexSection>
+        </div>
       )}
 
       <StickyActionBar>
