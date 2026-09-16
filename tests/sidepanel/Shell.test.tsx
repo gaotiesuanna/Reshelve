@@ -331,6 +331,7 @@ describe('Shell 换成完整标签页', () => {
     const { unmount } = render(<Shell organizeContent={<div>步骤内容</div>}>{null}</Shell>)
     expect(screen.queryByTestId('tab-view-column')).toBeNull()
     expect(screen.queryByTestId('tab-app-header')).toBeNull()
+    expect(screen.queryByTestId('brand-mark')).toBeNull()
     unmount()
 
     window.history.pushState({}, '', '/?view=tab')
@@ -339,7 +340,9 @@ describe('Shell 换成完整标签页', () => {
     expect(column.className).toContain('w-full')
     expect(column.className).not.toContain('max-w-')
     expect(screen.getByTestId('tab-app-header')).toBeDefined()
-    expect(screen.getByRole('heading', { name: 'Reshelve' })).toBeDefined()
+    const brand = screen.getByTestId('brand-mark')
+    expect(within(brand).getByRole('heading', { name: 'Reshelve' })).toBeDefined()
+    expect((brand.querySelector('img') as HTMLImageElement).src).toContain('/icons/icon-32.png')
     window.history.pushState({}, '', '/')
   })
 

@@ -1,4 +1,4 @@
-import { BookmarkIcon, OpenInTabIcon, SettingsIcon } from './icons'
+import { BrandMark, OpenInTabIcon, SettingsIcon } from './icons'
 
 export type IndexNavigationItem<K extends string> = {
   key: K
@@ -37,14 +37,7 @@ export function IndexNavigation<K extends string>({
         ? 'flex min-h-[64px] items-center gap-5 border-b border-index-line bg-index-surface px-3 sm:gap-6 sm:px-4 lg:px-5'
         : 'flex min-w-0 items-stretch border-b border-index-line bg-index-surface'}
     >
-      {isTab && (
-        <div className="flex shrink-0 items-center gap-2.5">
-          <span className="flex h-8 w-8 items-center justify-center rounded-index bg-index-ink text-index-canvas shadow-sm">
-            <BookmarkIcon className="h-4 w-4" />
-          </span>
-          <h1 className="text-base font-semibold tracking-[-0.02em] text-index-ink">Reshelve</h1>
-        </div>
-      )}
+      {isTab && <BrandMark />}
       <div className={isTab ? 'flex min-w-0 flex-1 self-stretch' : 'flex min-w-0 flex-1'} role="tablist">
         {items.map((item) => {
           const active = item.key === activeKey

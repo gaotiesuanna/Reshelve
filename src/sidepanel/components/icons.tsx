@@ -23,6 +23,24 @@ import {
 
 type IconProps = { className?: string }
 
+/** 标签页顶栏品牌。图标与扩展 action icon 同源（public/icons，tools/gen-icon.py）。 */
+export function BrandMark() {
+  return (
+    <div className="flex shrink-0 items-center gap-2.5" data-testid="brand-mark">
+      <img
+        src="/icons/icon-32.png"
+        alt=""
+        width={32}
+        height={32}
+        className="h-8 w-8 rounded-index shadow-sm"
+        draggable={false}
+      />
+      <h1 className="text-base font-semibold tracking-[-0.02em] text-index-ink">Reshelve</h1>
+    </div>
+  )
+}
+
+
 /**
  * 统一的 Lucide 适配层：现有组件继续使用语义化的 Reshelve 图标名，
  * 但实际渲染改由 lucide-react 提供，保持 24×24、1.75 描边和无障碍隐藏。

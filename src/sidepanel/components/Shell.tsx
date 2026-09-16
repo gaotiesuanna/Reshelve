@@ -4,7 +4,7 @@ import { TASK_SPECS } from '@/background/task-specs'
 import { useStore, type AppMode, type Step } from '../store'
 import { isTabView, openAppInTab } from '../lib/openInTab'
 import { REPO_URL } from '../lib/about'
-import { AlertIcon, BookmarkIcon, ChevronLeftIcon, GithubIcon } from './icons'
+import { AlertIcon, BrandMark, ChevronLeftIcon, GithubIcon } from './icons'
 import { IndexNavigation, type IndexNavigationItem } from './IndexNavigation'
 import { LogPanel } from './LogPanel'
 import { ProgressPanel, type ProgressStatus } from './ProgressPanel'
@@ -103,7 +103,8 @@ export function Shell({ children, organizeContent }: { children: ReactNode; orga
       <header className={settingsOpen ? 'border-b border-index-line' : ''}>
         {/* Chrome 侧栏顶部已经显示了图标和「Reshelve」，这里再写一遍是重复，还白占一行高度。
             但那个标题栏属于浏览器界面、不在本文档里，读屏用户在文档中导航时找不到它，
-            所以只是视觉隐藏而非删除——保证这个页面至少还有一个 h1。 */}
+            所以只是视觉隐藏而非删除——保证这个页面至少还有一个 h1。
+            完整标签页没有 Chrome 那条身份栏，顶栏自己放 BrandMark（可见 h1）。 */}
         {!tabView && <h1 className="sr-only">Reshelve</h1>}
         {/* 模式切换占满这一行、齿轮贴在索引栏右边。不要 justify-between：
             Chrome 顶栏已经是「左身份、右按钮」，再做一遍就是两条叠着的工具栏。
@@ -119,14 +120,7 @@ export function Shell({ children, organizeContent }: { children: ReactNode; orga
               ? 'flex min-h-[64px] items-center gap-4 border-b border-index-line bg-index-surface px-3 sm:gap-6 sm:px-4 lg:px-5'
               : 'flex min-h-index-row items-center gap-2 px-3'}
             >
-              {tabView && (
-                <div className="flex shrink-0 items-center gap-2.5">
-                  <span className="flex h-8 w-8 items-center justify-center rounded-index bg-index-ink text-index-canvas shadow-sm">
-                    <BookmarkIcon className="h-4 w-4" />
-                  </span>
-                  <h1 className="text-base font-semibold tracking-[-0.02em] text-index-ink">Reshelve</h1>
-                </div>
-              )}
+              {tabView && <BrandMark />}
               <button
                 type="button"
                 className="inline-flex h-8 items-center gap-1 rounded-md px-1 text-sm leading-body text-index-muted transition-colors duration-150 hover:bg-index-accent-soft hover:text-index-ink focus-visible:outline focus-visible:outline-2 focus-visible:outline-index-accent motion-reduce:transition-none"
