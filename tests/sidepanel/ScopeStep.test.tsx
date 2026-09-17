@@ -61,7 +61,7 @@ describe('ScopeStep 主区与操作', () => {
     expect(within(footer).getByRole('button', { name: /扫描选中的/ })).toBeDefined()
   })
 
-  it('选中目录后把扫描结果放在扫描按钮下方，不藏到书签树滚动内容里', async () => {
+  it('选中目录后把扫描结果放在扫描按钮上方，不藏到书签树滚动内容里', async () => {
     render(<ScopeStep />)
     await userEvent.click(screen.getByRole('checkbox', { name: 'react' }))
 
@@ -72,8 +72,8 @@ describe('ScopeStep 主区与操作', () => {
     expect(within(footer).getByText('/书签栏/react/')).toBeDefined()
     expect(within(viewport).queryByText('扫描结果')).toBeNull()
     expect(screen.queryByTestId('bookmark-workspace-summary')).toBeNull()
-    // 结果卡必须在按钮之后：compareDocumentPosition 的 FOLLOWING 位。
-    expect(scanButton.compareDocumentPosition(result) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+    // 先显示范围统计，再显示扫描操作：按钮应位于结果卡之后。
+    expect(result.compareDocumentPosition(scanButton) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
   })
 
   it('渲染范围区，勾选后主操作按钮可点', async () => {

@@ -80,26 +80,6 @@ export function ScopeStep() {
         )}
         footer={(
           <div className="space-y-3">
-            <PrimaryButton
-              className="w-full"
-              disabled={checkedIds.size === 0 || busy !== null}
-              onClick={() => void goScan()}
-            >
-              {plural(
-                scopedCount,
-                'scopeScanOne',
-                'scopeScanOther',
-                String(scopedCount),
-                // 文件夹数降为附注，但仍要单独过一次 plural：英文的 folder/folders
-                // 由文件夹数决定，跟着书签数的单复数走会拼出「1 bookmark in 2 folder」
-                plural(
-                  checkedIds.size,
-                  'scopeScanFolderOne',
-                  'scopeScanFolderOther',
-                  String(checkedIds.size),
-                ),
-              )}
-            </PrimaryButton>
             {preview !== null && (
               <section className="rounded-index border border-index-line bg-index-surface p-3 shadow-sm">
                 <div className="flex items-center justify-between gap-3">
@@ -127,6 +107,26 @@ export function ScopeStep() {
                 </dl>
               </section>
             )}
+            <PrimaryButton
+              className="w-full"
+              disabled={checkedIds.size === 0 || busy !== null}
+              onClick={() => void goScan()}
+            >
+              {plural(
+                scopedCount,
+                'scopeScanOne',
+                'scopeScanOther',
+                String(scopedCount),
+                // 文件夹数降为附注，但仍要单独过一次 plural：英文的 folder/folders
+                // 由文件夹数决定，跟着书签数的单复数走会拼出「1 bookmark in 2 folder」
+                plural(
+                  checkedIds.size,
+                  'scopeScanFolderOne',
+                  'scopeScanFolderOther',
+                  String(checkedIds.size),
+                ),
+              )}
+            </PrimaryButton>
           </div>
         )}
       >
