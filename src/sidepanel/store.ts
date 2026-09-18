@@ -125,8 +125,36 @@ export interface LogLine {
 
 export interface Progress {
   phase: ProgressPhase
-  done: number
-  total: number
+  /** 无计数阶段（如 tree）可以只有 phase。 */
+  done?: number
+  total?: number
+}
+
+/**
+ * 把一条进度事件叠进当前进度。
+ *
+ * - 带 done/total → 覆盖 phase 与计数
+ * - 换 phase 且没数字 → 只记 phase，清掉上一阶段残留的 210/210
+ * - 同 phase 的纯日志 → 保留已有计数
+ */
+export function applyProgress(progress: Progress | null, event: ProgressEvent): Progress {
+  if (event.done !== undefined && event.total !== undefined) {
+    return { phase: event.phase, done: event.done, total: event.total }
+  }
+  if (progress === null || progress.phase !== event.phase) {
+    return { phase: event.phase }
+  }
+  return progress
+}
+
+/** 当前进度是否带可用的 done/total（total > 0）。 */
+export function hasProgressCounts(
+  progress: Progress | null,
+): progress is Progress & { done: number; total: number } {
+  return progress !== null
+    && progress.done !== undefined
+    && progress.total !== undefined
+    && progress.total > 0
 }
 
 /** 日志上限，超出后丢弃最旧的几行。 */
@@ -177,9 +205,7 @@ function replayEvents(
   for (const event of events) {
     nextLogs = appendLog(nextLogs, event, nextSeq)
     nextSeq += 1
-    if (event.done !== undefined && event.total !== undefined) {
-      nextProgress = { phase: event.phase, done: event.done, total: event.total }
-    }
+    nextProgress = applyProgress(nextProgress, event)
   }
   return { logs: nextLogs, logSeq: nextSeq, progress: nextProgress }
 }
@@ -903,10 +929,7 @@ export const useStore = create<State>((set, get) => ({
     set({
       logs: appendLog(logs, event, logSeq),
       logSeq: logSeq + 1,
-      progress:
-        event.total !== undefined && event.done !== undefined
-          ? { phase: event.phase, done: event.done, total: event.total }
-          : get().progress,
+      progress: applyProgress(get().progress, event),
     })
   },
 

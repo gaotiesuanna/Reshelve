@@ -28,6 +28,19 @@ describe('ProgressPanel', () => {
     expect(screen.getByText('分类 320/923')).toBeDefined()
   })
 
+  it('无计数阶段只显示阶段名，不挂上一阶段数字', () => {
+    render(
+      <ProgressPanel
+        status="running"
+        busy="正在分析…"
+        progress={{ phase: 'tree' }}
+        logs={logs}
+      />,
+    )
+    const phase = screen.getByText('设计目录')
+    expect(phase.textContent).toBe('设计目录')
+  })
+
   it('任务运行中明确显示进行中，即使已有失败级别的可恢复日志', () => {
     render(
       <ProgressPanel

@@ -126,6 +126,25 @@ describe('store 的事件累积', () => {
     useStore.getState().pushEvent({ phase: 'tags', message: '某条日志' })
     expect(useStore.getState().progress).toEqual({ phase: 'tags', done: 50, total: 100 })
   })
+
+  it('换阶段的日志会推进 phase，并清掉上一阶段的计数', () => {
+    useStore.setState({ logs: [], logSeq: 0, progress: { phase: 'tags', done: 210, total: 210 } })
+    useStore.getState().pushEvent({ phase: 'tree', message: '开始设计目录' })
+    expect(useStore.getState().progress).toEqual({ phase: 'tree' })
+    expect(useStore.getState().logs.map((l) => l.message)).toEqual(['开始设计目录'])
+  })
+
+  it('同阶段的日志仍保留已有计数', () => {
+    useStore.setState({ logs: [], logSeq: 0, progress: { phase: 'tree' } })
+    useStore.getState().pushEvent({ phase: 'tree', message: '继续设计' })
+    expect(useStore.getState().progress).toEqual({ phase: 'tree' })
+  })
+
+  it('无计数阶段之后再来带数字的事件，重新挂上 done/total', () => {
+    useStore.setState({ logs: [], logSeq: 0, progress: { phase: 'tree' } })
+    useStore.getState().pushEvent({ phase: 'classify', message: '', done: 12, total: 30 })
+    expect(useStore.getState().progress).toEqual({ phase: 'classify', done: 12, total: 30 })
+  })
 })
 
 describe('日志长度截断', () => {

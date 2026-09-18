@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import { PHASE_LABELS } from '@/background/events'
 import { plural, t } from '@/i18n'
-import type { LogLine, Progress } from '../store'
+import { hasProgressCounts, type LogLine, type Progress } from '../store'
 
 interface Props {
   status: ProgressStatus | null
@@ -67,8 +67,9 @@ export function ProgressPanel({ status, busy, progress, logs, onCancel }: Props)
   if (status === null) return null
 
   const latest = logs[logs.length - 1]
+  const counted = hasProgressCounts(progress)
   const percent =
-    progress !== null && progress.total > 0
+    counted
       ? status === 'completed'
         ? Math.round((progress.done / progress.total) * 100)
         : Math.min(99, Math.round((progress.done / progress.total) * 100))
@@ -89,15 +90,16 @@ export function ProgressPanel({ status, busy, progress, logs, onCancel }: Props)
         )}
         <span className="shrink-0 font-medium">{t(STATUS_LABELS[status])}</span>
         {busy !== null && <span>{busy}</span>}
-        {progress !== null && progress.total > 0 && (
+        {progress !== null && (
           <span className="ml-auto shrink-0 text-neutral-500">
-            {t(PHASE_LABELS[progress.phase])} {progress.done}/{progress.total}
+            {t(PHASE_LABELS[progress.phase])}
+            {counted ? ` ${progress.done}/${progress.total}` : ''}
           </span>
         )}
         {onCancel !== undefined && (
           <button
             className={`shrink-0 rounded-md border border-index-line-strong px-2 py-0.5 text-index-muted transition-colors hover:bg-index-surface hover:text-index-ink ${
-              progress !== null && progress.total > 0 ? '' : 'ml-auto'
+              progress !== null ? '' : 'ml-auto'
             }`}
             onClick={onCancel}
           >

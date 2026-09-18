@@ -26,6 +26,62 @@ describe('LogPanel', () => {
     expect(screen.getByTestId('llm-log-progress').textContent).toContain('分类12/30')
   })
 
+  it('顶栏副标题显示当前阶段与计数', () => {
+    render(
+      <LogPanel
+        status="running"
+        busy="正在分析…"
+        progress={{ phase: 'tags', done: 120, total: 210 }}
+        logs={[{ id: 1, phase: 'tags', level: 'info', message: '标签批次 3/5' }]}
+      />,
+    )
+
+    expect(screen.getByTestId('llm-log-stage').textContent).toMatch(/抽取标签.*120\/210/)
+    expect(screen.getByTestId('llm-log-progress').textContent).toMatch(/抽取标签.*120\/210/)
+  })
+
+  it('无计数阶段时顶栏只显示阶段名，不挂上一阶段的数字', () => {
+    render(
+      <LogPanel
+        status="running"
+        busy="正在分析…"
+        progress={{ phase: 'tree' }}
+        logs={[
+          { id: 1, phase: 'tags', level: 'info', message: '标签批次完成' },
+          { id: 2, phase: 'tree', level: 'info', message: '开始设计目录' },
+        ]}
+      />,
+    )
+
+    expect(screen.getByTestId('llm-log-stage').textContent).toBe('设计目录')
+    expect(screen.getByTestId('llm-log-progress').textContent).toBe('设计目录')
+    expect(screen.getByTestId('llm-log-progress').textContent).not.toMatch(/\d+\/\d+/)
+  })
+
+  it('日志按阶段分组，行内不再重复阶段前缀', () => {
+    render(
+      <LogPanel
+        status="running"
+        busy="正在分析…"
+        progress={{ phase: 'tree' }}
+        logs={[
+          { id: 1, phase: 'tags', level: 'info', message: '标签批次完成' },
+          { id: 2, phase: 'tree', level: 'info', message: '开始设计目录' },
+          { id: 3, phase: 'tree', level: 'info', message: '目录设计完成' },
+        ]}
+      />,
+    )
+
+    const sections = screen.getAllByTestId('llm-log-phase')
+    expect(sections).toHaveLength(2)
+    expect(sections[0]!.textContent).toBe('抽取标签')
+    expect(sections[1]!.textContent).toBe('设计目录')
+    expect(screen.queryByText(/\[抽取标签\]/)).toBeNull()
+    expect(screen.queryByText(/\[设计目录\]/)).toBeNull()
+    expect(screen.getByText('标签批次完成')).toBeDefined()
+    expect(screen.getByText('开始设计目录')).toBeDefined()
+  })
+
   it('超长错误默认只展示摘要，原文可展开查看', () => {
     const message = `分类批次 1/7 失败：${'{"results":' + 'x'.repeat(600) + '}'}`
     render(

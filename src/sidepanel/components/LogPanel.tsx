@@ -1,7 +1,7 @@
-import { PHASE_LABELS } from '@/background/events'
+import { PHASE_LABELS, type ProgressPhase } from '@/background/events'
 import { plural, t } from '@/i18n'
 import { useLayoutEffect, useRef, type ReactNode } from 'react'
-import type { LogLine, Progress } from '../store'
+import { hasProgressCounts, type LogLine, type Progress } from '../store'
 import { DiagnosticText } from './DiagnosticText'
 import {
   LEVEL_CLASS,
@@ -17,6 +17,31 @@ interface Props {
   logs: LogLine[]
   /** 传入时显示取消按钮；只有可中断的步骤才传。 */
   onCancel?: () => void
+}
+
+interface LogPhaseGroup {
+  phase: ProgressPhase
+  lines: LogLine[]
+}
+
+/** 连续同 phase 的日志合成一段，阶段切换时开新组。 */
+export function groupLogsByPhase(logs: LogLine[]): LogPhaseGroup[] {
+  const groups: LogPhaseGroup[] = []
+  for (const line of logs) {
+    const last = groups[groups.length - 1]
+    if (last !== undefined && last.phase === line.phase) {
+      last.lines.push(line)
+    } else {
+      groups.push({ phase: line.phase, lines: [line] })
+    }
+  }
+  return groups
+}
+
+function stageText(progress: Progress): string {
+  const label = t(PHASE_LABELS[progress.phase])
+  if (!hasProgressCounts(progress)) return label
+  return `${label} · ${progress.done}/${progress.total}`
 }
 
 function statusMark(status: ProgressStatus): ReactNode {
@@ -39,12 +64,16 @@ function statusMark(status: ProgressStatus): ReactNode {
 export function LogPanel({ status, busy, progress, logs, onCancel }: Props) {
   const logScrollArea = useRef<HTMLDivElement>(null)
   const shouldFollowLogs = useRef(true)
+  const counted = hasProgressCounts(progress)
   const percent =
-    status !== null && progress !== null && progress.total > 0
+    status !== null && counted
       ? status === 'completed'
         ? Math.round((progress.done / progress.total) * 100)
         : Math.min(99, Math.round((progress.done / progress.total) * 100))
       : null
+  const stage = progress !== null ? stageText(progress) : (busy ?? t('llmLogEmpty'))
+  const showToolbar = progress !== null || logs.length > 0 || onCancel !== undefined
+  const groups = groupLogsByPhase(logs)
 
   useLayoutEffect(() => {
     const scrollArea = logScrollArea.current
@@ -66,9 +95,11 @@ export function LogPanel({ status, busy, progress, logs, onCancel }: Props) {
       className="sticky top-6 flex min-h-[20rem] flex-col overflow-hidden rounded-index border border-index-line bg-index-surface shadow-[var(--index-shadow-soft)]"
     >
       <div className="flex items-center justify-between gap-3 border-b border-index-line bg-index-surface-muted/45 px-4 py-3.5">
-        <div>
+        <div className="min-w-0">
           <h2 className="text-sm font-semibold text-index-ink">{t('llmLogTitle')}</h2>
-          <p className="mt-0.5 text-xs text-index-faint">{busy ?? t('llmLogEmpty')}</p>
+          <p data-testid="llm-log-stage" className="mt-0.5 truncate text-xs text-index-faint">
+            {stage}
+          </p>
         </div>
         {status !== null && (
           <div className={`flex shrink-0 items-center gap-1.5 text-xs ${STATUS_CLASS[status]}`}>
@@ -84,12 +115,14 @@ export function LogPanel({ status, busy, progress, logs, onCancel }: Props) {
         </div>
       )}
 
-      {(progress !== null && progress.total > 0 || logs.length > 0 || onCancel !== undefined) && (
+      {showToolbar && (
         <div className="flex items-center gap-2 border-b border-index-line px-4 py-3 text-xs text-index-muted">
-          {progress !== null && progress.total > 0 ? (
-            <span data-testid="llm-log-progress" className="flex items-center gap-2">
-              <span>{t(PHASE_LABELS[progress.phase])}</span>
-              <span className="font-mono text-index-ink">{progress.done}/{progress.total}</span>
+          {progress !== null ? (
+            <span data-testid="llm-log-progress" className="flex min-w-0 items-center gap-2">
+              <span className="truncate">{t(PHASE_LABELS[progress.phase])}</span>
+              {counted && (
+                <span className="font-mono text-index-ink">{progress.done}/{progress.total}</span>
+              )}
             </span>
           ) : (
             <span>{plural(logs.length, 'progressLogsTitleOne', 'progressLogsTitleOther', String(logs.length))}</span>
@@ -113,14 +146,25 @@ export function LogPanel({ status, busy, progress, logs, onCancel }: Props) {
         onScroll={handleLogScroll}
       >
         {logs.length > 0 ? (
-          <ul className="space-y-2 text-xs leading-body-sm">
-            {logs.map((line) => (
-              <li key={line.id} className={`whitespace-pre-wrap break-words ${LEVEL_CLASS[line.level]}`}>
-                <span className="mr-1 font-mono text-[0.6875rem] text-index-faint">[{t(PHASE_LABELS[line.phase])}]</span>
-                <DiagnosticText message={line.message} />
-              </li>
+          <div className="space-y-4 text-xs leading-body-sm">
+            {groups.map((group) => (
+              <section key={`${group.phase}-${group.lines[0]!.id}`} className="space-y-2">
+                <h3
+                  data-testid="llm-log-phase"
+                  className="text-[0.6875rem] font-semibold uppercase tracking-wide text-index-faint"
+                >
+                  {t(PHASE_LABELS[group.phase])}
+                </h3>
+                <ul className="space-y-2">
+                  {group.lines.map((line) => (
+                    <li key={line.id} className={`whitespace-pre-wrap break-words ${LEVEL_CLASS[line.level]}`}>
+                      <DiagnosticText message={line.message} />
+                    </li>
+                  ))}
+                </ul>
+              </section>
             ))}
-          </ul>
+          </div>
         ) : (
           <p className="flex min-h-32 items-center justify-center text-center text-sm leading-body text-index-faint">
             {t('llmLogEmpty')}
