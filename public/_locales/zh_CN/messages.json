@@ -2403,6 +2403,12 @@
   "moveDropHere": {
     "message": "松开移入"
   },
+  "moveDropBefore": {
+    "message": "松开放到前面"
+  },
+  "moveDropAfter": {
+    "message": "松开放到后面"
+  },
   "moveDragCount": {
     "message": "移动 $count$ 项",
     "placeholders": {

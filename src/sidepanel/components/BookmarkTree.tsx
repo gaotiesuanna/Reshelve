@@ -17,9 +17,10 @@ export interface TreeEditHandlers {
 export interface TreeMoveHandlers {
   nodeIds: string[]
   disabled: boolean
-  canDrop: (nodeIds: string[], folderId: string) => boolean
-  onMove: (nodeIds: string[], folderId: string) => void
+  canDrop: (nodeIds: string[], targetId: string, position: TreeDropPosition) => boolean
+  onMove: (nodeIds: string[], targetId: string, position: TreeDropPosition) => void
 }
+export type TreeDropPosition = 'inside' | 'before' | 'after'
 interface Props {
   nodes: BookmarkNode[]
   checkedIds: Set<string>
@@ -99,7 +100,7 @@ type RowShared = {
   commitEdit: (state: EditState) => Promise<void>
   cancelEdit: (state: EditState) => Promise<void>
   move?: TreeMoveHandlers
-  dropTargetId: string | null
+  dropTarget: { id: string; position: TreeDropPosition } | null
   dragProps: (node: BookmarkNode, selected: boolean, isEditing: boolean) => HTMLAttributes<HTMLDivElement>
 }
 
@@ -298,7 +299,7 @@ function Row({
   commitEdit,
   cancelEdit,
   move,
-  dropTargetId,
+  dropTarget,
   dragProps,
 }: { node: BookmarkNode } & RowShared) {
   const contextProps = edit === undefined
@@ -322,6 +323,8 @@ function Row({
           'flex min-w-0 items-center rounded py-0.5 pr-2 text-neutral-600 transition-colors',
           selectable && !isEditing ? (selected && move !== undefined && !move.disabled ? 'cursor-grab active:cursor-grabbing' : 'cursor-pointer') : '',
           selected ? 'bg-index-accent-soft' : 'hover:bg-neutral-100',
+          dropTarget?.id === node.id && dropTarget.position === 'before' ? 'border-t-2 border-index-accent' : '',
+          dropTarget?.id === node.id && dropTarget.position === 'after' ? 'border-b-2 border-index-accent' : '',
         ].filter(Boolean).join(' ')}
         style={{ paddingLeft: `${depth * 14 + 4}px` }}
         onClick={selectable && !isEditing ? () => onToggleBookmark(node.id) : undefined}
@@ -385,11 +388,14 @@ function Row({
     <div>
       <div
         data-bookmark-row={node.id}
-        data-drop-target={dropTargetId === node.id ? 'true' : undefined}
+        data-drop-target={dropTarget?.id === node.id ? 'true' : undefined}
+        data-drop-position={dropTarget?.id === node.id ? dropTarget.position : undefined}
         {...dragProps(node, checkedIds.has(node.id), isEditing)}
         className={[
           'flex items-center rounded transition-colors',
-          dropTargetId === node.id ? 'bg-index-accent-soft ring-2 ring-inset ring-index-accent' : 'hover:bg-neutral-100',
+          dropTarget?.id === node.id && dropTarget.position === 'inside' ? 'bg-index-accent-soft ring-2 ring-inset ring-index-accent' : 'hover:bg-neutral-100',
+          dropTarget?.id === node.id && dropTarget.position === 'before' ? 'border-t-2 border-index-accent' : '',
+          dropTarget?.id === node.id && dropTarget.position === 'after' ? 'border-b-2 border-index-accent' : '',
         ].join(' ')}
         style={{ paddingLeft: `${depth * 14 + 4}px` }}
         {...contextProps}
@@ -437,7 +443,11 @@ function Row({
               className="h-3.5 w-3.5 shrink-0"
             />
             <span className="truncate">{node.title}</span>
-            {dropTargetId === node.id && <span className="ml-auto shrink-0 text-xs font-medium text-index-accent">{t('moveDropHere')}</span>}
+            {dropTarget?.id === node.id && (
+              <span className="ml-auto shrink-0 text-xs font-medium text-index-accent">
+                {t(dropTarget.position === 'inside' ? 'moveDropHere' : dropTarget.position === 'before' ? 'moveDropBefore' : 'moveDropAfter')}
+              </span>
+            )}
             <span className="ml-auto shrink-0 text-sm leading-caption text-neutral-400">{countBookmarks(node)}</span>
           </label>
         )}
@@ -461,7 +471,7 @@ function Row({
           commitEdit={commitEdit}
           cancelEdit={cancelEdit}
           move={move}
-          dropTargetId={dropTargetId}
+          dropTarget={dropTarget}
           dragProps={dragProps}
         />
       ))}
@@ -557,10 +567,10 @@ export function BookmarkTree({
 }: Props) {
   const [menu, setMenu] = useState<MenuState | null>(null)
   const [editing, setEditing] = useState<EditState | null>(null)
-  const [dropTargetId, setDropTargetId] = useState<string | null>(null)
+  const [dropTarget, setDropTarget] = useState<{ id: string; position: TreeDropPosition } | null>(null)
   const [draggingIds, setDraggingIds] = useState<string[] | null>(null)
   const dragSession = useRef<string[] | null>(null)
-  const hoverTarget = useRef<string | null>(null)
+  const hoverTarget = useRef<{ id: string; position: TreeDropPosition } | null>(null)
   const expandTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
   const dragPreview = useRef<HTMLDivElement | null>(null)
 
@@ -568,7 +578,7 @@ export function BookmarkTree({
     if (expandTimer.current !== null) clearTimeout(expandTimer.current)
     expandTimer.current = null
     hoverTarget.current = null
-    setDropTargetId(null)
+    setDropTarget(null)
   }
 
   function clearDrag(): void {
@@ -591,9 +601,16 @@ export function BookmarkTree({
   function dragProps(node: BookmarkNode, selected: boolean, isEditing: boolean): HTMLAttributes<HTMLDivElement> {
     const draggable = move !== undefined && !move.disabled && selected
       && !isEditing && editing === null && !isImmutableFolder(node)
-    const validTarget = (): boolean => move !== undefined && !move.disabled && editing === null
-      && dragSession.current !== null && node.url === undefined
-      && move.canDrop(dragSession.current, node.id)
+    function dropPosition(event: DragEvent<HTMLDivElement>): TreeDropPosition {
+      const bounds = event.currentTarget.getBoundingClientRect()
+      if (bounds.height <= 0) return node.url === undefined ? 'inside' : 'before'
+      const ratio = (event.clientY - bounds.top) / bounds.height
+      if (ratio < 0.25) return 'before'
+      if (ratio > 0.75) return 'after'
+      return node.url === undefined ? 'inside' : 'after'
+    }
+    const validTarget = (position: TreeDropPosition): boolean => move !== undefined && !move.disabled && editing === null
+      && dragSession.current !== null && move.canDrop(dragSession.current, node.id, position)
     return {
       draggable,
       onDragStart: (event) => {
@@ -619,38 +636,40 @@ export function BookmarkTree({
       onDragOver: (event) => {
         event.stopPropagation()
         scrollWhileDragging(event)
-        if (!validTarget()) {
+        const position = dropPosition(event)
+        if (!validTarget(position)) {
           event.dataTransfer.dropEffect = 'none'
           clearHover()
           return
         }
         event.preventDefault()
         event.dataTransfer.dropEffect = 'move'
-        if (hoverTarget.current === node.id) return
+        if (hoverTarget.current?.id === node.id && hoverTarget.current.position === position) return
         clearHover()
-        hoverTarget.current = node.id
-        setDropTargetId(node.id)
-        if (!expandedIds.has(node.id) && (node.children?.length ?? 0) > 0) {
+        hoverTarget.current = { id: node.id, position }
+        setDropTarget({ id: node.id, position })
+        if (position === 'inside' && !expandedIds.has(node.id) && (node.children?.length ?? 0) > 0) {
           expandTimer.current = setTimeout(() => {
             expandTimer.current = null
-            if (hoverTarget.current === node.id) onToggleExpand(node.id)
+            if (hoverTarget.current?.id === node.id && hoverTarget.current.position === 'inside') onToggleExpand(node.id)
           }, 650)
         }
       },
       onDragLeave: (event) => {
         if (event.relatedTarget instanceof Node && event.currentTarget.contains(event.relatedTarget)) return
-        if (hoverTarget.current === node.id) clearHover()
+        if (hoverTarget.current?.id === node.id) clearHover()
       },
       onDrop: (event) => {
         event.stopPropagation()
-        if (!validTarget()) {
+        const position = dropPosition(event)
+        if (!validTarget(position)) {
           clearDrag()
           return
         }
         event.preventDefault()
         const ids = dragSession.current!
         clearDrag()
-        move!.onMove(ids, node.id)
+        move!.onMove(ids, node.id, position)
       },
       onDragEnd: clearDrag,
     }
@@ -758,7 +777,7 @@ export function BookmarkTree({
     commitEdit,
     cancelEdit,
     move,
-    dropTargetId,
+    dropTarget,
     dragProps,
   }
 

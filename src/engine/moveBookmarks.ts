@@ -3,6 +3,7 @@ import type { BookmarkNode, Ports } from '@/core/ports'
 export type MoveBookmarksDestination =
   | { kind: 'existing'; folderId: string }
   | { kind: 'new'; parentId: string; title: string }
+  | { kind: 'position'; targetId: string; position: 'before' | 'after' }
 
 export interface MoveBookmarksInput {
   /** 要移动的节点：书签或文件夹均可。 */
@@ -122,6 +123,80 @@ function isUnderOrSelf(
   return contains(root)
 }
 
+function findNode(nodes: BookmarkNode[], id: string): BookmarkNode | null {
+  for (const node of nodes) {
+    if (node.id === id) return node
+    const found = findNode(node.children ?? [], id)
+    if (found !== null) return found
+  }
+  return null
+}
+
+function moveWithinParent(
+  ports: Ports,
+  id: string,
+  parentId: string,
+  currentOrder: string[],
+  desiredIndex: number,
+): Promise<void> {
+  const currentIndex = currentOrder.indexOf(id)
+  if (currentIndex < 0 || currentIndex === desiredIndex) return Promise.resolve()
+  // Chrome interprets a same-parent index against the list before removal.
+  const index = desiredIndex > currentIndex ? desiredIndex + 1 : desiredIndex
+  return ports.bookmarks.move(id, { parentId, index }).then(() => {
+    currentOrder.splice(currentIndex, 1)
+    currentOrder.splice(desiredIndex, 0, id)
+  })
+}
+
+async function reorderWithinParent(
+  ports: Ports,
+  originalNodes: BookmarkNode[],
+  destination: Extract<MoveBookmarksDestination, { kind: 'position' }>,
+): Promise<MoveBookmarksResult> {
+  const target = await ports.bookmarks.get(destination.targetId)
+  if (target === null) throw new MoveBookmarksError('missingTarget')
+  if (target.parentId === undefined || originalNodes.some((node) => node.id === target.id)) {
+    throw new MoveBookmarksError('invalidTarget')
+  }
+  if (originalNodes.some((node) => node.parentId !== target.parentId)) {
+    throw new MoveBookmarksError('invalidTarget')
+  }
+
+  const tree = await ports.bookmarks.getTree()
+  const parent = findNode(tree, target.parentId)
+  if (parent === null || parent.url !== undefined) throw new MoveBookmarksError('invalidTarget')
+  const siblings = parent.children ?? []
+  const selectedIds = new Set(originalNodes.map((node) => node.id))
+  const sourceNodes = siblings.filter((node) => selectedIds.has(node.id))
+  if (sourceNodes.length !== selectedIds.size) throw new MoveBookmarksError('missingBookmark')
+
+  const currentOrder = siblings.map((node) => node.id)
+  const remaining = currentOrder.filter((id) => !selectedIds.has(id))
+  const targetIndex = remaining.indexOf(target.id)
+  if (targetIndex < 0) throw new MoveBookmarksError('invalidTarget')
+  const insertAt = destination.position === 'before' ? targetIndex : targetIndex + 1
+  const desiredOrder = [
+    ...remaining.slice(0, insertAt),
+    ...sourceNodes.map((node) => node.id),
+    ...remaining.slice(insertAt),
+  ]
+  const originalOrder = [...currentOrder]
+
+  try {
+    for (const [index, id] of desiredOrder.entries()) {
+      await moveWithinParent(ports, id, target.parentId, currentOrder, index)
+    }
+  } catch (error) {
+    for (const id of originalOrder) {
+      await moveWithinParent(ports, id, target.parentId, currentOrder, originalOrder.indexOf(id)).catch(() => {})
+    }
+    throw error
+  }
+
+  return { moved: sourceNodes.length, targetFolderId: target.parentId, createdFolder: false }
+}
+
 /** 移动用户选中的书签或文件夹；目标可以是已有目录，也可以是新建目录。 */
 export async function moveBookmarks(
   ports: Ports,
@@ -134,6 +209,10 @@ export async function moveBookmarks(
   const originalNodes = selected.filter((node): node is BookmarkNode => node !== null)
   if (originalNodes.length !== ids.length) {
     throw new MoveBookmarksError('missingBookmark')
+  }
+
+  if (input.destination.kind === 'position') {
+    return reorderWithinParent(ports, originalNodes, input.destination)
   }
 
   let targetFolderId: string

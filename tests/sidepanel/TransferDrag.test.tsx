@@ -55,6 +55,39 @@ beforeEach(async () => {
 afterEach(() => vi.useRealTimers())
 
 describe('浏览列表拖拽移动', () => {
+  it('拖到同级文件夹上半区时放到目标文件夹前面', async () => {
+    render(<TransferStep />)
+    await userEvent.click(screen.getByRole('checkbox', { name: '来源' }))
+    const target = row('归档')
+    vi.spyOn(target, 'getBoundingClientRect').mockReturnValue({
+      top: 100,
+      bottom: 140,
+      left: 0,
+      right: 300,
+      width: 300,
+      height: 40,
+      x: 0,
+      y: 100,
+      toJSON: () => ({}),
+    } as DOMRect)
+    const dataTransfer = dragData()
+    fireEvent.dragStart(row('来源'), { dataTransfer })
+    const dragOver = createEvent.dragOver(target, { dataTransfer })
+    Object.defineProperty(dragOver, 'clientY', { value: 105 })
+    fireEvent(target, dragOver)
+
+    expect(target.getAttribute('data-drop-position')).toBe('before')
+    const drop = createEvent.drop(target, { dataTransfer })
+    Object.defineProperty(drop, 'clientY', { value: 105 })
+    fireEvent(target, drop)
+
+    await waitFor(() => {
+      const lines = bookmarks.structure().split('\n')
+      expect(lines.indexOf('/书签栏/来源/')).toBeLessThan(lines.indexOf('/书签栏/归档/'))
+    })
+    expect(bookmarks.structure()).toContain('书签栏/来源/A')
+  })
+
   it('从任意已选中书签拖起时一起移动多个书签，悬停高亮并在成功后刷新列表', async () => {
     render(<TransferStep />)
     await userEvent.click(screen.getByRole('button', { name: '展开 来源' }))

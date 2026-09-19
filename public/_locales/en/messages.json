@@ -2403,6 +2403,12 @@
   "moveDropHere": {
     "message": "Drop to move"
   },
+  "moveDropBefore": {
+    "message": "Drop before"
+  },
+  "moveDropAfter": {
+    "message": "Drop after"
+  },
   "moveDragCount": {
     "message": "Move $count$ items",
     "placeholders": {

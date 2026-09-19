@@ -107,6 +107,65 @@ describe('moveBookmarks', () => {
     expect(bookmarks.structure()).toContain('书签栏/来源/B')
     expect(bookmarks.structure()).not.toContain('失败后清理')
   })
+
+  it('reorders selected sibling folders before the target without changing their parent', async () => {
+    const bookmarks = createFakeBookmarks([
+      { id: '0', title: '', children: [
+        { id: '1', title: '书签栏', children: [
+          { id: '7', title: '07 Utilities', children: [] },
+          { id: '8', title: '08 团队通讯', children: [
+            { id: '80', title: '保留的书签', url: 'https://example.com' },
+          ] },
+          { id: '9', title: '09 Other', children: [] },
+        ] },
+      ] },
+    ])
+    const ports = { bookmarks: bookmarks.api, storage: createFakeStorage() }
+
+    const result = await moveBookmarks(ports, {
+      nodeIds: ['8'],
+      destination: { kind: 'position', targetId: '7', position: 'before' },
+    })
+
+    expect(result).toEqual({ moved: 1, targetFolderId: '1', createdFolder: false })
+    expect(bookmarks.structure()).toMatch(
+      /书签栏\/08 团队通讯\/[\s\S]*书签栏\/07 Utilities\/[\s\S]*书签栏\/09 Other/,
+    )
+    expect(bookmarks.structure()).toContain('书签栏/08 团队通讯/保留的书签')
+  })
+
+  it('reorders multiple selected siblings after the target while preserving their relative order', async () => {
+    const bookmarks = createFakeBookmarks([
+      { id: '0', title: '', children: [
+        { id: '1', title: '书签栏', children: [
+          { id: '7', title: '07', children: [] },
+          { id: '8', title: '08', children: [] },
+          { id: '9', title: '09', children: [] },
+          { id: '10', title: '10', children: [] },
+        ] },
+      ] },
+    ])
+    const ports = { bookmarks: bookmarks.api, storage: createFakeStorage() }
+
+    await moveBookmarks(ports, {
+      nodeIds: ['7', '8'],
+      destination: { kind: 'position', targetId: '9', position: 'after' },
+    })
+
+    const lines = bookmarks.structure().split('\n')
+    expect(lines.indexOf('/书签栏/09/')).toBeLessThan(lines.indexOf('/书签栏/07/'))
+    expect(lines.indexOf('/书签栏/07/')).toBeLessThan(lines.indexOf('/书签栏/08/'))
+    expect(lines.indexOf('/书签栏/08/')).toBeLessThan(lines.indexOf('/书签栏/10/'))
+  })
+
+  it('rejects sibling reordering when selected nodes have different parents', async () => {
+    const { ports } = setup()
+
+    await expect(moveBookmarks(ports, {
+      nodeIds: ['100', '12'],
+      destination: { kind: 'position', targetId: '11', position: 'before' },
+    })).rejects.toThrow('invalidTarget')
+  })
 })
 
 describe('collectMoveNodeIds', () => {

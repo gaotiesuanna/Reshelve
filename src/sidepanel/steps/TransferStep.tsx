@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { t } from '@/i18n'
-import { BookmarkTree, filterBookmarkTree, topLevelNodes } from '../components/BookmarkTree'
+import { BookmarkTree, filterBookmarkTree, topLevelNodes, type TreeDropPosition } from '../components/BookmarkTree'
 import { BookmarkWorkspace } from '../components/BookmarkWorkspace'
 import { ExportPanel } from '../components/ExportPanel'
 import { FolderPicker, findAncestorFolderIds, findFolderPath } from '../components/FolderPicker'
@@ -14,6 +14,15 @@ import { collectMoveNodeIds } from '@/engine/moveBookmarks'
 
 type TransferPanel = 'export' | 'import' | null
 type MovePanelMode = 'existing' | 'new'
+
+function findNode(nodes: BookmarkNode[], id: string): BookmarkNode | null {
+  for (const node of nodes) {
+    if (node.id === id) return node
+    const found = findNode(node.children ?? [], id)
+    if (found !== null) return found
+  }
+  return null
+}
 
 const TRANSFER_FEATURES = [
   'transferFeatureSearch',
@@ -65,11 +74,22 @@ export function TransferStep() {
   )
   const canMove = moveNodeIds.length > 0 && busy === null
   const permanentFolderIds = new Set(topLevelNodes(tree).map((node) => node.id))
-  function canDrop(nodeIds: string[], folderId: string): boolean {
-    if (useStore.getState().busy !== null || nodeIds.length === 0 || folderId === '0') return false
-    const ancestors = findAncestorFolderIds(tree, folderId)
-    return ancestors !== null && nodeIds.every((id) => !permanentFolderIds.has(id)
-      && id !== folderId && !ancestors.includes(id))
+  function canDrop(nodeIds: string[], targetId: string, position: TreeDropPosition): boolean {
+    if (useStore.getState().busy !== null || nodeIds.length === 0 || targetId === '0') return false
+    const target = findNode(tree, targetId)
+    if (target === null) return false
+    if (position === 'inside') {
+      if (target.url !== undefined) return false
+      const ancestors = findAncestorFolderIds(tree, targetId)
+      return ancestors !== null && nodeIds.every((id) => !permanentFolderIds.has(id)
+        && id !== targetId && !ancestors.includes(id))
+    }
+    if (target.parentId === undefined) return false
+    return nodeIds.every((id) => {
+      const source = findNode(tree, id)
+      return source !== null && !permanentFolderIds.has(id)
+        && id !== targetId && source.parentId === target.parentId
+    })
   }
   // 全部取消勾选后收起移动面板：下次重新勾选时不该自动弹开
   useEffect(() => {
@@ -240,8 +260,13 @@ export function TransferStep() {
               nodeIds: moveNodeIds,
               disabled: !canMove || moveNodeIds.some((id) => permanentFolderIds.has(id)),
               canDrop,
-              onMove: (nodeIds, folderId) => {
-                void moveBookmarks({ nodeIds, destination: { kind: 'existing', folderId } })
+              onMove: (nodeIds, targetId, position) => {
+                void moveBookmarks({
+                  nodeIds,
+                  destination: position === 'inside'
+                    ? { kind: 'existing', folderId: targetId }
+                    : { kind: 'position', targetId, position },
+                })
               },
             }}
             edit={{
