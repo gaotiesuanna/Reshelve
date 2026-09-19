@@ -829,6 +829,12 @@
   "progressWaiting": {
     "message": "等待确认"
   },
+  "structureReadyNotice": {
+    "message": "结构已生成，请查看"
+  },
+  "structureReadyDismiss": {
+    "message": "关闭"
+  },
   "progressCompleted": {
     "message": "已完成"
   },

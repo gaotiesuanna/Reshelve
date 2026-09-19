@@ -1,10 +1,10 @@
-import type { ReactNode } from 'react'
+import { useEffect, useRef, useState, type ReactNode } from 'react'
 import { t } from '@/i18n'
 import { TASK_SPECS } from '@/background/task-specs'
 import { useStore, type AppMode, type Step } from '../store'
 import { isTabView, openAppInTab } from '../lib/openInTab'
 import { REPO_URL } from '../lib/about'
-import { AlertIcon, BrandMark, ChevronLeftIcon, GithubIcon } from './icons'
+import { AlertIcon, BrandMark, ChevronLeftIcon, CloseIcon, GithubIcon } from './icons'
 import { IndexNavigation, type IndexNavigationItem } from './IndexNavigation'
 import { LogPanel } from './LogPanel'
 import { ProgressPanel, type ProgressStatus } from './ProgressPanel'
@@ -87,11 +87,23 @@ export function Shell({ children, organizeContent }: { children: ReactNode; orga
     // 已有对应状态的步骤之间自由跳，不清草稿——丢弃草稿仍走页面里的返回按钮。
     useStore.setState({ step: target })
   }
+  const waitingForStructureConfirmation =
+    mode === 'organize' && step === 'structure' && structureDraft !== null
+  const [showStructureReadyNotice, setShowStructureReadyNotice] = useState(false)
+  const wasWaitingForStructureConfirmation = useRef(false)
+  useEffect(() => {
+    if (waitingForStructureConfirmation && !wasWaitingForStructureConfirmation.current) {
+      setShowStructureReadyNotice(true)
+    } else if (!waitingForStructureConfirmation) {
+      setShowStructureReadyNotice(false)
+    }
+    wasWaitingForStructureConfirmation.current = waitingForStructureConfirmation
+  }, [waitingForStructureConfirmation])
   const progressStatus: ProgressStatus | null = busy !== null
     ? 'running'
     : error !== null
       ? 'failed'
-      : mode === 'organize' && step === 'structure' && structureDraft !== null
+      : waitingForStructureConfirmation
         ? 'waiting'
         : mode === 'organize' && step === 'review' && plan !== null
           ? 'completed'
@@ -187,6 +199,23 @@ export function Shell({ children, organizeContent }: { children: ReactNode; orga
               </button>
             )}
           </div>
+        </div>
+      )}
+      {!settingsOpen && showStructureReadyNotice && (
+        <div
+          data-testid="structure-ready-notice"
+          role="alert"
+          className="fixed right-4 top-4 z-50 flex max-w-[min(24rem,calc(100vw-2rem))] items-start gap-3 rounded-index border border-index-accent/35 bg-index-surface px-4 py-3 text-sm text-index-ink shadow-[var(--index-shadow-soft)]"
+        >
+          <p className="min-w-0 flex-1 leading-body">{t('structureReadyNotice')}</p>
+          <button
+            type="button"
+            aria-label={t('structureReadyDismiss')}
+            className="-mr-1 -mt-1 inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-md text-index-muted transition-colors hover:bg-index-accent-soft hover:text-index-ink focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-index-accent focus-visible:ring-offset-1 motion-reduce:transition-none"
+            onClick={() => setShowStructureReadyNotice(false)}
+          >
+            <CloseIcon className="h-4 w-4" />
+          </button>
         </div>
       )}
       <main className={tabView

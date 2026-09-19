@@ -829,6 +829,12 @@
   "progressWaiting": {
     "message": "Awaiting confirmation"
   },
+  "structureReadyNotice": {
+    "message": "Structure ready — please take a look"
+  },
+  "structureReadyDismiss": {
+    "message": "Dismiss"
+  },
   "progressCompleted": {
     "message": "Completed"
   },

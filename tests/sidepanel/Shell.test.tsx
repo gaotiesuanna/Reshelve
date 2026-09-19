@@ -498,6 +498,20 @@ describe('Shell 的进度条按模式各管各的', () => {
     expect(screen.queryByText('已完成')).toBeNull()
   })
 
+  it('结构生成后提示用户查看并确认', () => {
+    useStore.setState({
+      step: 'structure',
+      structureDraft: {} as unknown as StructureDraft,
+      plan: null,
+      busy: null,
+      error: null,
+    })
+    render(<Shell organizeContent={<div>结构编辑器</div>}>{null}</Shell>)
+
+    expect(screen.getByTestId('structure-ready-notice').textContent).toContain('结构已生成，请查看')
+    expect(screen.getByRole('button', { name: '关闭' })).toBeDefined()
+  })
+
   it('偏好页不会因为扫描完成而显示通用已完成条', () => {
     useStore.setState({
       step: 'preferences',
