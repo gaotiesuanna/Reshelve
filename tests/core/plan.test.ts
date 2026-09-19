@@ -52,6 +52,23 @@ describe('buildPlan', () => {
     expect(moves).toHaveLength(0)
   })
 
+  it('未识别的书签在有「其他」候选时生成移动操作', () => {
+    const p = buildPlan({
+      id: 'p-fallback', createdAt: 1, scopeRootIds: ['1'], rebuildStructure: true,
+      items: [items[3]!],
+      candidates: [{ id: '12', path: ['书签栏', '其他'] }],
+      classifications: [
+        { bookmarkId: '103', targetCategoryId: '12', confidence: 1, reason: '放入其他', source: 'none' },
+      ],
+      newFolders: [],
+    })
+
+    expect(p.operations).toContainEqual(expect.objectContaining({
+      type: 'move_bookmark', bookmarkId: '103', toCategoryId: '12',
+    }))
+    expect(p.unchanged).toHaveLength(0)
+  })
+
   it('move 操作记录原 parent 与原 index，供撤销使用', () => {
     const move = plan().operations.find(
       (o) => o.type === 'move_bookmark' && o.bookmarkId === '100',

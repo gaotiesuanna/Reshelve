@@ -230,15 +230,9 @@ export function PreferencesStep() {
             <div className={choiceList}>
               <dl className="grid grid-cols-[minmax(0,1fr)_auto] items-center gap-x-2">
                 <dt className="min-w-0">
-                  <label className={`${choiceRow} hover:bg-index-blue-soft`}>
-                    <input
-                      type="checkbox"
-                      className="h-3.5 w-3.5 shrink-0 accent-index-blue"
-                      checked={settings.removeEmptyFolders}
-                      onChange={(e) => void setSettings({ ...settings, removeEmptyFolders: e.target.checked })}
-                    />
+                  <span className={`${choiceRow} cursor-default`}>
                     <span className="min-w-0 flex-1">{t('prefsCleanTitle')}</span>
-                  </label>
+                  </span>
                 </dt>
                 <Detail inline flush label={detailLabel()}>
                   {`${t('prefsCleanSummary')} ${t('prefsCleanBody')}`}

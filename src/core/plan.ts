@@ -116,7 +116,7 @@ export function buildPlan(input: BuildPlanInput): OrganizePlan {
     const classification = byId.get(item.id)
 
     // 压根没被分类到，或分类阶段本身就失败了——这次没盖到它
-    if (classification === undefined || classification.source === 'none') {
+    if (classification === undefined || (classification.source === 'none' && classification.targetCategoryId === null)) {
       markUnchanged(item, 'failed', classification?.reason ?? '')
       continue
     }

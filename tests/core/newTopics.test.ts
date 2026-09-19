@@ -363,7 +363,7 @@ describe('planFallbackFolder', () => {
     { bookmarkId: '1', targetCategoryId: null, confidence: 0, reason: '无合适目录', source: 'llm' },
     { bookmarkId: '2', targetCategoryId: null, confidence: 0, reason: '无合适目录', source: 'llm' },
   ]
-  /** 一条真正失败的请求——source: 'none'，不该被扫进「其他」。 */
+  /** 一条真正失败的请求——source: 'none'，也必须有一个可落地的去处。 */
   const failedRequest: Classification = {
     bookmarkId: '9', targetCategoryId: null, confidence: 0, reason: '分类失败', source: 'none',
   }
@@ -381,13 +381,15 @@ describe('planFallbackFolder', () => {
     })
   })
 
-  it('request 失败（source: "none"）的不算卡住，不会被扫进「其他」', () => {
+  it('request 失败（source: "none"）也会被收进「其他」', () => {
     const out = planFallbackFolder({
       classifications: [failedRequest], rootId: 'root',
       folders: [folder('root', '书签栏', null)], newFolders: [], candidates: [], locale: 'zh_CN', excludeIds: new Set(),
     })
-    expect(out.strandedCount).toBe(0)
-    expect(out.classifications).toEqual([failedRequest])
+    expect(out.strandedCount).toBe(1)
+    expect(out.classifications[0]).toMatchObject({
+      targetCategoryId: out.newFolder!.temporaryId, confidence: 1,
+    })
   })
 
   it('范围根没有既有「其他」时，新建一个，编号跟随已有目录', () => {

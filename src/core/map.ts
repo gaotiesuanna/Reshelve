@@ -53,7 +53,7 @@ export function buildCandidatesFromFolders(
     // 留树序第一个，与 core/tree.ts 里 existingByParent 的「首个胜出」同源——
     // 两处规则必须一致，否则「推翻模式复用哪个」与「归入现有留哪个候选」会指向不同目录。
     // 去重不是只挡住新书签往重复目录里去：躺在被折叠掉的那个目录里的存量书签，
-    // 下一轮分析也只会分类到幸存的这个，配合默认开启的 removeEmptyFolders，
+    // 下一轮分析也只会分类到幸存的这个，分类完成后的自动清理会把搬空的重复目录
     // 被抽空的重复目录会被真的删掉。全过程在复核页可预览、可拒绝、可撤销，
     // 不是悄悄合并。
     const key = folderKey(folder)

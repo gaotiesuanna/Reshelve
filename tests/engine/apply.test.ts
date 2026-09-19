@@ -224,11 +224,20 @@ describe('applyPlan 清理空文件夹', () => {
     expect(fake.structure()).not.toContain('杂项')
   })
 
-  it('默认不清理', async () => {
+  it('整理完成后总是清理被搬空的目录', async () => {
     const { ports, fake } = setup()
     const result = await applyPlan(ports, makePlan(), new Set(['100', '101']), 'zh_CN')
-    expect(result.removedFolders).toEqual([])
-    expect(fake.structure()).toContain('杂项')
+    expect(result.removedFolders.map((f) => f.title)).toEqual(['杂项'])
+    expect(fake.structure()).not.toContain('杂项')
+  })
+
+  it('旧的清理设置关闭时也会清理被搬空的目录', async () => {
+    const { ports, fake } = setup()
+    const result = await applyPlan(ports, makePlan(), new Set(['100', '101']), 'zh_CN', {
+      removeEmptyFolders: false,
+    })
+    expect(result.removedFolders.map((f) => f.title)).toEqual(['杂项'])
+    expect(fake.structure()).not.toContain('杂项')
   })
 
   it('还有书签的目录不删', async () => {
@@ -307,7 +316,7 @@ describe('applyPlan 按编号排列目录', () => {
     const fake = createFakeBookmarks(messy)
     const ports = { bookmarks: fake.api, storage: createFakeStorage() }
     await applyPlan(ports, messyPlan(true), new Set(['100']), 'zh_CN')
-    expect(await childTitles(ports, '1')).toEqual(['01 GitHub', '02 AI', '03 fastapi'])
+    expect(await childTitles(ports, '1')).toEqual(['02 AI', '03 fastapi'])
   })
 
   it('子目录同样按编号排列', async () => {
@@ -321,7 +330,7 @@ describe('applyPlan 按编号排列目录', () => {
     const fake = createFakeBookmarks(messy)
     const ports = { bookmarks: fake.api, storage: createFakeStorage() }
     const result = await applyPlan(ports, messyPlan(true), new Set(['100']), 'zh_CN')
-    expect(result.sortedFolders).toBe(5)
+    expect(result.sortedFolders).toBe(4)
   })
 
   it('非推翻模式不动用户自己的排列', async () => {
@@ -329,7 +338,7 @@ describe('applyPlan 按编号排列目录', () => {
     const ports = { bookmarks: fake.api, storage: createFakeStorage() }
     const result = await applyPlan(ports, messyPlan(false), new Set(['100']), 'zh_CN')
     expect(result.sortedFolders).toBe(0)
-    expect(await childTitles(ports, '1')).toEqual(['fastapi', '02 AI', '01 GitHub'])
+    expect(await childTitles(ports, '1')).toEqual(['fastapi', '02 AI'])
   })
 
   it('撤销后目录顺序还原', async () => {

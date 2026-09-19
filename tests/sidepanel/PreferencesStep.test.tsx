@@ -110,10 +110,10 @@ describe('PreferencesStep 仅规范化书签标题', () => {
     expect((screen.getByRole('checkbox', { name: /GitLab/ }) as HTMLInputElement).checked).toBe(false)
   })
 
-  it('勾选 YouTube 后 titleRuleIds 含 youtube，普通整理路径仍在未勾 title-only 时可见清理空文件夹', async () => {
+  it('勾选 YouTube 后 titleRuleIds 含 youtube，普通整理路径仍在未勾 title-only 时可见自动清理说明', async () => {
     setup(tidyScan)
     render(<PreferencesStep />)
-    expect(screen.getByTestId('prefs-clean-option')).toBeTruthy()
+    expect(screen.getByTestId('prefs-clean-option').textContent).toMatch('整理后自动清理旧文件夹')
 
     await userEvent.click(screen.getByRole('radio', { name: '仅规范化书签标题' }))
     expect(screen.queryByTestId('prefs-clean-option')).toBeNull()
@@ -168,19 +168,19 @@ describe('PreferencesStep 清理空文件夹的说明', () => {
     setup(messyScan)
     render(<PreferencesStep />)
     const card = screen.getByTestId('prefs-clean-option')
-    expect(within(card).getByText('整理后清理空文件夹')).toBeTruthy()
+    expect(within(card).getByText('整理后自动清理旧文件夹')).toBeTruthy()
     const toggle = within(card).getByRole('button', { name: '说明' })
     expect(toggle.getAttribute('aria-expanded')).toBe('false')
     await userEvent.click(toggle)
     expect(toggle.getAttribute('aria-expanded')).toBe('true')
-    return within(card).getByText(/删除范围内不含任何书签的文件夹/)
+    return within(card).getByText(/自动删除范围内已经搬空的旧文件夹/)
   }
 
-  it('交代合并时源文件夹会被删除，且不受这个开关约束', async () => {
+  it('交代合并时源文件夹会被删除，且撤销可以还原', async () => {
     const body = await cleanDetail()
     expect(body.textContent).toMatch(/合并/)
     expect(body.textContent).toMatch(/删除/)
-    expect(body.textContent).toMatch(/不受.*开关/)
+    expect(body.textContent).toMatch(/自动删除|一律清理/)
   })
 
   it('例外那半句本身要带上「可撤销」——删除很吓人，撤销才是让人敢按的那句', async () => {
@@ -196,15 +196,15 @@ describe('PreferencesStep 清理空文件夹的说明', () => {
     expect(screen.getByRole('heading', { name: '整理方式' })).toBeTruthy()
     expect(screen.queryByText('整理选项')).toBeNull()
     expect(
-      within(screen.getByTestId('preferences-section')).queryByText('整理后清理空文件夹'),
+      within(screen.getByTestId('preferences-section')).queryByText('整理后自动清理旧文件夹'),
     ).toBeNull()
-    expect(screen.getByTestId('prefs-clean-option').textContent).toMatch('整理后清理空文件夹')
+    expect(screen.getByTestId('prefs-clean-option').textContent).toMatch('整理后自动清理旧文件夹')
     expect(
       within(screen.getByRole('radiogroup', { name: '整理方式' })).queryByRole('checkbox', {
-        name: '整理后清理空文件夹',
+        name: '整理后自动清理旧文件夹',
       }),
     ).toBeNull()
-    expect(screen.getByRole('checkbox', { name: '整理后清理空文件夹' })).toBeTruthy()
+    expect(screen.queryByRole('checkbox', { name: '整理后自动清理旧文件夹' })).toBeNull()
   })
   it('说明按钮位于清理选项第一行右侧', () => {
     setup(messyScan)
@@ -212,18 +212,16 @@ describe('PreferencesStep 清理空文件夹的说明', () => {
     const card = screen.getByTestId('prefs-clean-option')
     const toggle = within(card).getByRole('button', { name: '说明' })
     expect(toggle.closest('dt')).toBeTruthy()
-    expect(toggle.closest('dl')?.querySelector('label')).toBeTruthy()
+    expect(toggle.closest('dl')?.querySelector('dt')).toBeTruthy()
   })
 
-  it('清理选项可独立勾选，不改变整理方式选中项', async () => {
+  it('自动清理说明不再提供可关闭的开关', async () => {
     setup(tidyScan)
     render(<PreferencesStep />)
     const rebuild = screen.getByRole('radio', { name: '重新设计整棵树（默认）' }) as HTMLInputElement
     expect(rebuild.checked).toBe(true)
-    const clean = screen.getByRole('checkbox', { name: '整理后清理空文件夹' }) as HTMLInputElement
-    expect(clean.checked).toBe(true)
-    await userEvent.click(clean)
-    expect(useStore.getState().settings.removeEmptyFolders).toBe(false)
+    expect(screen.queryByRole('checkbox', { name: '整理后自动清理旧文件夹' })).toBeNull()
+    expect(useStore.getState().settings.removeEmptyFolders).toBe(true)
     expect(rebuild.checked).toBe(true)
     expect(useStore.getState().titleOnly).toBe(false)
     expect(useStore.getState().modeOverride).toBe('rebuild')
@@ -441,7 +439,7 @@ describe('PreferencesStep 不再摆配一次就不动的设置', () => {
   it('模型配置整段都不在偏好页上——它是配一次就不动的，属于设置页', () => {
     render(<PreferencesStep />)
     // 空断言防身：这一页确实渲染出内容了
-    expect(screen.getByText('整理后清理空文件夹')).toBeTruthy()
+    expect(screen.getByText('整理后自动清理旧文件夹')).toBeTruthy()
 
     expect(screen.queryByPlaceholderText('Base URL')).toBeNull()
     expect(screen.queryByPlaceholderText('API Key')).toBeNull()
@@ -452,10 +450,8 @@ describe('PreferencesStep 不再摆配一次就不动的设置', () => {
 
   it('偏好页提供仅统一 GitHub 标题的本轮选项，但不重复设置页的长期开关说明', () => {
     render(<PreferencesStep />)
-    // 空断言防身：这一页上确实还渲染着别的勾选框，
-    // 所以下面那条 null 不是因为查询本身在这一页上什么都查不到
-    // （原来拿域名聚合那组的 label 当锚点，它随 issues/38 的 D4 删掉了）
-    expect(screen.getAllByRole('checkbox').length).toBeGreaterThan(0)
+    // 空断言防身：这一页仍然渲染了说明控件，证明下面的查询不是因为页面没渲染。
+    expect(screen.getAllByRole('button', { name: '说明' }).length).toBeGreaterThan(0)
 
     expect(screen.getByRole('radio', { name: '仅规范化书签标题' })).toBeTruthy()
     expect(screen.queryByText(/仓库名 \(作者\)/)).toBeNull()

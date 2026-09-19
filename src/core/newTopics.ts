@@ -304,10 +304,11 @@ function fallbackFolderReason(locale: Locale): string {
  * `targetCategoryId === null` 的书签，不再原地不动，一律收进一个跟其余目录同样
  * 编号的「其他」（见 issues/42-loose-bookmark-always-lands-somewhere.md）。
  *
- * 会落到这里的三种情况，这个函数不区分、一视同仁地兜底：
+ * 会落到这里的四种情况，这个函数不区分、一视同仁地兜底：
  * 1. 模型没给出任何可用主题（topic 为空、纯数字，被 `clusterHomeless` 直接滤掉）；
  * 2. 攒出了簇，但命名撞名被 `nameNewTopics` 跳过；
- * 3. 簇数超过 `MAX_SIBLINGS`，被 `planNewFolders` 截断。
+ * 3. 簇数超过 `MAX_SIBLINGS`，被 `planNewFolders` 截断；
+ * 4. 分类请求部分失败（source === 'none'）。
  *
  * 与 issues/05-homeless-bookmarks.md 决定 2（「非推翻模式不建其他，原地不动」）
  * 正面冲突，是刻意推翻：那条决定成立的前提是「凭空造一个其他就是在动用户没同意
@@ -317,7 +318,7 @@ function fallbackFolderReason(locale: Locale): string {
  */
 export function planFallbackFolder(input: PlanFallbackFolderInput): PlanFallbackFolderResult {
   const stranded = input.classifications.filter(
-    (c) => c.targetCategoryId === null && c.source !== 'none' && !input.excludeIds.has(c.bookmarkId),
+    (c) => c.targetCategoryId === null && !input.excludeIds.has(c.bookmarkId),
   )
   if (stranded.length === 0) {
     return { newFolder: null, candidate: null, classifications: input.classifications, strandedCount: 0 }

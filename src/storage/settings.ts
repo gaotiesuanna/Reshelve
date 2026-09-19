@@ -62,7 +62,7 @@ export interface Settings {
    * 各写一遍空判断；空串走的是 activeLlm 的兜底那条路。
    */
   active: { baseUrl: string; model: string }
-  /** 整理完成后清理范围内不含任何书签的目录。 */
+  /** 旧版本持久化字段；普通分类现在固定清理本轮搬空的旧目录。 */
   removeEmptyFolders: boolean
   /** 把 GitHub 书签的标题统一成 `repo (owner)`。 */
   rewriteGithubTitles: boolean

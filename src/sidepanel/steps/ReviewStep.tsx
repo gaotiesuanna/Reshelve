@@ -188,7 +188,7 @@ export function ReviewStep() {
 
       {/* 普通整理里的新建/重命名目录、统一书签标题、清空空文件夹都不是待办，
           收进同一块浅底旁注里；title-only 则把标题改名展开成下面的逐条清单。 */}
-      {(summary.createdFolders > 0 || summary.renamedFolders > 0 || summary.renamedBookmarks > 0 || settings.removeEmptyFolders) && (
+      {(summary.createdFolders > 0 || summary.renamedFolders > 0 || summary.renamedBookmarks > 0 || !titleOnly) && (
         <div className="space-y-1 rounded-index border border-index-line bg-index-surface-muted px-3 py-2.5 text-sm leading-caption text-index-muted">
           {(summary.createdFolders > 0 || summary.renamedFolders > 0) && (
             <p>
@@ -206,7 +206,7 @@ export function ReviewStep() {
             </p>
           )}
 
-          {!titleOnly && settings.removeEmptyFolders && <p>{t('reviewCleanNote')}</p>}
+          {!titleOnly && <p>{t('reviewCleanNote')}</p>}
         </div>
       )}
 

@@ -64,7 +64,7 @@ export interface ApplyResult {
 
 export interface ApplyOptions {
   onProgress?: (done: number, total: number) => void
-  /** 移动完成后清理范围内不含任何书签的目录。 */
+  /** 旧版本兼容字段；普通分类现在总是清理被本轮搬空的旧目录。 */
   removeEmptyFolders?: boolean
 }
 
@@ -80,10 +80,31 @@ async function removeEmpty(
   skipped: SkipRecord[],
   locale: Locale,
   removableRootIds: string[] = [],
+  emptiedFolderIds: ReadonlySet<string> = new Set(),
 ): Promise<EmptyFolder[]> {
   const tree = await ports.bookmarks.getTree()
   const removed: EmptyFolder[] = []
+  const eligibleIds = new Set(emptiedFolderIds)
+  const removableIds = new Set(removableRootIds)
+
+  // 如果一个旧目录只剩下已搬空的子目录，它自己也属于本轮被搬空的旧目录。
+  // 先把这些祖先补进名单，再按后序结果删除，避免留下空壳父目录。
+  const markEligibleAncestors = (node: BookmarkNode): boolean => {
+    if (node.url !== undefined) return false
+    let hasEligibleDescendant = false
+    for (const child of node.children ?? []) {
+      if (markEligibleAncestors(child)) hasEligibleDescendant = true
+    }
+    if (eligibleIds.has(node.id) || removableIds.has(node.id) || hasEligibleDescendant) {
+      eligibleIds.add(node.id)
+      return true
+    }
+    return false
+  }
+  for (const root of tree) markEligibleAncestors(root)
+
   for (const folder of findEmptyFolders(tree, scopeRootIds, removableRootIds)) {
+    if (!eligibleIds.has(folder.id)) continue
     try {
       await ports.bookmarks.remove(folder.id)
       removed.push(folder)
@@ -170,6 +191,7 @@ export async function applyPlan(
   const tempToReal = new Map<string, string>()
   const createdFolderIds: string[] = []
   const renamedBookmarkIds: string[] = []
+  const emptiedFolderIds = new Set<string>()
   let mergeRootId: string | null = null
   const skipped: SkipRecord[] = []
   let executed = 0
@@ -193,12 +215,14 @@ export async function applyPlan(
         // 容器目录的真实 id 只有这里知道，收尾的清理与排序都要靠它才能进到合并根内部
         if (operation.temporaryId === plan.mergeRoot?.temporaryId) mergeRootId = created.id
       } else if (operation.type === 'move_folder') {
+        emptiedFolderIds.add(operation.fromParentId)
         try {
           await ports.bookmarks.move(operation.folderId, { parentId: operation.toParentId })
         } catch (error) {
           throw new Error(msgFolderMoveFailed(locale, String(error)))
         }
       } else if (operation.type === 'move_bookmark') {
+        emptiedFolderIds.add(operation.fromParentId)
         const existing = await ports.bookmarks.get(operation.bookmarkId)
         if (existing === null) {
           skipped.push({ bookmarkId: operation.bookmarkId, reason: msgBookmarkGone(locale) })
@@ -244,10 +268,11 @@ export async function applyPlan(
   const removableRootIds = mergeRootId === null ? [] : (plan.mergeRoot?.sourceRootIds ?? [])
 
   // 只有整批操作都成功才清理——中途失败时结构还没落定，删目录只会添乱
-  const removedFolders =
-    !plan.titleOnly && (options.removeEmptyFolders === true || mergeRootId !== null)
-      ? await removeEmpty(ports, effectiveRootIds, skipped, locale, removableRootIds)
-      : []
+  // 普通分类完成后，旧目录必须被清理；未识别书签会先进入「其他」，因此这里
+  // 只会删除已经真正搬空的目录。标题-only 方案不涉及目录整理，不能顺手删除目录。
+  const removedFolders = !plan.titleOnly
+    ? await removeEmpty(ports, effectiveRootIds, skipped, locale, removableRootIds, emptiedFolderIds)
+    : []
 
   // 非推翻模式不产生编号，也不该给用户自己的目录补号或重排
   if (!plan.titleOnly && plan.rebuildStructure) {

@@ -1,5 +1,5 @@
 import { t } from '@/i18n'
-import { normalizeName } from '@/core/map'
+import { normalizeName, stripNumberPrefix } from '@/core/map'
 import {
   collapseSameNameFolders,
   createTemporaryIdFactory,
@@ -548,7 +548,7 @@ export async function classifyRebuildDraft(
   }
 
   log('classify', t('logClassifyStart', String(input.scan.bookmarks.length), String(compiled.candidates.length)))
-  const classifications = await classifyBookmarks({
+  let classifications = await classifyBookmarks({
     items: input.scan.bookmarks,
     candidates: compiled.candidates,
     client: input.client,
@@ -567,6 +567,27 @@ export async function classifyRebuildDraft(
   const failed = classifications.filter((classification) => classification.source === 'none')
   if (input.scan.bookmarks.length > 0 && failed.length === input.scan.bookmarks.length) {
     throw new RebuildClassificationError(t('errClassifyAllFailed', failed[0]!.reason))
+  }
+  // 推翻模式的结构草案始终包含一个顶层「其他」兜底目录。分类请求部分失败，或
+  // 模型明确表示没有合适目录时，也必须给这些书签一个可落地的位置，否则旧目录
+  // 永远不会被搬空，用户看到的就是分类后仍残留一批旧文件夹。
+  const fallbackKey = normalizeName(FALLBACK_TITLE[input.locale])
+  const fallback = compiled.candidates.find((candidate) => {
+    const title = candidate.path.at(-1) ?? ''
+    return candidate.path.length === 1 && normalizeName(stripNumberPrefix(title)) === fallbackKey
+  })
+  if (fallback !== undefined) {
+    classifications = classifications.map((classification) => {
+      if (classification.targetCategoryId !== null) return classification
+      return {
+        ...classification,
+        targetCategoryId: fallback.id,
+        confidence: 1,
+        reason: input.locale === 'zh_CN'
+          ? '无法识别，已放入「其他」'
+          : 'Could not classify; placed in "Other"',
+      }
+    })
   }
   // 用户新增的一级目录只有真的收到书签才应进入最终计划。它与模型设计出的目录不同：
   // 用户明确新增后即使只收到一条也要保留，但零命中时创建一个空目录没有任何可见收益。

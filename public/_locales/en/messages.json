@@ -1204,10 +1204,10 @@
     "message": "The next step shows the rename list first, so you can accept or reject each item."
   },
   "prefsCleanSummary": {
-    "message": "Deletes folders in scope that hold no bookmarks. Merging several folders is an exception: the source folders are always cleaned up regardless of this switch, and undo still restores them."
+    "message": "After classification, automatically deletes old folders that have been emptied within the scope. When merging several folders, source folders are always cleaned up, and undo still restores them."
   },
   "prefsCleanTitle": {
-    "message": "Remove empty folders afterwards"
+    "message": "Automatically clean up old folders afterwards"
   },
   "prefsCleanBody": {
     "message": "This also covers parents that become empty once their subfolders are cleared. Scope roots are never deleted. Undo restores the folders too."

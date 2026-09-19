@@ -221,6 +221,34 @@ describe('rebuild structure workflow', () => {
     expect(prompts[0]).not.toContain('If none fit, return null and include a concise topic')
   })
 
+  it('把没有识别结果的书签放入结构草案中的「其他」', async () => {
+    const { ports } = await setupClassification()
+    const client: LlmClient = {
+      complete: vi.fn(async (prompt: string) => {
+        const ids = [...prompt.matchAll(/"bookmark_id": "([^"]+)"/g)].map((match) => match[1]!)
+        return {
+          results: ids.map((bookmark_id) => ({
+            bookmark_id,
+            target_category_id: bookmark_id === '100' ? null : 'tmp:1',
+            confidence: bookmark_id === '100' ? 0 : 0.9,
+            reason: bookmark_id === '100' ? 'no suitable folder' : 'belongs here',
+          })),
+        }
+      }),
+    }
+
+    const response = await handle(
+      ports,
+      { kind: 'classify_structure', draft: draftFor(), edits: EMPTY_EDITS } as never,
+      { createClient: () => client, now: () => 2 },
+    ) as { ok: true; kind: 'classify_structure'; plan: OrganizePlan }
+
+    expect(response.plan.rows.find((row) => row.bookmarkId === '100')).toMatchObject({
+      toCategoryId: 'tmp:2', toPath: ['02 Other'],
+    })
+    expect(response.plan.unchanged).toEqual([])
+  })
+
   it('accepts title, path, and index changes and builds the plan from the fresh scan items', async () => {
     const { fake, ports } = await setupClassification()
     const freshFolder = await fake.api.create({ parentId: '1', title: 'Fresh' })
