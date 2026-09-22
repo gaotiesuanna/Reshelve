@@ -49,7 +49,7 @@ export function SettingsPanel() {
   }
 
   return (
-    <div className="space-y-6">
+    <div className="mx-auto w-full max-w-[54rem] space-y-6">
       {/* 模型配置摆最前：新用户来设置页就是为了它。
           标题已经在 Shell 头部和返回同一行，这里不再写一遍。
           外框去掉：端点卡自己有边，再套一层就是框套框。 */}
