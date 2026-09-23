@@ -60,7 +60,7 @@ describe('SettingsPanel 分类参数', () => {
     // 数字框」的形态——比如一个光杆复选框，那正是被撤掉的 enforceMinFolderSize 的样子
     expect(container.querySelectorAll('section')).toHaveLength(3)
     const headings = [...container.querySelectorAll('h3')].map((h) => h.textContent)
-    expect(headings).toEqual([t('settingsModelTitle'), t('settingsLangTitle')])
+    expect(headings).toEqual([t('settingsLangTitle'), t('settingsModelTitle')])
   })
 
   it('设置页里一个数字旋钮都没有——这几个数字用户无从判断，一律由书签量推导', () => {

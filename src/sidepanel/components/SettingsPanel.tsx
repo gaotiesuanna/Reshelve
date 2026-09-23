@@ -50,9 +50,28 @@ export function SettingsPanel() {
 
   return (
     <div className="mx-auto w-full max-w-[54rem] space-y-6">
-      {/* 模型配置摆最前：新用户来设置页就是为了它。
-          标题已经在 Shell 头部和返回同一行，这里不再写一遍。
-          外框去掉：端点卡自己有边，再套一层就是框套框。 */}
+      <section className="space-y-1">
+        <div className="flex items-center gap-3">
+          <h3 className="shrink-0 text-base leading-body font-medium">{t('settingsLangTitle')}</h3>
+          <select
+            className="ml-auto min-w-[8rem] w-[min(13rem,100%)] min-h-8 cursor-pointer rounded-index border border-index-line-strong bg-index-surface px-2.5 text-base leading-body focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-index-accent"
+            aria-label={t('settingsLangTitle')}
+            value={settings.uiLocale}
+            onChange={(e) =>
+              void setSettings({ ...settings, uiLocale: e.target.value as Settings['uiLocale'] })
+            }
+          >
+            <option value="auto">{t('settingsLangAuto')}</option>
+            {/* 语言名用该语言自己的写法，不跟着界面翻译——
+                界面正好是用户看不懂的那种语言时，这是他找回来的唯一线索 */}
+            <option value="zh_CN">中文</option>
+            <option value="en">English</option>
+          </select>
+        </div>
+        <p className="text-sm leading-relaxed text-neutral-500">{t('settingsLangBody')}</p>
+      </section>
+
+      {/* 语言是找回界面的开关，必须出现在端点卡上面；模型配置仍占页面主体；GitHub 标题改书签名字、长说明留最后。 */}
       <section className="space-y-3">
         <h3 className="text-base leading-body font-medium">{t('settingsModelTitle')}</h3>
 
@@ -147,27 +166,6 @@ export function SettingsPanel() {
           {' '}
           {t('settingsPrivacyPayload')}
         </p>
-      </section>
-
-      <section className="space-y-2 border-t border-neutral-200 pt-5">
-        <h3 className="text-base leading-body font-medium">{t('settingsLangTitle')}</h3>
-        <label className="block text-base leading-body">
-          <select
-            className="w-full min-h-8 cursor-pointer rounded-index border border-index-line-strong bg-index-surface px-2.5 text-base leading-body focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-index-accent"
-            aria-label={t('settingsLangTitle')}
-            value={settings.uiLocale}
-            onChange={(e) =>
-              void setSettings({ ...settings, uiLocale: e.target.value as Settings['uiLocale'] })
-            }
-          >
-            <option value="auto">{t('settingsLangAuto')}</option>
-            {/* 语言名用该语言自己的写法，不跟着界面翻译——
-                界面正好是用户看不懂的那种语言时，这是他找回来的唯一线索 */}
-            <option value="zh_CN">中文</option>
-            <option value="en">English</option>
-          </select>
-        </label>
-        <p className="text-sm leading-relaxed text-neutral-500">{t('settingsLangBody')}</p>
       </section>
 
       {/* 统一 GitHub 标题改的是书签自己的名字，不是「这一轮怎么整理」，所以不在偏好页 */}
