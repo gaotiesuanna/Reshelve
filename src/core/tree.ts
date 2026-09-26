@@ -5,7 +5,7 @@ import type { NewFolderSpec, RenameFolderSpec } from './plan'
 import type { CategoryCandidate, TagResult } from './types'
 
 /** 同一层最多允许的目录数量。目录集合由 llm/folders.ts 设计，这里只做兜底截断。 */
-export const MAX_SIBLINGS = 12
+export const MAX_SIBLINGS = 17
 /** 兜底目录名，会真的建进用户书签栏，必须双语。 */
 export const FALLBACK_TITLE: Record<Locale, string> = { zh_CN: '其他', en: 'Other' }
 

@@ -4,6 +4,7 @@ import userEvent from '@testing-library/user-event'
 import { StructureStep } from '@/sidepanel/steps/StructureStep'
 import { useStore } from '@/sidepanel/store'
 import { EMPTY_EDITS, type StructureDraft } from '@/core/structure'
+import { MAX_SIBLINGS } from '@/core/tree'
 import type { CategoryCandidate, OrganizePlan } from '@/core/types'
 import { makePlan } from '../fakes/plan'
 
@@ -174,13 +175,13 @@ describe('StructureStep', () => {
 
   it('超过建议的同层数量只提示警告，不阻断确认', () => {
     setupPlan([
-      ...Array.from({ length: 12 }, (_, index) => ({ id: `tmp:${index + 1}`, title: `类型${index + 1}` })),
+      ...Array.from({ length: MAX_SIBLINGS }, (_, index) => ({ id: `tmp:${index + 1}`, title: `类型${index + 1}` })),
       { id: 'tmp:fallback', title: '其他' },
     ])
     useStore.getState().addStructureNode()
     render(<StructureStep />)
 
-    expect(screen.getByText(/建议不超过 12 个/)).toBeTruthy()
+    expect(screen.getByText(new RegExp(`建议不超过 ${MAX_SIBLINGS} 个`))).toBeTruthy()
     expect((screen.getByRole('button', { name: /确认结构并开始分类/ }) as HTMLButtonElement).disabled).toBe(false)
   })
 

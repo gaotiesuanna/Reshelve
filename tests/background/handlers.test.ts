@@ -894,11 +894,12 @@ describe('handle', () => {
   })
 
   // review M4：超过同层上限（MAX_SIBLINGS）被压下的主题此前完全沉默，用户
-  // 看不出「怎么少了几个目录」。这里造 15 个都够格的主题，验证只建 12 个、
-  // 剩下 3 个被压下时记了一条日志。
+  // 看不出「怎么少了几个目录」。这里造 MAX_SIBLINGS + 3 个都够格的主题，验证
+  // 只建上限个、剩下 3 个被压下时记了一条日志。
   it('簇数超过同层上限时记一条日志，说明有几个主题被压下、没建目录', async () => {
+    const extra = 3
     const bookmarks = []
-    for (let c = 0; c < 15; c++) {
+    for (let c = 0; c < MAX_SIBLINGS + extra; c++) {
       for (let i = 0; i < 3; i++) {
         bookmarks.push({ id: `${c}-${i}`, title: `书签${c}-${i}`, url: `https://x${c}-${i}.dev` })
       }
@@ -1543,14 +1544,14 @@ describe('handle analyze 目录下限', () => {
 
   /**
    * 二级目录（React/Vue）要建得出来，allowChildren 得是 true——而这现在由书签总数
-   * 推导（N > 200 才进两层），不再由「勾选点在第几层」决定，所以这两条子目录下限
-   * 的用例不能再用 6 条书签的夹具：203 条里 React 占 200、Vue 占 3，够上两层，
+   * 推导（N > 300 才进两层），不再由「勾选点在第几层」决定，所以这两条子目录下限
+   * 的用例不能再用 6 条书签的夹具：303 条里 React 占 300、Vue 占 3，够上两层，
    * Vue 在标签阶段又刚好卡在 minFolderSize=3 的线上，让建树那道拦不住它。
    *
    * 标签数够、真实归属不够：模型把这批书签的两个子主题分成了「几乎全 React、只留
    * 1 条给 Vue」，只有数过分类结果才拦得住那 1 条。
    */
-  const REACT_TAG_COUNT = 200
+  const REACT_TAG_COUNT = 300
   const VUE_TAG_COUNT = 3
   const skewedBookmarks = Array.from({ length: REACT_TAG_COUNT + VUE_TAG_COUNT }, (_, i) => ({
     id: `s${i}`, title: `站点${i}`, url: `https://site${i}.dev`,
@@ -3291,8 +3292,8 @@ describe('analyze 的目录形状由书签数推导', () => {
     expect(prompt).toMatch(/不超过 1 个/)
   })
 
-  it('书签多到撑不下一层时才允许二级（250 条）', async () => {
-    const prompt = await designPromptFor(250)
+  it('书签多到撑不下一层时才允许二级（350 条）', async () => {
+    const prompt = await designPromptFor(350)
     expect(prompt).not.toContain('只输出一层')
   })
 
@@ -3306,24 +3307,23 @@ describe('analyze 的目录形状由书签数推导', () => {
     expect(prompt).toMatch(/不超过 3 个/)
   })
 
-  it('存量记录里躺着 maxFolderDepth=1，250 条仍然分得出两层', async () => {
-    // 旧值说只许一层，但 250 条按推导该有两层
-    const prompt = await designPromptFor(250, { maxFolderDepth: 1 })
+  it('存量记录里躺着 maxFolderDepth=1，350 条仍然分得出两层', async () => {
+    // 旧值说只许一层，但 350 条按推导该有两层
+    const prompt = await designPromptFor(350, { maxFolderDepth: 1 })
     expect(prompt).not.toContain('只输出一层')
   })
 
   // 钉住 I1：「其他」加在推导值之上而不是从里面扣，判准 A1（叶子 ≤ 20）才不会被
-  // 顶破。190 条落在复核报告 final-review.md I1 点名的破 A1 区间 [181,200] 内：
-  // deriveShape(190) = { top: 10, depth: 1, leaves: 10 }，topWithFallback = 10。
-  // 旧账（「其他」从推导值里扣）只留 9 个主题槽位，190/9 ≈ 21.1 条会超过 20；
-  // 新账（maxTopFolders = topWithFallback + 1 = 11）留出 10 个主题槽位，
-  // 每个 190/10 = 19 条，不超上限。这里造 10 个大小均匀的主题（各 19 条），
+  // 顶破。285 条：deriveShape(285) = { top: 15, depth: 1 }，topWithFallback = 15。
+  // 旧账（「其他」从推导值里扣）只留 14 个主题槽位，285/14 ≈ 20.4 条会超过 20；
+  // 新账（maxTopFolders = topWithFallback + 1 = 16）留出 15 个主题槽位，
+  // 每个 285/15 = 19 条，不超上限。这里造 15 个大小均匀的主题（各 19 条），
   // 让它们都不被 ranked.slice(0, maxSiblings - 1) 截掉，才是真的在验这件事——
   // 少造几个主题，账目问题再大也测不出来。
-  it('N=190（落在 I1 点名的 [181,200] 破 A1 区间内）：修复后每个叶子目录不超过 20 条', async () => {
-    const TOPIC_COUNT = 10
+  it('N=285：修复后每个叶子目录不超过 20 条（其他加在推导值之上）', async () => {
+    const TOPIC_COUNT = 15
     const PER_TOPIC = 19
-    const total = TOPIC_COUNT * PER_TOPIC // 190
+    const total = TOPIC_COUNT * PER_TOPIC // 285
     const topicOf = (id: string): number => Number(id.slice(1)) % TOPIC_COUNT
 
     const complete = vi.fn(async (prompt: string) => {
@@ -3372,7 +3372,7 @@ describe('analyze 的目录形状由书签数推导', () => {
       if (op.type !== 'move_bookmark' || op.toTemporaryId === null) continue
       countByFolder.set(op.toTemporaryId, (countByFolder.get(op.toTemporaryId) ?? 0) + 1)
     }
-    // 十个主题都真的建出了目录，没有一个被挤进「其他」——这正是修复要保住的那件事
+    // 十五个主题都真的建出了目录，没有一个被挤进「其他」——这正是修复要保住的那件事
     const topicFolderCounts = [...createdIds].filter((id) => countByFolder.has(id)).map((id) => countByFolder.get(id)!)
     expect(topicFolderCounts).toHaveLength(TOPIC_COUNT)
     for (const count of topicFolderCounts) {
@@ -3432,13 +3432,13 @@ describe('analyze 的目录形状由书签数推导', () => {
     expect(line!.message).toContain('实际建出 2 个')
   })
 
-  // N > 1200 时 deriveShape 把三层的分配留空（shape.top === 0、shape.depth === 3，
-  // 都是占位符，见 core/shape.ts 第 59-63 行）。这条覆盖两件事：
+  // N > 2700 时 deriveShape 把三层的分配留空（shape.top === 0、shape.depth === 3，
+  // 都是占位符）。这条覆盖两件事：
   // 1. 兜底确实生效——topWithFallback 退回 SHAPE_MAX_SIBLINGS，不会塌成 0；
   // 2. I2 修复前，日志在这条路径上会打印「0 个一级目录、3 层」，两个数字都不是
-  //    实际发生的事（实际预算 11、实际只建 2 层，allowChildren 只开一层 children，
-  //    不会真的递归出第三层）。修复后应报「11 个一级目录、2 层」。
-  it('N > 1200 走三层兜底：日志报的是生效值（预算 11、2 层），不是推导原始值（0、3）', async () => {
+  //    实际发生的事（实际预算 16、实际只建 2 层，allowChildren 只开一层 children，
+  //    不会真的递归出第三层）。修复后应报「16 个一级目录、2 层」。
+  it('N > 2700 走三层兜底：日志报的是生效值（预算 16、2 层），不是推导原始值（0、3）', async () => {
     const complete = vi.fn(async (prompt: string) => {
       const bookmarkIds = [...prompt.matchAll(/"bookmark_id":\s*"([^"]+)"/g)].map((m) => m[1]!)
       if (prompt.includes('标签清单')) {
@@ -3456,7 +3456,7 @@ describe('analyze 的目录形状由书签数推导', () => {
     })
     const fake = createFakeBookmarks([{ id: '0', title: '', children: [
       { id: '1', title: '书签栏', children: [
-        { id: '10', title: '收件箱', children: Array.from({ length: 1300 }, (_, i) => (
+        { id: '10', title: '收件箱', children: Array.from({ length: 2701 }, (_, i) => (
           { id: `b${i}`, title: `书签 b${i}`, url: `https://b${i}.dev` }
         )) },
       ]},
@@ -3474,7 +3474,7 @@ describe('analyze 的目录形状由书签数推导', () => {
 
     const line = events.find((e) => e.message.includes('推导'))
     expect(line).toBeDefined()
-    expect(line!.message).toContain('11 个一级目录')
+    expect(line!.message).toContain('16 个一级目录')
     expect(line!.message).toContain('2 层')
     expect(line!.message).not.toContain('0 个一级目录')
     expect(line!.message).not.toContain('3 层')
@@ -3751,7 +3751,7 @@ describe('下切预算跟着库规模走', () => {
   // 这几条钉住「它跟着规模走」，免得哪天有人把它改回一个常数而没人发现。
   it('小库仍是下限 20，不因为叶子少就把顶压到不够用', () => {
     expect(deepenBudget(1)).toBe(20)
-    expect(deepenBudget(10)).toBe(20)   // N≈123 的真实库就是 10 个叶子
+    expect(deepenBudget(10)).toBe(20)
     expect(deepenBudget(20)).toBe(20)
   })
 

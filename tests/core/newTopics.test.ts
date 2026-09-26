@@ -205,7 +205,8 @@ describe('planNewFolders', () => {
   })
 
   it('簇数超过同层上限时只取最大的那些，超出的数量报给调用方', () => {
-    const many = Array.from({ length: 15 }, (_, i) => ({
+    const extra = 3
+    const many = Array.from({ length: MAX_SIBLINGS + extra }, (_, i) => ({
       key: `k${i}`, title: `T${i}`, bookmarkIds: [`${i}a`, `${i}b`, `${i}c`],
     }))
     const manyNames = new Map(many.map((c) => [c.key, c.title]))
@@ -214,7 +215,7 @@ describe('planNewFolders', () => {
       folders: [folder('root', '书签栏', null)], classifications: [], locale: 'zh_CN',
     })
     expect(out.newFolders).toHaveLength(MAX_SIBLINGS)
-    expect(out.truncatedCount).toBe(15 - MAX_SIBLINGS)
+    expect(out.truncatedCount).toBe(extra)
   })
 
   it('没有簇时什么都不产出', () => {
