@@ -3,7 +3,7 @@ import {
   clusterHomeless, dropAlreadyGrouped, MIN_NEW_FOLDER_SIZE, planFallbackFolder, planNewFolders,
 } from '@/core/newTopics'
 import type { NewFolderSpec } from '@/core/plan'
-import { MAX_SIBLINGS } from '@/core/tree'
+import { MAX_SIBLINGS } from '@/core/config'
 import type { BookmarkItem, CategoryCandidate, Classification, FolderItem } from '@/core/types'
 
 function homeless(id: string, topic?: string): Classification {

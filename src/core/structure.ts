@@ -1,7 +1,8 @@
 import type { Locale } from './locale'
 import { normalizeName, stripNumberPrefix } from './map'
 import type { FolderMoveSpec, NewFolderSpec, RenameFolderSpec } from './plan'
-import { FALLBACK_TITLE, MAX_SIBLINGS } from './tree'
+import { MAX_SIBLINGS } from './config'
+import { FALLBACK_TITLE } from './tree'
 import type {
   CategoryCandidate,
   OrganizePlan,

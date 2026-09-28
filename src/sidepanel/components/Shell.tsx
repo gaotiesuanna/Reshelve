@@ -201,21 +201,29 @@ export function Shell({ children, organizeContent }: { children: ReactNode; orga
           </div>
         </div>
       )}
+      {/* 角上小条容易被顶栏和日志挤掉。居中放大并衬一层遮罩，关掉才能继续看结构。 */}
       {!settingsOpen && showStructureReadyNotice && (
         <div
-          data-testid="structure-ready-notice"
-          role="alert"
-          className="fixed right-4 top-4 z-50 flex max-w-[min(24rem,calc(100vw-2rem))] items-start gap-3 rounded-index border border-index-accent/35 bg-index-surface px-4 py-3 text-sm text-index-ink shadow-[var(--index-shadow-soft)]"
+          data-testid="structure-ready-notice-scrim"
+          className="fixed inset-0 z-50 flex cursor-pointer items-center justify-center bg-black/30 p-4"
+          onClick={() => setShowStructureReadyNotice(false)}
         >
-          <p className="min-w-0 flex-1 leading-body">{t('structureReadyNotice')}</p>
-          <button
-            type="button"
-            aria-label={t('structureReadyDismiss')}
-            className="-mr-1 -mt-1 inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-md text-index-muted transition-colors hover:bg-index-accent-soft hover:text-index-ink focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-index-accent focus-visible:ring-offset-1 motion-reduce:transition-none"
-            onClick={() => setShowStructureReadyNotice(false)}
+          <div
+            data-testid="structure-ready-notice"
+            role="alert"
+            className="flex w-full max-w-lg cursor-auto items-start gap-4 rounded-[calc(var(--index-radius)+4px)] border border-index-accent bg-index-surface px-6 py-5 text-title font-semibold leading-title text-index-ink shadow-[var(--index-shadow-soft)]"
+            onClick={(event) => event.stopPropagation()}
           >
-            <CloseIcon className="h-4 w-4" />
-          </button>
+            <p className="min-w-0 flex-1">{t('structureReadyNotice')}</p>
+            <button
+              type="button"
+              aria-label={t('structureReadyDismiss')}
+              className="-mr-1 -mt-0.5 inline-flex h-8 w-8 shrink-0 cursor-pointer items-center justify-center rounded-md text-index-muted transition-colors hover:bg-index-accent-soft hover:text-index-ink focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-index-accent focus-visible:ring-offset-1 motion-reduce:transition-none"
+              onClick={() => setShowStructureReadyNotice(false)}
+            >
+              <CloseIcon className="h-5 w-5" />
+            </button>
+          </div>
         </div>
       )}
       <main className={tabView

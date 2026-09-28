@@ -17,8 +17,7 @@ import {
 import { NO_TOPIC } from '@/llm/tags'
 import type { TagResult } from '@/core/types'
 import type { LlmClient } from '@/llm/client'
-import { MAX_SIBLINGS } from '@/core/tree'
-import { SHAPE_MAX_SIBLINGS } from '@/core/shape'
+import { MAX_SIBLINGS, SHAPE_MAX_SIBLINGS } from '@/core/config'
 
 function tag(bookmarkId: string, primaryTopic: string): TagResult {
   return { bookmarkId, primaryTopic, secondaryTopic: null }

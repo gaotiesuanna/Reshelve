@@ -512,6 +512,34 @@ describe('Shell 的进度条按模式各管各的', () => {
     expect(screen.getByRole('button', { name: '关闭' })).toBeDefined()
   })
 
+  it('点关闭后结构就绪提示消失', async () => {
+    useStore.setState({
+      step: 'structure',
+      structureDraft: {} as unknown as StructureDraft,
+      plan: null,
+      busy: null,
+      error: null,
+    })
+    render(<Shell organizeContent={<div>结构编辑器</div>}>{null}</Shell>)
+    await userEvent.click(screen.getByRole('button', { name: '关闭' }))
+    expect(screen.queryByTestId('structure-ready-notice')).toBeNull()
+  })
+
+  it('点遮罩关闭结构就绪提示，点卡片本身不关', async () => {
+    useStore.setState({
+      step: 'structure',
+      structureDraft: {} as unknown as StructureDraft,
+      plan: null,
+      busy: null,
+      error: null,
+    })
+    render(<Shell organizeContent={<div>结构编辑器</div>}>{null}</Shell>)
+    await userEvent.click(screen.getByTestId('structure-ready-notice'))
+    expect(screen.getByTestId('structure-ready-notice')).toBeDefined()
+    await userEvent.click(screen.getByTestId('structure-ready-notice-scrim'))
+    expect(screen.queryByTestId('structure-ready-notice')).toBeNull()
+  })
+
   it('偏好页不会因为扫描完成而显示通用已完成条', () => {
     useStore.setState({
       step: 'preferences',

@@ -5,7 +5,7 @@ import {
 } from '@/core/audit'
 import type { CollapseInput } from '@/core/audit'
 import type { NewFolderSpec } from '@/core/plan'
-import { MAX_LEAF } from '@/core/shape'
+import { MAX_LEAF } from '@/core/config'
 import type { EstimatedAssignment } from '@/core/structure'
 import type { CategoryCandidate, Classification } from '@/core/types'
 

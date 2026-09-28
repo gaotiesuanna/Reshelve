@@ -1,5 +1,6 @@
 import { describe, it, expect } from 'vitest'
-import { deriveShape, MAX_LEAF, STRETCH_LEAF, SWEET_LEAF, SHAPE_MAX_SIBLINGS } from '@/core/shape'
+import { MAX_LEAF, STRETCH_LEAF, SWEET_LEAF, SHAPE_MAX_SIBLINGS } from '@/core/config'
+import { deriveShape } from '@/core/shape'
 
 describe('deriveShape', () => {
   it('书签少时一层就够，目录数按甜点 12 算', () => {

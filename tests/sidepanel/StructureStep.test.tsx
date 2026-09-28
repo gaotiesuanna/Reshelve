@@ -4,7 +4,7 @@ import userEvent from '@testing-library/user-event'
 import { StructureStep } from '@/sidepanel/steps/StructureStep'
 import { useStore } from '@/sidepanel/store'
 import { EMPTY_EDITS, type StructureDraft } from '@/core/structure'
-import { MAX_SIBLINGS } from '@/core/tree'
+import { MAX_SIBLINGS } from '@/core/config'
 import type { CategoryCandidate, OrganizePlan } from '@/core/types'
 import { makePlan } from '../fakes/plan'
 

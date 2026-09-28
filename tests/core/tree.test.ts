@@ -1,5 +1,6 @@
 import { describe, it, expect } from 'vitest'
-import { buildCategoryTree, stripNumberPrefix, MAX_SIBLINGS } from '@/core/tree'
+import { MAX_SIBLINGS } from '@/core/config'
+import { buildCategoryTree, stripNumberPrefix } from '@/core/tree'
 import type { BuildTreeInput, BuildTreeOutput, ExistingFolder } from '@/core/tree'
 import type { TagResult } from '@/core/types'
 

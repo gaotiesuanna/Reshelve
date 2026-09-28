@@ -1,7 +1,6 @@
 import { describe, it, expect } from 'vitest'
 import { measureTopSiblings } from '@/core/audit'
-import { MAX_SIBLINGS } from '@/core/tree'
-import { SHAPE_MAX_SIBLINGS } from '@/core/shape'
+import { MAX_SIBLINGS, SHAPE_MAX_SIBLINGS } from '@/core/config'
 import type { CategoryCandidate } from '@/core/types'
 
 function tops(n: number): CategoryCandidate[] {

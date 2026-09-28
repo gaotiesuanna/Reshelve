@@ -13,7 +13,8 @@ import {
 import type { Locale } from '@/core/locale'
 import { buildPlan, type FolderMoveSpec, type NewFolderSpec } from '@/core/plan'
 import { MIN_FOLDER_BOOKMARKS, pruneSmallFolders } from '@/core/prune'
-import { FALLBACK_SHARE_LIMIT, MAX_LEAF, SHAPE_MAX_SIBLINGS, deriveShape } from '@/core/shape'
+import { FALLBACK_SHARE_LIMIT, MAX_LEAF, SHAPE_MAX_SIBLINGS, MAX_SIBLINGS as PRODUCT_MAX_SIBLINGS } from '@/core/config'
+import { deriveShape } from '@/core/shape'
 import { planTitleRewrites } from '@/core/titles'
 import {
   applyStructureEditsToDraft,
@@ -23,7 +24,7 @@ import {
   type StructureDraft,
   type StructureEdits,
 } from '@/core/structure'
-import { buildCategoryTree, FALLBACK_TITLE, MAX_SIBLINGS as PRODUCT_MAX_SIBLINGS } from '@/core/tree'
+import { buildCategoryTree, FALLBACK_TITLE } from '@/core/tree'
 import type {
   BookmarkItem,
   CachedClassification,

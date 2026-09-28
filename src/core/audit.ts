@@ -2,8 +2,8 @@ import type { Locale } from './locale'
 import { normalizeName, stripNumberPrefix } from './map'
 import type { FolderMoveSpec, NewFolderSpec } from './plan'
 import { MIN_FOLDER_BOOKMARKS } from './prune'
-import { FALLBACK_TITLE, MAX_SIBLINGS as PRODUCT_MAX_SIBLINGS } from './tree'
-import { MAX_LEAF, SHAPE_MAX_SIBLINGS } from './shape'
+import { FALLBACK_TITLE } from './tree'
+import { MAX_LEAF, SHAPE_MAX_SIBLINGS, MAX_SIBLINGS as PRODUCT_MAX_SIBLINGS } from './config'
 import type { CategoryCandidate, Classification, TagResult } from './types'
 
 export interface TargetAssignment {
@@ -294,8 +294,8 @@ export interface TopSiblings {
   count: number
   /**
    * 越了哪一档。两档性质不同，报给用户时不能含糊成一句「目录有点多」：
-   * - `judgment`：超过判准 A3 的 SHAPE_MAX_SIBLINGS(15)，但产品的建树闸放得过；
-   * - `product`：连 core/tree.ts 的 MAX_SIBLINGS(17) 都越了——那是建树阶段的最后兜底，
+   * - `judgment`：超过判准 A3 的 SHAPE_MAX_SIBLINGS，但产品的建树闸放得过；
+   * - `product`：连 core/config.ts 的 MAX_SIBLINGS 都越了——那是建树阶段的最后兜底，
    *   走到这一步说明这个形状是**验算阶段造出来的**，建树期的闸根本没看见它。
    */
   tier: 'judgment' | 'product'
