@@ -239,107 +239,8 @@ describe('pruneSmallFolders', () => {
     })
     expect(titles(result.newFolders)).toEqual(['02 其他'])
   })
-})
 
-describe('pruneSmallFolders 的待定名单', () => {
-  it('并进「其他」的书签进待定名单，带上原目录名与当时的书签数', () => {
-    const candidates = [
-      { id: 'tmp:1', path: ['01 语音识别'] },
-      { id: 'tmp:2', path: ['02 语音识别与声纹'] },
-      { id: 'tmp:9', path: ['其他'] },
-    ]
-    const newFolders = [
-      { temporaryId: 'tmp:1', parentId: '1', parentTemporaryId: null, title: '01 语音识别' },
-      { temporaryId: 'tmp:2', parentId: '1', parentTemporaryId: null, title: '02 语音识别与声纹' },
-      { temporaryId: 'tmp:9', parentId: '1', parentTemporaryId: null, title: '其他' },
-    ]
-    const classifications = [
-      { bookmarkId: 'a', targetCategoryId: 'tmp:1', confidence: 0.9, reason: 'r', source: 'llm' as const },
-      { bookmarkId: 'b', targetCategoryId: 'tmp:1', confidence: 0.9, reason: 'r', source: 'llm' as const },
-      { bookmarkId: 'c', targetCategoryId: 'tmp:2', confidence: 0.9, reason: 'r', source: 'llm' as const },
-      { bookmarkId: 'd', targetCategoryId: 'tmp:2', confidence: 0.9, reason: 'r', source: 'llm' as const },
-      { bookmarkId: 'e', targetCategoryId: 'tmp:2', confidence: 0.9, reason: 'r', source: 'llm' as const },
-      // 「其他」自己也要够数，才不会在吸收 a/b 之后被判定阶段二次撤销——
-      // 现实场景里「其他」本就装着别处分不进去的一堆书签
-      { bookmarkId: 'z', targetCategoryId: 'tmp:9', confidence: 0.9, reason: 'r', source: 'llm' as const },
-    ]
-    const result = pruneSmallFolders({
-      candidates, newFolders, classifications, minFolderSize: 3, locale: 'zh_CN',
-    })
-
-    expect(result.pending.map((p) => p.bookmarkId).sort()).toEqual(['a', 'b'])
-    // 原目录名剥掉编号——它要拼进给用户看的理由
-    expect(result.pending[0]!).toMatchObject({ fromTitle: '语音识别', count: 2 })
-    expect(result.fallbackId).toBe('tmp:9')
-  })
-
-  it('被父目录接住的书签不进待定名单——那是结构上说得通的去处', () => {
-    const candidates = [
-      { id: 'tmp:1', path: ['01 前端'] },
-      { id: 'tmp:2', path: ['01 前端', '01 构建工具'] },
-    ]
-    const newFolders = [
-      { temporaryId: 'tmp:1', parentId: '1', parentTemporaryId: null, title: '01 前端' },
-      { temporaryId: 'tmp:2', parentId: '1', parentTemporaryId: 'tmp:1', title: '01 构建工具' },
-    ]
-    const classifications = [
-      { bookmarkId: 'a', targetCategoryId: 'tmp:2', confidence: 0.9, reason: 'r', source: 'llm' as const },
-      { bookmarkId: 'b', targetCategoryId: 'tmp:1', confidence: 0.9, reason: 'r', source: 'llm' as const },
-      { bookmarkId: 'c', targetCategoryId: 'tmp:1', confidence: 0.9, reason: 'r', source: 'llm' as const },
-    ]
-    const result = pruneSmallFolders({
-      candidates, newFolders, classifications, minFolderSize: 3, locale: 'zh_CN',
-    })
-
-    expect(result.pending).toEqual([])
-  })
-
-  it('无处可去（没有「其他」）的书签也进待定名单', () => {
-    const candidates = [{ id: 'tmp:1', path: ['01 语音识别'] }]
-    const newFolders = [
-      { temporaryId: 'tmp:1', parentId: '1', parentTemporaryId: null, title: '01 语音识别' },
-    ]
-    const classifications = [
-      { bookmarkId: 'a', targetCategoryId: 'tmp:1', confidence: 0.9, reason: 'r', source: 'llm' as const },
-    ]
-    const result = pruneSmallFolders({
-      candidates, newFolders, classifications, minFolderSize: 3, locale: 'zh_CN',
-    })
-
-    expect(result.pending.map((p) => p.bookmarkId)).toEqual(['a'])
-    expect(result.fallbackId).toBeNull()
-  })
-
-  it('同一条书签被撤两次时只留最后一次——理由要讲它最后待过的那个目录', () => {
-    // tmp:2 撤进父目录 tmp:1，tmp:1 自己也不够，再撤进「其他」
-    const candidates = [
-      { id: 'tmp:1', path: ['01 前端'] },
-      { id: 'tmp:2', path: ['01 前端', '01 构建工具'] },
-      { id: 'tmp:9', path: ['其他'] },
-    ]
-    const newFolders = [
-      { temporaryId: 'tmp:1', parentId: '1', parentTemporaryId: null, title: '01 前端' },
-      { temporaryId: 'tmp:2', parentId: '1', parentTemporaryId: 'tmp:1', title: '01 构建工具' },
-      { temporaryId: 'tmp:9', parentId: '1', parentTemporaryId: null, title: '其他' },
-    ]
-    const classifications = [
-      { bookmarkId: 'a', targetCategoryId: 'tmp:2', confidence: 0.9, reason: 'r', source: 'llm' as const },
-      // 同上：「其他」自己得够数，才不会把 a 再撤一轮、盖掉它「最后待过前端」的记录
-      { bookmarkId: 'y1', targetCategoryId: 'tmp:9', confidence: 0.9, reason: 'r', source: 'llm' as const },
-      { bookmarkId: 'y2', targetCategoryId: 'tmp:9', confidence: 0.9, reason: 'r', source: 'llm' as const },
-    ]
-    const result = pruneSmallFolders({
-      candidates, newFolders, classifications, minFolderSize: 3, locale: 'zh_CN',
-    })
-
-    expect(result.pending).toHaveLength(1)
-    expect(result.pending[0]!).toMatchObject({ bookmarkId: 'a', fromTitle: '前端' })
-  })
-
-  // I2：正在撤的如果是「其他」自己，名单里已经记着的 fromTitle 不能被覆盖——
-  // 用户从没见过「其他」（它最终也不会被建出来），改判理由要点名的是他认识的
-  // 那个第一跳目录，不是「其他」
-  it('「其他」自己也被撤时，名单保留级联前那个真实目录名，不被改写成「其他」', () => {
+  it('子目录撤进「其他」后「其他」自己也不够数，级联撤掉，书签退回原位', () => {
     const candidates = [
       { id: 't1', path: ['01 语音识别'] },
       { id: 't9', path: ['其他'] },
@@ -353,15 +254,9 @@ describe('pruneSmallFolders 的待定名单', () => {
       candidates, newFolders, classifications, minFolderSize: 3, locale: 'zh_CN',
     })
 
-    // 「其他」自己也只装得下这 2 条，级联被撤，书签退回原位
-    expect(result.fallbackId).toBe('t9')
+    expect(result.newFolders).toEqual([])
     expect(targetOf(result, 'a')).toBeNull()
     expect(targetOf(result, 'b')).toBeNull()
-    // 名单里记的仍是级联前那个真实目录名，不是最后经过的「其他」
-    expect(result.pending.map((p) => p.bookmarkId).sort()).toEqual(['a', 'b'])
-    expect(result.pending.find((p) => p.bookmarkId === 'a')).toMatchObject({
-      fromTitle: '语音识别', count: 2,
-    })
   })
 })
 

@@ -202,8 +202,8 @@ export interface FallbackFolderRef {
  * - **剔光了就不剔**。一个候选都不剩的提示词只会换回一堆 null，白花一轮钱，
  *   还不如让「其他」留着当唯一的去处。
  *
- * 推翻重建模式不调用它：那条路的「其他」是 core/tree.ts 刚建出来的收容所，
- * 模型必须选得中——它后面还有 prune 二次判定专门把掉进去的书签再捞一次。
+ * 推翻重建模式不调用它：那条路的「其他」是 core/tree.ts 刚建出来、用户确认过的
+ * 收容所，模型必须选得中——确认后结构冻结，分类不出去的书签没有别的去处。
  */
 export function dropFallbackFromCandidates(
   candidates: CategoryCandidate[],

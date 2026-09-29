@@ -2183,22 +2183,6 @@
     "message": "一级目录有 $count$ 个，连 $limit$ 个的硬上限都越过了——建议回头合并几个相近的主题",
     "placeholders": { "count": { "content": "$1" }, "limit": { "content": "$2" } }
   },
-  "logRehomeStart": {
-    "message": "$count$ 本书签的目录被撤，正在为它们找存活目录里最合适的去处",
-    "placeholders": {
-      "count": {
-        "content": "$1"
-      }
-    }
-  },
-  "logRehomeDone": {
-    "message": "其中 $count$ 本找到了更合适的目录，其余留在原去处",
-    "placeholders": {
-      "count": {
-        "content": "$1"
-      }
-    }
-  },
   "logMergeNamed": {
     "message": "合并目录命名为「$name$」",
     "placeholders": {
