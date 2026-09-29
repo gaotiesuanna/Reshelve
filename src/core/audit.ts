@@ -175,6 +175,94 @@ export function collapseSameNameFolders<T extends TargetAssignment>(
   return { candidates, newFolders, classifications, collapsedTitles }
 }
 
+export interface FlattenInput<T extends TargetAssignment = Classification> {
+  candidates: CategoryCandidate[]
+  newFolders: NewFolderSpec[]
+  classifications: T[]
+  locale: Locale
+  /** 合并模式下容器目录的临时 id。它是容器不是分类，只有一个子目录也不压。 */
+  mergeRootTemporaryId?: string | null
+  /** 用户在结构页新增的类型。他明确要这个目录，不被并掉。 */
+  keepIds?: ReadonlySet<string>
+}
+
+export interface FlattenResult<T extends TargetAssignment = Classification> {
+  candidates: CategoryCandidate[]
+  newFolders: NewFolderSpec[]
+  classifications: T[]
+  /** 被并掉的子目录名（带编号），供日志与排查。 */
+  flattenedTitles: string[]
+}
+
+/** 压平后的理由会原样显示在结果页，必须双语，且讲的是「为什么没进那个子目录」。 */
+export function flattenReason(locale: Locale, childTitle: string, parentTitle: string): string {
+  return locale === 'zh_CN'
+    ? `「${childTitle}」是「${parentTitle}」下唯一的子目录，多分这一层没有区分度，已并入「${parentTitle}」`
+    : `"${childTitle}" was the only subfolder of "${parentTitle}", so the extra level told nothing apart and it was merged into "${parentTitle}"`
+}
+
+/**
+ * 压平「新建父目录下只剩一个子目录」的空转层。
+ *
+ * 为什么会出现：下切切出几个子目录，其中几个装不满被 prune 撤回父目录，剩一个；
+ * 或者确认后逐条分类把书签都送进了同一个子目录。父目录自己又不直接装书签时，
+ * 用户点开父目录只看见一个子目录，这一层不承载任何区分度——与 expandFolder
+ * 放弃单桶下切是同一条理由。
+ *
+ * 保留父目录、并掉子目录：父目录是一级主题，名字更宽、编号位次不变。
+ *
+ * 四条不碰：父目录不是本轮新建的（用户的目录，他下面挂什么是他的安排）、合并容器、
+ * 子目录在 keepIds 里、子目录自己还有子目录。「一个子目录 + 父目录有留守」也不碰——
+ * 那是真划分。子目录已经过了 prune，父目录接住它全部书签后不会装不满，跑一遍即可。
+ */
+export function flattenSingleChildFolders<T extends TargetAssignment>(
+  input: FlattenInput<T>,
+): FlattenResult<T> {
+  const specById = new Map(input.newFolders.map((f) => [f.temporaryId, f]))
+  const candidateById = new Map(input.candidates.map((c) => [c.id, c]))
+  const childrenOf = (id: string): NewFolderSpec[] =>
+    input.newFolders.filter((f) => f.parentTemporaryId === id)
+  const directCount = new Map<string, number>()
+  for (const assignment of input.classifications) {
+    if (assignment.targetCategoryId === null) continue
+    directCount.set(assignment.targetCategoryId, (directCount.get(assignment.targetCategoryId) ?? 0) + 1)
+  }
+
+  const mergedInto = new Map<string, string>()
+  const reasonByChild = new Map<string, string>()
+  const flattenedTitles: string[] = []
+  for (const parent of input.newFolders) {
+    if (parent.temporaryId === (input.mergeRootTemporaryId ?? null)) continue
+    if ((directCount.get(parent.temporaryId) ?? 0) > 0) continue
+    const children = childrenOf(parent.temporaryId)
+    if (children.length !== 1) continue
+    const only = children[0]!
+    if (input.keepIds?.has(only.temporaryId) === true) continue
+    if (childrenOf(only.temporaryId).length > 0) continue
+
+    mergedInto.set(only.temporaryId, parent.temporaryId)
+    flattenedTitles.push(only.title)
+    const title = (id: string): string =>
+      stripNumberPrefix(candidateById.get(id)?.path.at(-1) ?? specById.get(id)?.title ?? '')
+    reasonByChild.set(only.temporaryId, flattenReason(input.locale, title(only.temporaryId), title(parent.temporaryId)))
+  }
+
+  const classifications = input.classifications.map((assignment) => {
+    const parentId = mergedInto.get(assignment.targetCategoryId ?? '')
+    if (parentId === undefined) return { ...assignment }
+    return rewriteClassificationReason(
+      { ...assignment, targetCategoryId: parentId },
+      reasonByChild.get(assignment.targetCategoryId!)!,
+    )
+  })
+  return {
+    candidates: input.candidates.filter((c) => !mergedInto.has(c.id)),
+    newFolders: input.newFolders.filter((f) => !mergedInto.has(f.temporaryId)),
+    classifications,
+    flattenedTitles,
+  }
+}
+
 /** 判「是不是范围根下那个『其他』」要的两个字段。 */
 export interface FallbackFolderRef {
   id: string

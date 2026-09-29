@@ -437,4 +437,138 @@ describe('rebuild structure workflow', () => {
 
     expect(response).toMatchObject({ ok: false, cancelled: true })
   })
+
+  describe('分类后收拢装不满的新目录', () => {
+    /** 按书签 id 指定分类去向；记下每次分类请求。 */
+    function routeClient(route: Record<string, string | null>, prompts: string[] = []): LlmClient {
+      return {
+        complete: vi.fn(async (prompt: string) => {
+          prompts.push(prompt)
+          const ids = [...prompt.matchAll(/"bookmark_id": "([^"]+)"/g)].map((match) => match[1]!)
+          return {
+            results: ids.map((bookmark_id) => ({
+              bookmark_id,
+              target_category_id: route[bookmark_id] ?? null,
+              confidence: 0.9,
+              reason: 'belongs here',
+            })),
+          }
+        }),
+      }
+    }
+
+    const top = (id: string, title: string) =>
+      ({ temporaryId: id, parentTemporaryId: null, parentId: '1', title })
+    const sub = (id: string, parent: string, title: string) =>
+      ({ temporaryId: id, parentTemporaryId: parent, parentId: null, title })
+
+    async function classify(
+      draft: StructureDraft,
+      route: Record<string, string | null>,
+      edits: StructureEdits = EMPTY_EDITS,
+      prompts: string[] = [],
+    ): Promise<OrganizePlan> {
+      const { ports } = await setupClassification(classificationTree({ count: draft.totalBookmarks }))
+      const response = await handle(
+        ports,
+        { kind: 'classify_structure', draft, edits } as never,
+        { createClient: () => routeClient(route, prompts), now: () => 2 },
+      )
+      if (!response.ok || response.kind !== 'classify_structure') {
+        throw new Error(`expected a plan, got ${JSON.stringify(response)}`)
+      }
+      return response.plan
+    }
+
+    const targetOf = (plan: OrganizePlan, bookmarkId: string) =>
+      plan.rows.find((row) => row.bookmarkId === bookmarkId)?.toCategoryId
+
+    it('预计够数、实际只收到 1 条的新一级目录不建，书签进「其他」且不重问模型', async () => {
+      const draft = draftFor(5, {
+        candidates: [
+          { id: 'tmp:1', path: ['01 Frontend'] },
+          { id: 'tmp:3', path: ['02 Backend'] },
+          { id: 'tmp:2', path: ['03 Other'] },
+        ],
+        newFolders: [top('tmp:1', '01 Frontend'), top('tmp:3', '02 Backend'), top('tmp:2', '03 Other')],
+      })
+      const prompts: string[] = []
+      const plan = await classify(draft, {
+        100: 'tmp:1', 101: 'tmp:1', 102: 'tmp:1', 103: 'tmp:1', 104: 'tmp:3',
+      }, EMPTY_EDITS, prompts)
+
+      expect(plan.candidates.map((c) => c.id)).not.toContain('tmp:3')
+      expect(targetOf(plan, '104')).toBe('tmp:2')
+      expect(plan.rows.find((row) => row.bookmarkId === '104')!.reason).toContain('Backend')
+      expect(prompts).toHaveLength(1)
+    })
+
+    it('实际不足 3 条的新子目录并入父目录', async () => {
+      const draft = draftFor(5, {
+        candidates: [
+          { id: 'tmp:1', path: ['01 Frontend'] },
+          { id: 'tmp:4', path: ['01 Frontend', '01 React'] },
+          { id: 'tmp:2', path: ['02 Other'] },
+        ],
+        newFolders: [top('tmp:1', '01 Frontend'), sub('tmp:4', 'tmp:1', '01 React'), top('tmp:2', '02 Other')],
+      })
+      const plan = await classify(draft, {
+        100: 'tmp:1', 101: 'tmp:1', 102: 'tmp:1', 103: 'tmp:4', 104: 'tmp:4',
+      })
+
+      expect(plan.candidates.map((c) => c.id)).not.toContain('tmp:4')
+      expect(targetOf(plan, '103')).toBe('tmp:1')
+      expect(targetOf(plan, '104')).toBe('tmp:1')
+    })
+
+    it('撤完后新父目录只剩一个子目录、自己不装书签时压平', async () => {
+      const draft = draftFor(3, {
+        candidates: [
+          { id: 'tmp:1', path: ['01 Agents'] },
+          { id: 'tmp:4', path: ['01 Agents', '01 Applied agents'] },
+          { id: 'tmp:5', path: ['01 Agents', '02 Frameworks'] },
+          { id: 'tmp:2', path: ['02 Other'] },
+        ],
+        newFolders: [
+          top('tmp:1', '01 Agents'),
+          sub('tmp:4', 'tmp:1', '01 Applied agents'),
+          sub('tmp:5', 'tmp:1', '02 Frameworks'),
+          top('tmp:2', '02 Other'),
+        ],
+      })
+      const plan = await classify(draft, { 100: 'tmp:4', 101: 'tmp:4', 102: 'tmp:4' })
+
+      expect(plan.candidates.map((c) => c.id)).toEqual(['tmp:1', 'tmp:2'])
+      expect(['100', '101', '102'].map((id) => targetOf(plan, id))).toEqual(['tmp:1', 'tmp:1', 'tmp:1'])
+      expect(plan.rows[0]!.reason).toContain('Applied agents')
+    })
+
+    it('用户在结构页新增的类型只收到 1 条也照建', async () => {
+      const edits: StructureEdits = {
+        ...EMPTY_EDITS,
+        added: [{ temporaryId: 'tmp:user:reading', parentCategoryId: null, title: 'Reading' }],
+      }
+      const plan = await classify(draftFor(4), {
+        100: 'tmp:1', 101: 'tmp:1', 102: 'tmp:1', 103: 'tmp:user:reading',
+      }, edits)
+
+      expect(plan.candidates.map((c) => c.id)).toContain('tmp:user:reading')
+      expect(targetOf(plan, '103')).toBe('tmp:user:reading')
+    })
+
+    it('复用的用户已有目录只收到 1 条也照留', async () => {
+      const draft = draftFor(4, {
+        candidates: [
+          { id: 'tmp:1', path: ['01 Frontend'] },
+          { id: '10', path: ['02 Current'] },
+          { id: 'tmp:2', path: ['03 Other'] },
+        ],
+        newFolders: [top('tmp:1', '01 Frontend'), top('tmp:2', '03 Other')],
+      })
+      const plan = await classify(draft, { 100: 'tmp:1', 101: 'tmp:1', 102: 'tmp:1', 103: '10' })
+
+      expect(plan.candidates.map((c) => c.id)).toContain('10')
+      expect(plan.unchanged.find((row) => row.bookmarkId === '103')?.kind).toBe('inPlace')
+    })
+  })
 })

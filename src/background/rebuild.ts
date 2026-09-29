@@ -5,6 +5,7 @@ import {
   createTemporaryIdFactory,
   expandFolder,
   findOversizedFolders,
+  flattenSingleChildFolders,
   measureFallbackShare,
   measureTopSiblings,
   promoteFallbackChildren,
@@ -29,6 +30,7 @@ import type {
   BookmarkItem,
   CachedClassification,
   CategoryCandidate,
+  Classification,
   FolderItem,
   OrganizePlan,
   ScanResult,
@@ -465,6 +467,20 @@ export async function designRebuildDraft(
     }
   }
 
+  const flattened = flattenSingleChildFolders({
+    candidates,
+    newFolders,
+    classifications: estimatedAssignments,
+    locale: input.locale,
+    mergeRootTemporaryId: planMergeRoot?.temporaryId ?? null,
+  })
+  candidates = flattened.candidates
+  newFolders = flattened.newFolders
+  estimatedAssignments = flattened.classifications
+  if (flattened.flattenedTitles.length > 0) {
+    log('tree', t('logFlattenedSingleChild', String(flattened.flattenedTitles.length)))
+  }
+
   const promotion = promoteFallbackLayer({
     candidates,
     newFolders,
@@ -534,6 +550,29 @@ export function staleRebuildDraftError(locale: Locale): StaleStructureDraftError
   return new StaleStructureDraftError(staleDraftMessage(locale))
 }
 
+function settleClassifiedStructure(input: {
+  candidates: CategoryCandidate[]
+  newFolders: NewFolderSpec[]
+  classifications: Classification[]
+  locale: Locale
+  mergeRootTemporaryId: string | null
+  keepIds: ReadonlySet<string>
+}, log: (message: string) => void): {
+  candidates: CategoryCandidate[]
+  newFolders: NewFolderSpec[]
+  classifications: Classification[]
+} {
+  const pruned = pruneSmallFolders({ ...input, minFolderSize: MIN_FOLDER_BOOKMARKS })
+  if (pruned.prunedTitles.length > 0) {
+    log(t('logPrunedSmall', String(pruned.prunedTitles.length), String(MIN_FOLDER_BOOKMARKS)))
+  }
+  const flattened = flattenSingleChildFolders({ ...input, ...pruned })
+  if (flattened.flattenedTitles.length > 0) {
+    log(t('logFlattenedSingleChild', String(flattened.flattenedTitles.length)))
+  }
+  return flattened
+}
+
 export async function classifyRebuildDraft(
   input: ClassifyRebuildDraftInput,
 ): Promise<OrganizePlan> {
@@ -588,6 +627,19 @@ export async function classifyRebuildDraft(
       }
     })
   }
+  // 确认前的剪枝、压平数的是预计归属，逐条分类是另一次独立判断：预计 5 条的目录
+  // 实际可能只收到 1 条。按真实归属再收拢一次——只撤本轮新建、装不满或零区分度的
+  // 目录，不调用模型、不新增、不改名；用户在结构页新增的类型明确要建，不受下限约束。
+  const settled = settleClassifiedStructure({
+    candidates: compiled.candidates,
+    newFolders: compiled.newFolders,
+    classifications,
+    locale: input.locale,
+    mergeRootTemporaryId: compiled.mergeRoot?.temporaryId ?? null,
+    keepIds: new Set(input.edits.added.map((added) => added.temporaryId)),
+  }, (message) => log('classify', message))
+  classifications = settled.classifications
+
   // 用户新增的一级目录只有真的收到书签才应进入最终计划。它与模型设计出的目录不同：
   // 用户明确新增后即使只收到一条也要保留，但零命中时创建一个空目录没有任何可见收益。
   const usedTargets = new Set(classifications.flatMap((classification) =>
@@ -595,8 +647,8 @@ export async function classifyRebuildDraft(
   const emptyAddedIds = new Set(input.edits.added
     .filter((added) => !usedTargets.has(added.temporaryId))
     .map((added) => added.temporaryId))
-  const candidates = compiled.candidates.filter((candidate) => !emptyAddedIds.has(candidate.id))
-  const newFolders = compiled.newFolders.filter((folder) => !emptyAddedIds.has(folder.temporaryId))
+  const candidates = settled.candidates.filter((candidate) => !emptyAddedIds.has(candidate.id))
+  const newFolders = settled.newFolders.filter((folder) => !emptyAddedIds.has(folder.temporaryId))
   const warnings = [...compiled.validation.warnings]
   if (failed.length > 0) {
     warnings.push(t(

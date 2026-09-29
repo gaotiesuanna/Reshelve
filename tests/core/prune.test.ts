@@ -38,6 +38,7 @@ function prune(
     classifications: Classification[]
     minFolderSize: number
     mergeRootTemporaryId?: string | null
+    keepIds?: ReadonlySet<string>
   },
 ) {
   return pruneSmallFolders({ ...input, locale: 'zh_CN' })
@@ -259,6 +260,21 @@ describe('pruneSmallFolders', () => {
     expect(titles(result.newFolders)).toEqual(['其他'])
     expect(targetOf(result, 'a')).toBe('t9')
     expect(targetOf(result, 'b')).toBe('t9')
+  })
+})
+
+describe('pruneSmallFolders 的 keepIds', () => {
+  // 用户在结构页新增的类型：他明确要这个目录，只收到 1 条也照建
+  it('keepIds 里的新目录不足下限也不撤', () => {
+    const result = prune({
+      candidates: [cand('tmp:user:a', '01 读书'), cand('t9', '02 其他')],
+      newFolders: [top('tmp:user:a', '01 读书'), top('t9', '02 其他')],
+      classifications: into('tmp:user:a', 1),
+      minFolderSize: 3,
+      keepIds: new Set(['tmp:user:a']),
+    })
+    expect(titles(result.newFolders)).toEqual(['01 读书', '02 其他'])
+    expect(targetOf(result, 'tmp:user:a#0')).toBe('tmp:user:a')
   })
 })
 

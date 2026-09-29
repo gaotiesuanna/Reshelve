@@ -2059,6 +2059,14 @@
       }
     }
   },
+  "logFlattenedSingleChild": {
+    "message": "Flattened $count$ folders that held only one subfolder; the subfolder's bookmarks moved into the parent",
+    "placeholders": {
+      "count": {
+        "content": "$1"
+      }
+    }
+  },
   "logPrunedSmall": {
     "message": "Dropped $count$ folders holding fewer than $min$ bookmarks; their bookmarks moved up one level",
     "placeholders": {

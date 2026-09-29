@@ -14,6 +14,8 @@ export interface PruneInput<T extends TargetAssignment = Classification> {
   locale: Locale
   /** 合并模式下容器目录的临时 id。它是容器不是分类，收不到书签是正常的。 */
   mergeRootTemporaryId?: string | null
+  /** 不受下限约束的目录：用户在结构页新增的类型，他明确要这个目录。 */
+  keepIds?: ReadonlySet<string>
 }
 
 export interface PruneResult<T extends TargetAssignment = Classification> {
@@ -66,10 +68,11 @@ function rewritePruneReason<T extends TargetAssignment>(
  * 长什么样。推翻模式在结构确认**之前**调用它，数的是 estimateAssignments 的预计归属；
  * 确认后结构冻结，逐条分类的真实结果只测量、不再剪枝。
  *
- * 四条不撤的规矩：
+ * 五条不撤的规矩：
  * - 用户已有的目录不撤。里面只有一个书签是他自己的安排，整理不该顺手拆了它。
  * - 合并模式的容器目录不撤。它是容器不是分类。
  * - 还有存活子目录的父目录不撤，否则那些子目录没有父目录可挂。
+ * - 用户在结构页新增的类型（keepIds）不撤。他明确要这个目录，收到 1 条也照建。
  * - 一级「其他」不撤。预计归属里它几乎总是空的：设计没映射上的书签、被一级上限
  *   截掉的主题，预计归属都是 null 而不是「其他」，它的真实容量要等逐条分类才知道。
  *   撤掉它，分类阶段放不进任何目录的书签就无处可落，旧目录永远搬不空。
@@ -96,7 +99,10 @@ export function pruneSmallFolders<T extends TargetAssignment>(input: PruneInput<
   const fallback = input.candidates.find(isFallback) ?? null
 
   const prunable = input.candidates.filter(
-    (c) => specById.has(c.id) && c.id !== input.mergeRootTemporaryId && c.id !== fallback?.id,
+    (c) => specById.has(c.id)
+      && c.id !== input.mergeRootTemporaryId
+      && c.id !== fallback?.id
+      && input.keepIds?.has(c.id) !== true,
   )
   const order = [...prunable].sort((a, b) => b.path.length - a.path.length)
 

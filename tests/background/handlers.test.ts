@@ -10,6 +10,7 @@ import type { OrganizePlan, PlanRow } from '@/core/types'
 import type { ProgressEvent } from '@/background/events'
 import { MAX_SIBLINGS } from '@/core/config'
 import { stripNumberPrefix } from '@/core/tree'
+import { pruneReason } from '@/core/prune'
 import type { OrganizeMode } from '@/core/mode'
 import { EMPTY_EDITS, type StructureEdits } from '@/core/structure'
 
@@ -1599,7 +1600,35 @@ describe('handle analyze 目录下限', () => {
     })
   }
 
-  it('确认前够下限的目录在分类后人数变少也保持冻结', async () => {
+  // 设计期的单子目录链：Vue 只有 2 条标签，建树就没建它；「前端」下只剩 React，
+  // 而「前端」自己没有直接归属——结构页上不该出现这一层空转
+  it('设计期新父目录只剩一个子目录、自己没有预计归属时，草案里压平', async () => {
+    const complete = vi.fn(async (prompt: string) => {
+      const bookmarkIds = [...prompt.matchAll(/"bookmark_id":\s*"([^"]+)"/g)].map((m) => m[1]!)
+      if (prompt.includes('标签清单')) {
+        return { folders: [{ title: '前端', topics: [], children: [
+          { title: 'React', topics: ['React'] },
+          { title: 'Vue', topics: ['Vue'] },
+        ] }] }
+      }
+      return { results: bookmarkIds.map((id) => {
+        const index = skewedBookmarks.findIndex((b) => b.id === id)
+        return { bookmark_id: id, primary_topic: index >= skewedBookmarks.length - 2 ? 'Vue' : 'React' }
+      }) }
+    })
+    const { ports, deps } = setupSkewed(complete)
+    await saveSettings(ports, rebuild())
+
+    const res = await handleRequest(ports, { kind: 'analyze', scopeRootIds: ['1'], modeOverride: 'rebuild' }, deps)
+    if (!res.ok || res.kind !== 'analyze' || res.outcome !== 'structure') {
+      throw new Error(`expected a structure draft, got ${JSON.stringify(res)}`)
+    }
+    expect(res.draft.candidates.map((c) => c.path.map((p) => p.replace(/^\d+ /, '')))).toEqual([
+      ['前端'], ['其他'],
+    ])
+  })
+
+  it('确认前够下限、分类后只剩 1 条的新子目录并入父目录', async () => {
     const complete = skewedComplete()
     const { ports, deps } = setupSkewed(complete)
     // 阈值恒为 3，不必再拧（原来这里写的就是 3）
@@ -1608,11 +1637,11 @@ describe('handle analyze 目录下限', () => {
     const res = await handle(ports, { kind: 'analyze', scopeRootIds: ['1'], modeOverride: 'rebuild' }, deps) as { plan: OrganizePlan }
     const created = res.plan.operations.flatMap((o) => (o.type === 'create_folder' ? [o.title] : []))
     expect(created.some((title) => title.includes('React'))).toBe(true)
-    expect(created.some((title) => title.includes('Vue'))).toBe(true)
-    // 确认后的逐条分类只测量，不再按实际人数剪掉用户确认过的 Vue。
+    // 分类后按真实归属收拢：Vue 实际只收到 1 条，撤回「前端」，不重问模型
+    expect(created.some((title) => title.includes('Vue'))).toBe(false)
     const row = res.plan.rows.find((r) => r.bookmarkId === loneVueId)!
-    expect(row.toPath.map((p) => p.replace(/^\d+ /, ''))).toEqual(['前端', 'Vue'])
-    expect(row.reason).toBe('r')
+    expect(row.toPath.map((p) => p.replace(/^\d+ /, ''))).toEqual(['前端'])
+    expect(row.reason).toContain('Vue')
   })
 
   // 日志里那个数字过去直接印 settings.minFolderSize。存量记录里拧过的值不许再从
@@ -1659,7 +1688,7 @@ describe('handle analyze 目录下限', () => {
   // 退成 core 里的内部常量，一律生效。那条用例问的事情本身还在：**存量存储里躺着
   // 关掉过的开关时，这次整理会不会被它带偏。** 答案反过来了，所以断言跟着反过来，
   // 而不是把这条用例删掉。存量键只能从存储那一侧写，它已经不在 Settings 类型里
-  it('存量记录里的 enforceMinFolderSize=false 不改变确认后的结构冻结', async () => {
+  it('存量记录里的 enforceMinFolderSize=false 不关掉分类后的收拢', async () => {
     const complete = skewedComplete()
     const { ports, deps } = setupSkewed(complete)
     await saveSettings(ports, rebuild())
@@ -1668,7 +1697,7 @@ describe('handle analyze 目录下限', () => {
     const res = await handle(ports, { kind: 'analyze', scopeRootIds: ['1'], modeOverride: 'rebuild' }, deps) as { plan: OrganizePlan }
     const created = res.plan.operations.flatMap((o) => (o.type === 'create_folder' ? [o.title] : []))
     expect(created.some((title) => title.includes('React'))).toBe(true)
-    expect(created.some((title) => title.includes('Vue'))).toBe(true)
+    expect(created.some((title) => title.includes('Vue'))).toBe(false)
   })
 })
 
@@ -3049,7 +3078,7 @@ describe('analyze 的 prune 二次判定', () => {
     })
   }
 
-  it('确认后只按冻结候选分类一次，不再运行 prune-time rehome', async () => {
+  it('确认后只分类一次；实际装不满的「冷门」确定性并入「其他」，不重问模型', async () => {
     const prompts: string[] = []
     const complete = rehomeComplete(prompts)
 
@@ -3067,8 +3096,9 @@ describe('analyze 的 prune 二次判定', () => {
     expect(prompts).toHaveLength(1)
     expect(prompts[0]).toContain('"c0"')
     const row = res.plan.rows.find((r) => r.bookmarkId === 'c0')!
-    expect(row.reason).toBe('r')
-    expect(row.toPath.at(-1)).toContain('冷门')
+    expect(row.reason).toBe(pruneReason('zh_CN', '冷门', 1, 3, '其他'))
+    expect(row.toPath.at(-1)).toContain('其他')
+    // 改投不是模型的新判断，沿用首次分类的把握度
     expect(row.confidence).toBeCloseTo(0.9)
   })
 
@@ -3112,7 +3142,7 @@ describe('analyze 的 prune 二次判定', () => {
     ) as { plan: OrganizePlan }
 
     expect(prompts).toHaveLength(1)
-    expect(res.plan.rows.find((r) => r.bookmarkId === 'c0')!.toPath.at(-1)).toContain('冷门')
+    expect(res.plan.rows.find((r) => r.bookmarkId === 'c0')!.toPath.at(-1)).toContain('其他')
   })
 
   it('确认后不会发起第二次改判请求', async () => {
@@ -3162,11 +3192,10 @@ describe('analyze 的 prune 二次判定', () => {
     expect(classifyCalls).toBe(1)
     const row = res.plan.rows.find((r) => r.bookmarkId === 'c0')
     expect(row).toBeDefined()
-    expect(row!.toPath.at(-1)).toContain('冷门')
-    expect(row!.reason).toBe('r')
+    expect(row!.toPath.at(-1)).toContain('其他')
   })
 
-  it('实际占用不足下限也不改变确认后的候选结构', async () => {
+  it('实际占用不足下限的新目录在分类后并入「其他」', async () => {
     // 更贴近票面复现场景的最小夹具：min=3，a0..a10（11 条）→ 前端、
     // b0 → 冷门、b1/b2 → 其他；prune 把 b0 并进「其他」使其达标（3 条），
     // 二次判定又把 b0 改判去「前端」，「其他」只剩 b1/b2 两条——
@@ -3239,10 +3268,9 @@ describe('analyze 的 prune 二次判定', () => {
     ) as { plan: OrganizePlan }
 
     expect(classifyCalls).toBe(1)
-    expect(res.plan.candidates.some((candidate) => candidate.path.at(-1)?.includes('冷门'))).toBe(true)
+    expect(res.plan.candidates.some((candidate) => candidate.path.at(-1)?.includes('冷门'))).toBe(false)
     expect(res.plan.rows.filter((r) => r.toPath.at(-1)?.includes('其他')).map((r) => r.bookmarkId).sort())
-      .toEqual(['b1', 'b2'])
-    expect(res.plan.rows.find((r) => r.bookmarkId === 'b0')?.toPath.at(-1)).toContain('冷门')
+      .toEqual(['b0', 'b1', 'b2'])
   })
 
 })
@@ -3857,13 +3885,18 @@ describe('结构自检：撑爆的叶子再切一层', () => {
           secondary_topic: null,
         })) }
       }
-      // 分类：全部塞进「前端工具」那个候选，制造一个装 25 条的目录
+      // 分类：按标签主题送进下切出来的子目录（没切出来时退回「前端工具」），
+      // 与真实模型的行为一致——子目录一条都收不到的话，分类后的收拢会把它撤掉
       const ids = [...prompt.matchAll(/^- id=(\S+) 目录=(.+)$/gm)]
-      const target = ids.find((m) => m[2]!.includes('前端工具'))?.[1] ?? ids[0]?.[1] ?? null
+      const idOf = (suffix: string): string | null =>
+        ids.find((m) => m[2]!.endsWith(suffix))?.[1] ?? null
+      const parent = ids.find((m) => m[2]!.includes('前端工具'))?.[1] ?? ids[0]?.[1] ?? null
       const bookmarkIds = [...prompt.matchAll(/"bookmark_id":\s*"([^"]+)"/g)].map((m) => m[1]!)
-      return { results: bookmarkIds.map((id) => (
-        { bookmark_id: id, target_category_id: target, confidence: 0.9, reason: 'r' }
-      )) }
+      return { results: bookmarkIds.map((id) => {
+        const index = Number(id.slice(1))
+        const sub = options.singleTopic === true ? null : idOf(index < 13 ? '构建' : '测试')
+        return { bookmark_id: id, target_category_id: sub ?? parent, confidence: 0.9, reason: 'r' }
+      }) }
     })
     const events: ProgressEvent[] = []
     return {

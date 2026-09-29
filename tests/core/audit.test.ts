@@ -1,9 +1,10 @@
 import { describe, it, expect } from 'vitest'
 import {
   collapseSameNameFolders, createTemporaryIdFactory, dropFallbackFromCandidates, expandFolder,
+  flattenReason, flattenSingleChildFolders,
   findOversizedFolders, measureFallbackShare, promoteFallbackChildren,
 } from '@/core/audit'
-import type { CollapseInput } from '@/core/audit'
+import type { CollapseInput, FlattenInput } from '@/core/audit'
 import type { NewFolderSpec } from '@/core/plan'
 import { MAX_LEAF } from '@/core/config'
 import type { EstimatedAssignment } from '@/core/structure'
@@ -496,5 +497,78 @@ describe('dropFallbackFromCandidates', () => {
     const noTopFallback = folders.filter((f) => f.id !== '11')
     expect(dropFallbackFromCandidates(nested, noTopFallback, ['1'], 'zh_CN').map((c) => c.id))
       .toEqual(['10', '12'])
+  })
+})
+
+describe('flattenSingleChildFolders', () => {
+  // 截图里的形态：新建一级「Agents」下只有新建的「Applied agents」，一级自己不直接装书签
+  const agents = {
+    candidates: [cand('tmp:1', ['01 Agents']), cand('tmp:2', ['01 Agents', '01 Applied agents'])],
+    newFolders: [top('tmp:1', '01 Agents'), child('tmp:2', 'tmp:1', '01 Applied agents')],
+  }
+  const flatten = (input: Partial<FlattenInput>) =>
+    flattenSingleChildFolders<Classification>({
+      ...agents,
+      classifications: into('tmp:2', 3),
+      locale: 'zh_CN',
+      mergeRootTemporaryId: null,
+      ...input,
+    })
+  const targets = (result: { classifications: Classification[] }): Array<string | null> =>
+    result.classifications.map((c) => c.targetCategoryId)
+
+  it('新建父目录只剩一个新建子目录且自己不装书签时，子目录并入父目录', () => {
+    const result = flatten({})
+    expect(result.candidates).toEqual([cand('tmp:1', ['01 Agents'])])
+    expect(result.newFolders).toEqual([top('tmp:1', '01 Agents')])
+    expect(targets(result)).toEqual(['tmp:1', 'tmp:1', 'tmp:1'])
+    expect(result.classifications[0]!.reason).toBe(flattenReason('zh_CN', 'Applied agents', 'Agents'))
+    expect(result.flattenedTitles).toEqual(['01 Applied agents'])
+  })
+
+  it('预计归属压平时只改目标，不补写分类字段', () => {
+    const assignments: EstimatedAssignment[] = [{ bookmarkId: 'a', targetCategoryId: 'tmp:2' }]
+    const result = flattenSingleChildFolders({
+      ...agents, classifications: assignments, locale: 'zh_CN',
+    })
+    expect(result.classifications).toEqual([{ bookmarkId: 'a', targetCategoryId: 'tmp:1' }])
+  })
+
+  // 一个子目录 + 父目录自己有留守，是真划分（与 expandFolder 同一条理由）
+  it('父目录自己直接装着书签时不压', () => {
+    const result = flatten({ classifications: [...into('tmp:2', 3), ...into('tmp:1', 1)] })
+    expect(result.flattenedTitles).toEqual([])
+    expect(result.candidates).toHaveLength(2)
+  })
+
+  it('父目录有两个子目录时不压', () => {
+    const result = flatten({
+      candidates: [...agents.candidates, cand('tmp:3', ['01 Agents', '02 Frameworks'])],
+      newFolders: [...agents.newFolders, child('tmp:3', 'tmp:1', '02 Frameworks')],
+      classifications: [...into('tmp:2', 3), ...into('tmp:3', 3)],
+    })
+    expect(result.flattenedTitles).toEqual([])
+  })
+
+  it('父目录是用户已有目录时不压', () => {
+    const result = flatten({
+      candidates: [cand('50', ['01 Agents']), cand('tmp:2', ['01 Agents', '01 Applied agents'])],
+      newFolders: [{ temporaryId: 'tmp:2', parentId: '50', parentTemporaryId: null, title: '01 Applied agents' }],
+    })
+    expect(result.flattenedTitles).toEqual([])
+  })
+
+  it('父目录是合并容器时不压', () => {
+    const result = flatten({ mergeRootTemporaryId: 'tmp:1' })
+    expect(result.flattenedTitles).toEqual([])
+  })
+
+  it('子目录在 keepIds 里时不压', () => {
+    const result = flatten({ keepIds: new Set(['tmp:2']) })
+    expect(result.flattenedTitles).toEqual([])
+  })
+
+  it('英文理由是英文', () => {
+    expect(/[一-鿿]/.test(flattenReason('en', 'Applied agents', 'Agents'))).toBe(false)
   })
 })
