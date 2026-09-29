@@ -27,7 +27,8 @@ export interface ClassifyInput {
   /**
    * 提示词里带不带「无归属时回传 topic」那条规则（classifyPrompt 的第 5 条）。
    * 推翻模式的候选是刚设计出来的，用不上这条、也不该让它的提示词因此变化——
-   * 省略时默认 true，只有 background/handlers.ts 在推翻模式下显式传 false。
+   * 省略时默认 true，推翻模式下显式传 false：background/rebuild.ts 的逐条分类，
+   * 以及 background/handlers.ts 对推翻计划的重新分类。
    */
   includeTopicRule?: boolean
 }

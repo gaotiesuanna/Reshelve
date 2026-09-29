@@ -149,7 +149,7 @@ interface RawFolder {
 }
 
 export interface DesignOptions {
-  /** true 时只出一层目录。撑爆的目录下切时（core/audit.ts → handlers.ts）走这一支。 */
+  /** true 时只出一层目录。撑爆的目录下切时（core/audit.ts → background/rebuild.ts）走这一支。 */
   oneLevel?: boolean
   /** 只出一层时，把父目录名告诉模型，避免它把组名再当分类依据。 */
   parentTitle?: string

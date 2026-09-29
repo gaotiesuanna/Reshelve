@@ -10,6 +10,10 @@
  * 全程只有两处深度跳变：N=301 进两层、N=2701 进三层。而且悬崖没那么可怕——
  * 周期性整理走的是非推翻模式、根本不重新设计，形状推导只在首次整理跑一次。
  *
+ * **三层目前落不了地。**core/config.ts 的 MAX_AUDIT_LEVEL 把目录深度截在两层：
+ * depth 3 到了 background/rebuild.ts 只会按两层设计（一级取 SHAPE_MAX_SIBLINGS），
+ * 撑爆的二级目录不再下切，只在草稿与计划里报超载警告。放开三层要同时改那个上限。
+ *
  * **容量上限（判准 A1）不在这里生效。**它由 core/audit.ts 的 findOversizedFolders
  * 对**落成后的实际占用**验算，用的是 MAX_LEAF；这里预测用的是 STRETCH_LEAF。
  * 两个数分家的理由见 core/config.ts 与 issues/38-source-vs-topic.md 的 D2。
