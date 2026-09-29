@@ -2,26 +2,9 @@ import type { Locale } from './locale'
 import { normalizeName, stripNumberPrefix } from './map'
 import { folderNumber } from './order'
 import type { NewFolderSpec } from './plan'
-import { MAX_SIBLINGS } from './config'
+import { MAX_SIBLINGS, MIN_NEW_FOLDER_SIZE } from './config'
 import { FALLBACK_TITLE } from './tree'
 import type { BookmarkItem, CategoryCandidate, Classification, FolderItem } from './types'
-
-/**
- * 同一主题攒够几条才值得开一个新目录。
- *
- * 曾经是 3：内部常量而不是设置项，理由是「用户无从判断 3 还是 5 更好」
- * （见 issues/08-settings-tradeoffs.md）。真实使用改判了这件事——用户直接反馈：
- * 攒不够 3 条就原地不动，等于一条散落书签永远没有归宿，用户要的是「每条都有地方去」，
- * 不是「够不够开一个专属目录」（见 issues/42-loose-bookmark-always-lands-somewhere.md）。
- * 改成 1 之后，任何一个能从模型那里问到独立主题名的书签都值得单独开一个目录；
- * `MAX_SIBLINGS` 已经把一次分析新建的目录数封了顶（`planNewFolders` 的 `chosen`），
- * 不会因为这里改成 1 就无限生长。真正连主题名都问不出来的，落到 `planFallbackFolder`
- * 那道最后的「其他」兜底，不会再原地不动。
- *
- * 与 `MIN_FOLDER_BOOKMARKS`（core/prune.ts）**依然不合并**：那个管「推翻模式下设计出来
- * 的目录装不满几条就撤掉」，是另一个模式的另一条规则，两边各自变化互不牵连。
- */
-export const MIN_NEW_FOLDER_SIZE = 1
 
 export interface TopicCluster {
   /** 归一化后的主题，用于合并同义写法。 */

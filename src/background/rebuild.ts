@@ -12,8 +12,8 @@ import {
 } from '@/core/audit'
 import type { Locale } from '@/core/locale'
 import { buildPlan, type FolderMoveSpec, type NewFolderSpec } from '@/core/plan'
-import { MIN_FOLDER_BOOKMARKS, pruneSmallFolders } from '@/core/prune'
-import { FALLBACK_SHARE_LIMIT, MAX_LEAF, SHAPE_MAX_SIBLINGS, MAX_SIBLINGS as PRODUCT_MAX_SIBLINGS } from '@/core/config'
+import { pruneSmallFolders } from '@/core/prune'
+import { FALLBACK_SHARE_LIMIT, MAX_LEAF, SHAPE_MAX_SIBLINGS, MAX_SIBLINGS as PRODUCT_MAX_SIBLINGS, MIN_FOLDER_BOOKMARKS, MIN_DEEPEN_CALLS } from '@/core/config'
 import { deriveShape } from '@/core/shape'
 import { planTitleRewrites } from '@/core/titles'
 import {
@@ -44,8 +44,6 @@ import {
 } from '@/llm/folders'
 import { extractTags } from '@/llm/tags'
 import type { EmitProgress, ProgressPhase } from './events'
-
-const MIN_DEEPEN_CALLS = 20
 
 export function deepenBudget(leaves: number): number {
   return Math.max(MIN_DEEPEN_CALLS, leaves)

@@ -5,27 +5,6 @@ import { FALLBACK_TITLE } from './tree'
 import type { TargetAssignment } from './audit'
 import type { CategoryCandidate, Classification } from './types'
 
-/**
- * 一个目录至少要装下几个书签才值得单独建立。
- *
- * 为什么是 3：两条书签摆在一个目录里，展开目录的动作比直接扫两行还费事——目录只有
- * 从第三条起才开始省浏览成本。再往上（5、8）能活下来的目录太少，整理结果会退化成
- * 一个巨大的「其他」。
- *
- * 为什么不再让用户拨：这个数字**用户无从判断**。3 还是 5 更好，取决于他这批书签的
- * 主题有多分散，而那件事只有跑完一次整理才看得出来——摆成旋钮等于把一道自己也答不出
- * 的题推给用户。目录的数量与层数已经由书签总数推导（见 core/shape.ts），下限是同一
- * 套账里的最后一格，一并由程序定。
- *
- * 曾经有过 `enforceMinFolderSize` / `minFolderSize` 两个设置项，随清单第 12 项删掉；
- * 存量存储里遗留的那两个键读都不读（见 storage/settings.ts 的旧旋钮名单），
- * 也就是说以前关掉过这个开关的用户，下次整理会吃到这道约束。变的不只是他：旧设置页
- * 允许这个数字在 2..10 之间拨，所以拧到 5、9 的人下限反而**变松**（原本剪掉的目录这次
- * 留得住），拧到 2 的人**变紧**。两个方向都有用例盯着（tests/background/handlers.test.ts
- * 里把存量键拧成 2 / 5 / 9 的那几条），只是这段散文一直只写了「关掉过」那一种。
- */
-export const MIN_FOLDER_BOOKMARKS = 3
-
 export interface PruneInput<T extends TargetAssignment = Classification> {
   candidates: CategoryCandidate[]
   newFolders: NewFolderSpec[]

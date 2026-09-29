@@ -194,7 +194,7 @@ export const PRESETS: Array<{ label: Record<Locale, string>; baseUrl: string; mo
  * - `enforceMinFolderSize` / `minFolderSize`：当年管「目录至少装几个书签才值得建」，
  *   还带一个「整个关掉」的开关。这个数字用户无从判断（3 还是 5 更好，取决于这批书签的
  *   主题有多分散，跑完一次才看得出来），现在退成 core 里的内部常量
- *   `MIN_FOLDER_BOOKMARKS`（见 core/prune.ts）。**约束一律生效**——以前关掉过开关的人
+ *   `MIN_FOLDER_BOOKMARKS`（见 core/config.ts）。**约束一律生效**——以前关掉过开关的人
  *   下次整理会吃到它，这是删旋钮的代价，不是回归。
  * - `domainGroups`：当年管「哪些域名按来源聚成一个目录」（GitHub、论文、视频……）。
  *   随 issues/38-source-vs-topic.md 的 D4 整个机制删掉——按来源分的第一层要求用户先

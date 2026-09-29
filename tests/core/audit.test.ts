@@ -317,7 +317,17 @@ describe('findOversizedFolders', () => {
     expect(result.map((f) => f.id)).toEqual(['tmp:2', 'tmp:1'])
   })
 
-  it('已经在第 3 层的目录不再进清单——3 层封顶', () => {
+  it('第 2 层不再下切——目录最多 2 层', () => {
+    const result = findOversizedFolders({
+      ...base,
+      candidates: [cand('tmp:2', ['01 甲', '01 乙'])],
+      newFolders: [child('tmp:2', 'tmp:1', '01 乙')],
+      classifications: into('tmp:2', 63),
+    })
+    expect(result).toEqual([])
+  })
+
+  it('第 3 层同样不再下切', () => {
     const result = findOversizedFolders({
       ...base,
       candidates: [cand('tmp:3', ['01 甲', '01 乙', '01 丙'])],
@@ -325,16 +335,6 @@ describe('findOversizedFolders', () => {
       classifications: into('tmp:3', 63),
     })
     expect(result).toEqual([])
-  })
-
-  it('第 2 层的目录仍可下切', () => {
-    const result = findOversizedFolders({
-      ...base,
-      candidates: [cand('tmp:2', ['01 甲', '01 乙'])],
-      newFolders: [child('tmp:2', 'tmp:1', '01 乙')],
-      classifications: into('tmp:2', 63),
-    })
-    expect(result.map((f) => f.level)).toEqual([2])
   })
 
   // 曾经这里豁免「其他」，理由是「收容所没有主题可言，切了只是把杂物摊成几堆杂物」。
@@ -350,15 +350,16 @@ describe('findOversizedFolders', () => {
     expect(result.map((f) => f.id)).toEqual(['tmp:1'])
   })
 
-  // 豁免摘得干净：不留「一级豁免、二级不豁免」这种按层级分档的残留（02 票判准 B）
-  it('二级的「其他」同样按占用下切', () => {
+  // 深度封顶优先于「其他也要切」。二级「其他」再切就是第 3 层，停在这里。
+  // 一级「其他」仍按占用下切，见上面那条。
+  it('二级的「其他」不再下切——再切就是第 3 层', () => {
     const result = findOversizedFolders({
       ...base,
       candidates: [cand('tmp:2', ['01 甲', '09 其他'])],
       newFolders: [child('tmp:2', 'tmp:1', '09 其他')],
       classifications: into('tmp:2', 63),
     })
-    expect(result.map((f) => f.id)).toEqual(['tmp:2'])
+    expect(result).toEqual([])
   })
 
   it('scope 默认只看新建目录，用户已有的目录不进清单', () => {

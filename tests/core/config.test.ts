@@ -6,6 +6,11 @@ import {
   SHAPE_MAX_SIBLINGS,
   MAX_SIBLINGS,
   FALLBACK_SHARE_LIMIT,
+  MAX_AUDIT_LEVEL,
+  MIN_FOLDER_BOOKMARKS,
+  MIN_LEFTOVER_TO_SPLIT,
+  MIN_NEW_FOLDER_SIZE,
+  MIN_DEEPEN_CALLS,
 } from '@/core/config'
 
 describe('folder-shape config', () => {
@@ -27,5 +32,10 @@ describe('folder-shape config', () => {
     expect(SHAPE_MAX_SIBLINGS).toBe(15)
     expect(MAX_SIBLINGS).toBe(17)
     expect(FALLBACK_SHARE_LIMIT).toBe(0.1)
+    expect(MAX_AUDIT_LEVEL).toBe(2)
+    expect(MIN_FOLDER_BOOKMARKS).toBe(3)
+    expect(MIN_LEFTOVER_TO_SPLIT).toBe(MIN_FOLDER_BOOKMARKS * 2)
+    expect(MIN_NEW_FOLDER_SIZE).toBe(1)
+    expect(MIN_DEEPEN_CALLS).toBe(20)
   })
 })

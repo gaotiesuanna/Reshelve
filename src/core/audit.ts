@@ -1,9 +1,14 @@
 import type { Locale } from './locale'
 import { normalizeName, stripNumberPrefix } from './map'
 import type { FolderMoveSpec, NewFolderSpec } from './plan'
-import { MIN_FOLDER_BOOKMARKS } from './prune'
 import { FALLBACK_TITLE } from './tree'
-import { MAX_LEAF, SHAPE_MAX_SIBLINGS, MAX_SIBLINGS as PRODUCT_MAX_SIBLINGS } from './config'
+import {
+  MAX_LEAF,
+  SHAPE_MAX_SIBLINGS,
+  MAX_SIBLINGS as PRODUCT_MAX_SIBLINGS,
+  MAX_AUDIT_LEVEL,
+  MIN_LEFTOVER_TO_SPLIT,
+} from './config'
 import type { CategoryCandidate, Classification, TagResult } from './types'
 
 export interface TargetAssignment {
@@ -169,23 +174,6 @@ export function collapseSameNameFolders<T extends TargetAssignment>(
 
   return { candidates, newFolders, classifications, collapsedTitles }
 }
-
-/**
- * 目录树最深切到第几层（范围根下第一级算 1）。
- *
- * 为什么是 3：Chrome 的书签菜单每多一层就多一次悬停，三次已经是体验上限。
- * 深过它，「技术上更均衡的树」换来的是用户根本点不到底。
- */
-export const MAX_AUDIT_LEVEL = 3
-
-/**
- * 留守判据的下限：少于这么多条就别再问模型了。
- *
- * 取 2 × MIN_FOLDER_BOOKMARKS 不是拍的——再切一次要站得住，至少得切出两个不会被
- * core/prune.ts 撤掉的子目录，而那需要 2 × MIN_FOLDER_BOOKMARKS 条。低于它触发
- * 相对判据，只是白花一次付费调用（organize-audit-holes 04 票判准 A）。
- */
-const MIN_LEFTOVER_TO_SPLIT = MIN_FOLDER_BOOKMARKS * 2
 
 /** 判「是不是范围根下那个『其他』」要的两个字段。 */
 export interface FallbackFolderRef {
