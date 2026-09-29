@@ -283,7 +283,7 @@ describe('handle', () => {
       secondaryTopic: null,
     })))
     expect(analyzed.draft.candidates.map((candidate) => candidate.path)).toEqual([
-      ['01 Alpha'], ['02 Beta'], ['03 Gamma'],
+      ['01 Alpha'], ['02 Beta'], ['03 Gamma'], ['04 其他'],
     ])
 
     const idFor = (title: string): string => analyzed.draft.candidates.find(
@@ -1618,8 +1618,31 @@ describe('handle analyze 目录下限', () => {
   // 日志里那个数字过去直接印 settings.minFolderSize。存量记录里拧过的值不许再从
   // 这里漏出来——用户看到的解释必须是真正生效的那个下限
   it('撤掉目录时日志报的下限就是 3，不是存量记录里拧过的那个数', async () => {
-    const complete = skewedComplete()
-    const { ports } = setupSkewed(complete)
+    // 建树已按标签数挡掉不足 3 条的主题，设计期能撤的只剩下切切出来的小子目录：
+    // 「前端」13 条超载，下切成 React 11 条 + Vue 2 条，Vue 被撤回父目录
+    const ids = Array.from({ length: 13 }, (_, i) => `f${i}`)
+    let designCalls = 0
+    const complete = vi.fn(async (prompt: string) => {
+      if (prompt.includes('标签清单')) {
+        designCalls += 1
+        return designCalls === 1
+          ? { folders: [{ title: '前端', topics: ['React', 'Vue'], children: [] }] }
+          : { folders: [
+              { title: 'React', topics: ['React'], children: [] },
+              { title: 'Vue', topics: ['Vue'], children: [] },
+            ] }
+      }
+      const bookmarkIds = [...prompt.matchAll(/"bookmark_id":\s*"([^"]+)"/g)].map((m) => m[1]!)
+      return { results: bookmarkIds.map((id) => (
+        { bookmark_id: id, primary_topic: ids.indexOf(id) < 11 ? 'React' : 'Vue' }
+      )) }
+    })
+    const fake = createFakeBookmarks([{ id: '0', title: '', children: [
+      { id: '1', title: '书签栏', children: [
+        { id: '10', title: '收件箱', children: ids.map((id) => ({ id, title: `书签 ${id}`, url: `https://${id}.dev` })) },
+      ] },
+    ] }])
+    const ports = { bookmarks: fake.api, storage: createFakeStorage() }
     await saveSettings(ports, rebuild())
     await ports.storage.set(SETTINGS_KEY, { ...rebuild(), minFolderSize: 9 })
     const events: ProgressEvent[] = []
@@ -2122,7 +2145,7 @@ describe('analyze 归入现有模式不拿「其他」当分类候选', () => {
     expect(classifyPrompts.flatMap(catalogPaths)).toContain('书签栏 / 其他')
   })
 
-  it('推翻重建会在确认前剪掉预计为空的「其他」', async () => {
+  it('推翻重建即使预计没有书签进「其他」，分类候选里也保留它', async () => {
     const fake = createFakeBookmarks(rebuildTree)
     const ports = { bookmarks: fake.api, storage: createFakeStorage() }
     const classifyPrompts: string[] = []
@@ -2141,7 +2164,7 @@ describe('analyze 归入现有模式不拿「其他」当分类候选', () => {
     await saveSettings(ports, settings)
     await analyzePlan(ports, { createClient: () => ({ complete }), now: () => 1 }, 'rebuild')
 
-    expect(classifyPrompts.flatMap(catalogPaths)).not.toContain('02 其他')
+    expect(classifyPrompts.flatMap(catalogPaths)).toContain('02 其他')
   })
 })
 
@@ -3052,7 +3075,7 @@ describe('analyze 的 prune 二次判定', () => {
   // 判准 A5 此前全链路一个执行点都没有：真实那一遍「其他」占 34.8%，那个数没有任何人
   // 算过，用户看到的是一棵没有任何警告的树（organize-audit-holes 05 票）。
   // 这条夹具里 d0..d10 共 11 条全落进「其他」，总数 23 条 → 47.8%，远过 10% 红线。
-  it('预计为空而被剪掉的「其他」不会在分类后重新出现', async () => {
+  it('预计为空的「其他」留在结构里，分类后越过 A5 红线时报警告', async () => {
     const complete = rehomeComplete([])
     const fake = createFakeBookmarks(rehomeTree)
     const ports = { bookmarks: fake.api, storage: createFakeStorage() }
@@ -3065,8 +3088,8 @@ describe('analyze 的 prune 二次判定', () => {
       { createClient: () => ({ complete }), now: () => 1 },
     ) as { plan: OrganizePlan }
 
-    expect(res.plan.candidates.some((candidate) => candidate.path.at(-1)?.includes('其他'))).toBe(false)
-    expect(res.plan.warnings.some((warning) => warning.includes('其他') && warning.includes('%'))).toBe(false)
+    expect(res.plan.candidates.some((candidate) => candidate.path.at(-1)?.includes('其他'))).toBe(true)
+    expect(res.plan.warnings.some((warning) => warning.includes('其他') && warning.includes('%'))).toBe(true)
   })
 
   // 开关删掉之前，`rebuild && settings.enforceMinFolderSize` 这道闸把**整个二次判定**
@@ -3217,7 +3240,8 @@ describe('analyze 的 prune 二次判定', () => {
 
     expect(classifyCalls).toBe(1)
     expect(res.plan.candidates.some((candidate) => candidate.path.at(-1)?.includes('冷门'))).toBe(true)
-    expect(res.plan.rows.some((r) => r.toPath.at(-1)?.includes('其他'))).toBe(false)
+    expect(res.plan.rows.filter((r) => r.toPath.at(-1)?.includes('其他')).map((r) => r.bookmarkId).sort())
+      .toEqual(['b1', 'b2'])
     expect(res.plan.rows.find((r) => r.bookmarkId === 'b0')?.toPath.at(-1)).toContain('冷门')
   })
 

@@ -66,19 +66,16 @@ function rewritePruneReason<T extends TargetAssignment>(
  * 长什么样。推翻模式在结构确认**之前**调用它，数的是 estimateAssignments 的预计归属；
  * 确认后结构冻结，逐条分类的真实结果只测量、不再剪枝。
  *
- * 三条不撤的规矩：
+ * 四条不撤的规矩：
  * - 用户已有的目录不撤。里面只有一个书签是他自己的安排，整理不该顺手拆了它。
  * - 合并模式的容器目录不撤。它是容器不是分类。
  * - 还有存活子目录的父目录不撤，否则那些子目录没有父目录可挂。
+ * - 一级「其他」不撤。预计归属里它几乎总是空的：设计没映射上的书签、被一级上限
+ *   截掉的主题，预计归属都是 null 而不是「其他」，它的真实容量要等逐条分类才知道。
+ *   撤掉它，分类阶段放不进任何目录的书签就无处可落，旧目录永远搬不空。
+ *   最终没收到书签的话，apply 本来就不会建它（core/plan.ts 的 filterAccepted）。
  *
- * 还有一处看着矛盾、其实是对的：**建树时无条件放行「其他」，prune 这里却会撤它**。
- * 两处知道的信息不同——建树时它还没收到任何书签，拿标签数去判它毫无意义；
- * prune 时它的容量已经数得出来，装不满就不值得建。撤掉它之后没有下一站，
- * 里面的书签在这一步退回原位，而这正好与非推翻模式的「放不进就原地不动」是同一个行为
- * （见 issues/05-homeless-bookmarks.md「决定 4」）。
- *
- * 顺序也是语义的一部分：深的先判，父目录要等子目录并进来之后才知道自己够不够；
- * 同深度时「其他」最后判，它是所有撤销的去处，先判它就会在书签并进来之前被误撤。
+ * 顺序也是语义的一部分：深的先判，父目录要等子目录并进来之后才知道自己够不够。
  */
 export function pruneSmallFolders<T extends TargetAssignment>(input: PruneInput<T>): PruneResult<T> {
   const { minFolderSize, locale } = input
@@ -99,11 +96,9 @@ export function pruneSmallFolders<T extends TargetAssignment>(input: PruneInput<
   const fallback = input.candidates.find(isFallback) ?? null
 
   const prunable = input.candidates.filter(
-    (c) => specById.has(c.id) && c.id !== input.mergeRootTemporaryId,
+    (c) => specById.has(c.id) && c.id !== input.mergeRootTemporaryId && c.id !== fallback?.id,
   )
-  const order = [...prunable].sort(
-    (a, b) => b.path.length - a.path.length || Number(isFallback(a)) - Number(isFallback(b)),
-  )
+  const order = [...prunable].sort((a, b) => b.path.length - a.path.length)
 
   /** 新目录挂在谁下面。挂在范围根这类非候选目录下时，上提就没有下一站了。 */
   const parentIdOf = (id: string): string | null => {
@@ -131,9 +126,8 @@ export function pruneSmallFolders<T extends TargetAssignment>(input: PruneInput<
     const parent = parentId === null || removed.has(parentId)
       ? null
       : candidateById.get(parentId) ?? null
-    // 父目录没了就退到「其他」；正在撤的就是「其他」自己时没有下一站，书签保持原位
-    const target = parent
-      ?? (fallback !== null && fallback.id !== folder.id && !removed.has(fallback.id) ? fallback : null)
+    // 父目录没了就退到「其他」；连「其他」都没有时没有下一站，书签保持原位
+    const target = parent ?? fallback
 
     removed.add(folder.id)
     prunedTitles.push(specById.get(folder.id)!.title)

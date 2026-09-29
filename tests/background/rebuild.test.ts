@@ -101,6 +101,55 @@ describe('rebuild structure workflow', () => {
     expect(classifyPrompts).toEqual([])
   })
 
+  // 设计没映射上的书签预计归属是 null，不算进「其他」；按预计数剪枝曾把「其他」
+  // 从每一份草稿里撤掉，分类阶段放不进去的书签于是无处可落
+  it('keeps the top-level Other in the draft even when no bookmark is estimated into it', async () => {
+    const fake = createFakeBookmarks([
+      { id: '0', title: '', children: [
+        { id: '1', title: 'Bookmarks bar', children: [
+          { id: '10', title: 'Old folder', children: [
+            { id: '100', title: 'React', url: 'https://react.dev' },
+            { id: '101', title: 'Vite', url: 'https://vite.dev' },
+            { id: '102', title: 'Svelte', url: 'https://svelte.dev' },
+            { id: '103', title: 'Vitest', url: 'https://vitest.dev' },
+          ] },
+        ] },
+      ] },
+    ])
+    const ports = { bookmarks: fake.api, storage: createFakeStorage() }
+    await saveSettings(ports, {
+      ...DEFAULT_SETTINGS,
+      ...withLlm({ baseUrl: 'https://example.test/v1', apiKey: 'secret', model: 'model-a' }),
+      uiLocale: 'en',
+    })
+    const complete = vi.fn(async (prompt: string) => {
+      if (prompt.includes('one specific topic')) {
+        return {
+          results: [
+            { bookmark_id: '100', primary_topic: 'Frontend' },
+            { bookmark_id: '101', primary_topic: 'Frontend' },
+            { bookmark_id: '102', primary_topic: 'Frontend' },
+            { bookmark_id: '103', primary_topic: 'Testing' },
+          ],
+        }
+      }
+      return { folders: [{ title: 'Frontend', topics: ['Frontend'], children: [] }] }
+    })
+
+    const response = await handle(
+      ports,
+      { kind: 'analyze', scopeRootIds: ['1'], modeOverride: 'rebuild' },
+      { createClient: () => ({ complete }), now: () => 123 },
+    )
+
+    if (!response.ok || response.kind !== 'analyze' || response.outcome !== 'structure') {
+      throw new Error(`expected a structure draft, got ${JSON.stringify(response)}`)
+    }
+    const paths = response.draft.candidates.map((candidate) => candidate.path)
+    expect(paths).toContainEqual([expect.stringMatching(/ Other$/)])
+    expect(response.draft.estimatedAssignments).toContainEqual({ bookmarkId: '103', targetCategoryId: null })
+  })
+
   function classificationTree(overrides: { rootId?: string; count?: number; github?: boolean } = {}) {
     const rootId = overrides.rootId ?? '1'
     const count = overrides.count ?? 3

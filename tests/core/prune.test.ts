@@ -151,16 +151,18 @@ describe('pruneSmallFolders', () => {
     expect(result.prunedTitles).toEqual([])
   })
 
-  // 「其他」是最后的去处，它自己都不够数时没有下一站了
-  it('「其他」自己不足下限时也撤掉，里面的书签保持原位', () => {
+  // 「其他」的真实容量要等逐条分类才知道：设计期没映射上的书签预计归属是 null，
+  // 不会算进「其他」，按预计数撤它等于每一轮都把兜底撤掉
+  it('「其他」预计不足下限也不撤，它是分类阶段的兜底', () => {
     const result = prune({
       candidates: [cand('t3', '01 其他')],
       newFolders: [top('t3', '01 其他')],
       classifications: into('t3', 1),
       minFolderSize: 3,
       })
-    expect(result.newFolders).toEqual([])
-    expect(targetOf(result, 't3#0')).toBeNull()
+    expect(titles(result.newFolders)).toEqual(['01 其他'])
+    expect(targetOf(result, 't3#0')).toBe('t3')
+    expect(result.prunedTitles).toEqual([])
   })
 
   // 「其他」要最后判：先判它就会在别的目录把书签并进来之前被误撤
@@ -240,7 +242,7 @@ describe('pruneSmallFolders', () => {
     expect(titles(result.newFolders)).toEqual(['02 其他'])
   })
 
-  it('子目录撤进「其他」后「其他」自己也不够数，级联撤掉，书签退回原位', () => {
+  it('一级目录撤进「其他」后，「其他」仍不够数也留着接住它们', () => {
     const candidates = [
       { id: 't1', path: ['01 语音识别'] },
       { id: 't9', path: ['其他'] },
@@ -254,9 +256,9 @@ describe('pruneSmallFolders', () => {
       candidates, newFolders, classifications, minFolderSize: 3, locale: 'zh_CN',
     })
 
-    expect(result.newFolders).toEqual([])
-    expect(targetOf(result, 'a')).toBeNull()
-    expect(targetOf(result, 'b')).toBeNull()
+    expect(titles(result.newFolders)).toEqual(['其他'])
+    expect(targetOf(result, 'a')).toBe('t9')
+    expect(targetOf(result, 'b')).toBe('t9')
   })
 })
 
