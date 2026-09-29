@@ -15,11 +15,7 @@ done, your bookmarks bar is still your bookmarks bar, and sync across your devic
 exactly as before.
 
 <p align="center">
-  <img src="readme/screenshots/en/1-scope.png" alt="You pick the scope. Unchecked folders are never read and never modified." width="880">
-</p>
-
-<p align="center">
-  <img src="readme/screenshots/en/2-preview.png" alt="Review every move. Cancel any of them individually, or by confidence." width="880">
+  <img src="readme/screenshots/webstore-1280x800/1.png" alt="You pick the scope. Unchecked folders are never read and never modified." width="880">
 </p>
 
 
@@ -44,6 +40,10 @@ exactly as before.
   individually, or filter in bulk by confidence.
 - **Undo in one click.** Not happy with the result? Restore everything to how it was.
 
+<p align="center">
+  <img src="readme/screenshots/webstore-1280x800/2.png" alt="You choose how this run works: file into existing folders, only loose bookmarks, redesign the tree, or only normalize titles." width="880">
+</p>
+
 ## Bring your own model
 
 Reshelve has no server. You point it at your own endpoint:
@@ -59,6 +59,10 @@ a model vendor's direct endpoint (Zhipu, Kimi, ...).
 
 Every API key you enter is stored locally in `chrome.storage`, and each is only ever sent
 to the endpoint it belongs to. Deleting an endpoint in Settings deletes its key with it.
+
+<p align="center">
+  <img src="readme/screenshots/webstore-1280x800/5.png" alt="Point Reshelve at your own endpoint. Each key stays in local storage and is only sent to that endpoint." width="880">
+</p>
 
 ## Privacy, specifically
 
@@ -98,15 +102,11 @@ Full policy: [Privacy Policy / 隐私权政策](https://gist.github.com/gaotiesu
   asks for history permission only if you press that button.
 
 <p align="center">
-  <img src="readme/screenshots/en/3-cleanup.png" alt="No model needed. Duplicates, empty folders, dead links, and bookmarks you stopped opening." width="880">
+  <img src="readme/screenshots/webstore-1280x800/3.png" alt="Browse, search, export, and import bookmarks. No model required." width="880">
 </p>
 
 <p align="center">
-  <img src="readme/screenshots/en/4-stale.png" alt="Find what you saved and forgot. Bucketed by last-opened time, no browsing history." width="880">
-</p>
-
-<p align="center">
-  <img src="readme/screenshots/en/5-stats.png" alt="See where your bookmarks come from. Optionally ranked by how often you visit." width="880">
+  <img src="readme/screenshots/webstore-1280x800/4.png" alt="See where your bookmarks come from. Optionally ranked by how often you visit." width="880">
 </p>
 
 

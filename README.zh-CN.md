@@ -13,11 +13,7 @@
 Reshelve 整理的是你**原生的 Chrome 书签**，而不是另起炉灶的一套东西。整理完成后，书签栏还是那个书签栏，跨设备同步也和以前一样正常工作。
 
 <p align="center">
-  <img src="readme/screenshots/zh/1-scope.png" alt="范围由你圈定。没勾选的文件夹既不会被读取，也不会被改动。" width="880">
-</p>
-
-<p align="center">
-  <img src="readme/screenshots/zh/2-preview.png" alt="逐条审查，逐条拒绝。每条移动都会列出原来在哪、要去哪、为什么。" width="880">
+  <img src="readme/screenshots/webstore-1280x800/1.png" alt="范围由你圈定。没勾选的文件夹既不会被读取，也不会被改动。" width="880">
 </p>
 
 
@@ -33,6 +29,10 @@ Reshelve 整理的是你**原生的 Chrome 书签**，而不是另起炉灶的�
 - **每一次改动都可复核。** 在真正落地之前，所有移动和改名都会列出来：每个书签原本在哪、要去哪、为什么。你可以逐条取消，也可以按置信度批量筛选。
 - **一键撤销。** 结果不满意？把一切恢复原样。
 
+<p align="center">
+  <img src="readme/screenshots/webstore-1280x800/2.png" alt="这次走哪条路由你拍板：归入现有文件夹、只处理散落书签、重新设计整棵树，或只统一标题。" width="880">
+</p>
+
 ## 模型自备
 
 Reshelve 没有服务器。你把它指向你自己的接口：
@@ -44,6 +44,10 @@ Reshelve 没有服务器。你把它指向你自己的接口：
 其中 OpenCode Go 是面向 coding-agent 流量的网关，用它做书签分类是 best-effort 支持。如果测试连接反复失败，建议改用模型厂商（智谱、Kimi 等）的直连接口。
 
 你填的每一把 API Key 都保存在本地的 `chrome.storage` 里，各自只会发往它对应的那个接口；在设置页删掉一个端点，那把 Key 一并消失。
+
+<p align="center">
+  <img src="readme/screenshots/webstore-1280x800/5.png" alt="把 Reshelve 指向你自己的接口。每把 Key 只存在本地，也只发往对应的那个接口。" width="880">
+</p>
 
 ## 隐私，说具体的
 
@@ -69,15 +73,11 @@ Reshelve 没有服务器。你把它指向你自己的接口：
 - **统计**按域名排行你的收藏来源。按访问次数排行是可选的，而且只有你按下那个按钮时才会申请浏览记录权限。
 
 <p align="center">
-  <img src="readme/screenshots/zh/3-cleanup.png" alt="清理不用模型。去重、空文件夹、失效链接、长期未打开的书签。" width="880">
+  <img src="readme/screenshots/webstore-1280x800/3.png" alt="浏览、搜索、导出、导入书签。不调用模型。" width="880">
 </p>
 
 <p align="center">
-  <img src="readme/screenshots/zh/4-stale.png" alt="找回你存了就忘的书签。按上次打开时间分桶，不读浏览记录。" width="880">
-</p>
-
-<p align="center">
-  <img src="readme/screenshots/zh/5-stats.png" alt="书签到底来自哪里。也可以按访问次数排行。" width="880">
+  <img src="readme/screenshots/webstore-1280x800/4.png" alt="书签到底来自哪里。也可以按访问次数排行。" width="880">
 </p>
 
 
