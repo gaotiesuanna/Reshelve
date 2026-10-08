@@ -319,6 +319,7 @@ export function DashboardStep() {
           tree={tree}
           deleting={deleting}
           deleteError={deleteError}
+          range={range}
           onAllow={() => void allowHistory()}
           onDeleteDomain={(domain) => {
             if (visits.kind !== 'ready') return
@@ -356,6 +357,7 @@ function VisitedBody({
   onDeleteDomain,
   onDeletePages,
   confirmPages,
+  range,
   onCollapseDomain,
 }: {
   state: VisitState
@@ -367,6 +369,7 @@ function VisitedBody({
   onDeleteDomain: (domain: string) => void
   onDeletePages: (domain: string, urls: string[]) => Promise<HistoryDeleteResult>
   confirmPages: (urls: string[]) => boolean
+  range: VisitWindow
   onCollapseDomain: (domain: string) => void
 }) {
   if (state.kind === 'need') {
@@ -402,6 +405,7 @@ function VisitedBody({
       onDeleteDomain={onDeleteDomain}
       onDeletePages={onDeletePages}
       confirmPages={confirmPages}
+      range={range}
       onCollapseDomain={onCollapseDomain}
     />
   )
@@ -438,6 +442,7 @@ function DomainList({
   onDeleteDomain,
   onDeletePages,
   confirmPages,
+  range,
   onCollapseDomain,
 }: {
   rows: DomainRank[]
@@ -448,6 +453,7 @@ function DomainList({
   onDeleteDomain?: (domain: string) => void
   onDeletePages?: (domain: string, urls: string[]) => Promise<HistoryDeleteResult>
   confirmPages?: (urls: string[]) => boolean
+  range?: VisitWindow
   onCollapseDomain?: (domain: string) => void
 }) {
   const [openDomain, setOpenDomain] = useState<string | null>(null)
@@ -473,6 +479,7 @@ function DomainList({
           onDeleteDomain={onDeleteDomain}
           onDeletePages={onDeletePages}
           confirmPages={confirmPages}
+          range={range}
           open={openDomain === row.domain}
           onToggle={() => toggle(row.domain)}
         />
@@ -493,6 +500,7 @@ function DomainRow({
   onDeleteDomain,
   onDeletePages,
   confirmPages,
+  range,
   open,
   onToggle,
 }: {
@@ -507,6 +515,7 @@ function DomainRow({
   onDeleteDomain?: (domain: string) => void
   onDeletePages?: (domain: string, urls: string[]) => Promise<HistoryDeleteResult>
   confirmPages?: (urls: string[]) => boolean
+  range?: VisitWindow
   open: boolean
   onToggle: () => void
 }) {
@@ -622,11 +631,12 @@ function DomainRow({
           {plural(deleteError.count, 'dashVisitDeleteFailedOne', 'dashVisitDeleteFailedOther', String(deleteError.count))}
         </p>
       )}
-      {open && visits !== undefined && onDeletePages !== undefined && confirmPages !== undefined && (
+      {open && visits !== undefined && range !== undefined && onDeletePages !== undefined && confirmPages !== undefined && (
         <VisitBreakdown
           pages={visits}
           tree={tree ?? []}
           domain={row.domain}
+          range={range}
           deleting={deleting}
           onDeletePages={onDeletePages}
           confirmPages={confirmPages}
@@ -655,6 +665,7 @@ function VisitBreakdown({
   pages,
   tree,
   domain,
+  range,
   deleting,
   onDeletePages,
   confirmPages,
@@ -662,12 +673,17 @@ function VisitBreakdown({
   pages: WeightedUrl[]
   tree: BookmarkNode[]
   domain: string
+  range: VisitWindow
   deleting: boolean
   onDeletePages: (domain: string, urls: string[]) => Promise<HistoryDeleteResult>
   confirmPages: (urls: string[]) => boolean
 }) {
   const split = useMemo(() => visitSplitTree(pages, tree, domain), [pages, tree, domain])
   const [selected, setSelected] = useState<Set<string>>(() => new Set())
+  // 缓存命中不会把列表卸掉，换窗不能靠卸载来清勾选。
+  useEffect(() => {
+    setSelected(new Set())
+  }, [range])
   const shown = useGrow()
   const savedVisits = split.saved.reduce((n, page) => n + page.weight, 0)
   const unsavedVisits = split.unsaved.reduce((n, node) => n + node.count, 0)
@@ -715,7 +731,7 @@ function VisitBreakdown({
         shown ? 'opacity-100 translate-y-0' : 'opacity-0 -translate-y-1',
       ].join(' ')}
     >
-      {selected.size > 0 && (
+      {urls.length > 0 && (
         <div className="flex items-center gap-2">
           <button
             type="button"

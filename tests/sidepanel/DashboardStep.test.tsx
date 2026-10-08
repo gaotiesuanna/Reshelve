@@ -982,4 +982,37 @@ describe('DashboardStep', () => {
     vi.mocked(window.confirm).mockRestore()
   })
 
+  it('换到已缓存的时间窗时清掉勾选，不留下删除 0 的条', async () => {
+    const user = userEvent.setup()
+    contains.mockResolvedValue(true)
+    search.mockImplementation((query?: { startTime?: number }) =>
+      Promise.resolve((query?.startTime ?? 0) > 0
+        ? [{ url: 'https://github.com/b', visitCount: 2 }]
+        : [
+          { url: 'https://github.com/a', visitCount: 4 },
+          { url: 'https://github.com/b', visitCount: 2 },
+        ]))
+    getVisits.mockResolvedValue([{ visitTime: Date.now() }])
+    render(<DashboardStep />)
+    await screen.findByText('github.com')
+    await user.click(screen.getByRole('tab', { name: t('dashWindow1m') }))
+    await screen.findByText('github.com')
+    await user.click(screen.getByRole('tab', { name: t('dashWindowAll') }))
+    await user.click(await screen.findByRole('button', { name: t('dashVisitDomainExpand', 'github.com') }))
+    await user.click(screen.getByRole('checkbox', { name: t('dashVisitSelectPage', 'github.com/a') }))
+    expect(screen.getByRole('button', { name: t('dashVisitDeletePagesOne') })).toBeTruthy()
+
+    search.mockClear()
+    await user.click(screen.getByRole('tab', { name: t('dashWindow1m') }))
+    expect(search).not.toHaveBeenCalled()
+    expect(screen.queryByRole('button', { name: t('dashVisitDeletePagesOther', '0') })).toBeNull()
+    expect(screen.queryByRole('button', { name: t('dashVisitDeletePagesOne') })).toBeNull()
+    expect(screen.queryByRole('button', { name: t('dashVisitClearSelection') })).toBeNull()
+
+    await user.click(screen.getByRole('tab', { name: t('dashWindowAll') }))
+    const box = screen.getByRole('checkbox', { name: t('dashVisitSelectPage', 'github.com/a') })
+    expect((box as HTMLInputElement).checked).toBe(false)
+    expect(screen.queryByRole('button', { name: t('dashVisitDeletePagesOne') })).toBeNull()
+  })
+
 })
