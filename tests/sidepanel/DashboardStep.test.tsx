@@ -59,6 +59,12 @@ afterEach(() => {
   chromeGlobal.chrome.history = originalHistory
 })
 
+/** 统计页默认停在「访问」。书签排行的断言要先切过去。 */
+async function showBookmarked(user = userEvent.setup()) {
+  await user.click(screen.getByRole('tab', { name: t('dashBookmarked') }))
+  return user
+}
+
 describe('DashboardStep', () => {
   it('卡片宽度与 AI 整理书签工作区同上限，宽屏居中', () => {
     // BookmarkWorkspace 用 max-w-[54rem]；统计页以前没有上限，宽屏上域名和计数之间空出一长条。
@@ -71,9 +77,35 @@ describe('DashboardStep', () => {
     expect(card!.className).toContain('mx-auto')
   })
 
-
-  it('按书签数量列出 Top 域名，丢掉非 http 链接', () => {
+  it('进入统计页默认停在访问：没权限只解释，不弹窗，也不列出书签排行', async () => {
     render(<DashboardStep />)
+    expect(screen.getByRole('tab', { name: t('dashVisited') }).getAttribute('aria-selected')).toBe('true')
+    expect(screen.getByRole('tab', { name: t('dashBookmarked') }).getAttribute('aria-selected')).toBe('false')
+    expect(await screen.findByText(t('dashHistoryExplain'))).toBeTruthy()
+    expect(request).not.toHaveBeenCalled()
+    expect(screen.queryByText('github.com')).toBeNull()
+  })
+
+  it('进入统计页时已有历史权限就直接列出访问排行，不必再点访问', async () => {
+    contains.mockResolvedValue(true)
+    search.mockResolvedValue([
+      { url: 'https://github.com/x', visitCount: 20 },
+      { url: 'https://bilibili.com/1', visitCount: 4 },
+    ])
+
+    render(<DashboardStep />)
+
+    expect(await screen.findByText('20')).toBeTruthy()
+    expect(screen.getByText('github.com')).toBeTruthy()
+    expect(screen.getByText('bilibili.com')).toBeTruthy()
+    expect(screen.getByText('4')).toBeTruthy()
+    expect(request).not.toHaveBeenCalled()
+  })
+
+
+  it('按书签数量列出 Top 域名，丢掉非 http 链接', async () => {
+    render(<DashboardStep />)
+    await showBookmarked()
     expect(screen.getByText('github.com')).toBeTruthy()
     expect(screen.getByText('3')).toBeTruthy()
     expect(screen.getByText('bilibili.com')).toBeTruthy()
@@ -81,9 +113,10 @@ describe('DashboardStep', () => {
     expect(screen.queryByText('javascript:alert(1)')).toBeNull()
   })
 
-  it('没有可统计的书签时给出空状态，而不是一张空表', () => {
+  it('没有可统计的书签时给出空状态，而不是一张空表', async () => {
     useStore.setState({ tree: [] })
     render(<DashboardStep />)
+    await showBookmarked()
     expect(screen.getByText(t('dashEmptyBookmarks'))).toBeTruthy()
   })
 
@@ -130,6 +163,7 @@ describe('DashboardStep', () => {
     })
     const user = userEvent.setup()
     render(<DashboardStep />)
+    await showBookmarked(user)
     expect(screen.getAllByRole('listitem')).toHaveLength(5)
 
     const input = screen.getByLabelText(t('dashTopCountLabel'))
@@ -151,8 +185,9 @@ describe('DashboardStep', () => {
     expect(useStore.getState().settings.topDomainCount).toBe(9)
   })
 
-  it('书签栏域名行带有展开箭头', () => {
+  it('书签栏域名行带有展开箭头', async () => {
     render(<DashboardStep />)
+    await showBookmarked()
     const btn = screen.getByRole('button', { name: t('dashDomainExpand', 'github.com') })
     expect(btn.querySelector('svg')).not.toBeNull()
   })
@@ -160,6 +195,7 @@ describe('DashboardStep', () => {
   it('点书签栏域名展开对应路径和条数', async () => {
     const user = userEvent.setup()
     render(<DashboardStep />)
+    await showBookmarked(user)
     expect(screen.queryByText('bar')).toBeNull()
 
     await user.click(screen.getByRole('button', { name: t('dashDomainExpand', 'github.com') }))
@@ -180,6 +216,7 @@ describe('DashboardStep', () => {
     })
 
     render(<DashboardStep />)
+    await showBookmarked(user)
     await user.click(screen.getByRole('button', { name: t('dashDomainExpand', 'github.com') }))
 
     expect(screen.getByText('Bookmarks Bar / Dev tools')).toBeTruthy()
@@ -190,6 +227,7 @@ describe('DashboardStep', () => {
   it('再点同一行收起分布', async () => {
     const user = userEvent.setup()
     render(<DashboardStep />)
+    await showBookmarked(user)
     await user.click(screen.getByRole('button', { name: t('dashDomainExpand', 'github.com') }))
     expect(screen.getByText('bar')).toBeTruthy()
 
@@ -200,6 +238,7 @@ describe('DashboardStep', () => {
   it('点另一域名时前一行收起', async () => {
     const user = userEvent.setup()
     render(<DashboardStep />)
+    await showBookmarked(user)
     await user.click(screen.getByRole('button', { name: t('dashDomainExpand', 'github.com') }))
     await user.click(screen.getByRole('button', { name: t('dashDomainExpand', 'bilibili.com') }))
 
@@ -285,6 +324,7 @@ describe('DashboardStep', () => {
     useStore.setState({ tree: nested })
     const user = userEvent.setup()
     render(<DashboardStep />)
+    await showBookmarked(user)
     await user.click(screen.getByRole('button', { name: t('dashDomainExpand', 'github.com') }))
 
     // 展开来源只露出最外一层，往下每一层都要自己点
@@ -603,12 +643,12 @@ describe('DashboardStep', () => {
     const user = userEvent.setup()
     contains.mockResolvedValue(true)
     render(<DashboardStep />)
-    expect(screen.queryByRole('tablist', { name: t('dashWindowLabel') })).toBeNull()
-
-    await user.click(screen.getByRole('tab', { name: t('dashVisited') }))
     expect(screen.getByRole('tablist', { name: t('dashWindowLabel') })).toBeTruthy()
     expect(screen.getByRole('tab', { name: t('dashWindowAll') }).getAttribute('aria-selected'))
       .toBe('true')
+
+    await user.click(screen.getByRole('tab', { name: t('dashBookmarked') }))
+    expect(screen.queryByRole('tablist', { name: t('dashWindowLabel') })).toBeNull()
   })
 
   it('还没授权浏览记录时不摆时间窗——点了也没数可查', async () => {
@@ -709,6 +749,7 @@ describe('DashboardStep', () => {
     })
 
     render(<DashboardStep />)
+    await showBookmarked(user)
     await user.click(screen.getByRole('button', { name: t('dashDomainExpand', 'github.com') }))
 
     expect(screen.getByText('Bookmarks Bar / Dev tools')).toBeTruthy()

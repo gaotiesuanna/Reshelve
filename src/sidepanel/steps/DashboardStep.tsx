@@ -84,7 +84,7 @@ export function DashboardStep() {
   const settings = useStore((s) => s.settings)
   const setSettings = useStore((s) => s.setSettings)
   const topN = clampTopDomainCount(settings.topDomainCount)
-  const [metric, setMetric] = useState<Metric>('bookmarked')
+  const [metric, setMetric] = useState<Metric>('visited')
   const [visits, setVisits] = useState<VisitState>({ kind: 'idle' })
   const [range, setRange] = useState<VisitWindow>('all')
   const [draft, setDraft] = useState<string | null>(null)
@@ -109,6 +109,11 @@ export function DashboardStep() {
     }
     await loadVisits(range)
   }
+
+  // 进入统计页就停在「访问」，并走和点那一格相同的加载：没权限只解释，不弹窗。
+  useEffect(() => {
+    void selectVisited()
+  }, [])
 
   async function allowHistory() {
     if (!await ensureHistoryPermission()) {

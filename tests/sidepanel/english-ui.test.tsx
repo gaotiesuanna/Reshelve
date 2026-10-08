@@ -121,20 +121,27 @@ describe('英文界面渲染守卫：步骤组件', () => {
     assertNoChinese(container, 'TransferStep')
   })
 
-  it('DashboardStep', () => {
+  it('DashboardStep', async () => {
     const chromeGlobal = globalThis as unknown as { chrome: Record<string, unknown> }
     const originalRuntime = chromeGlobal.chrome.runtime
+    const originalPermissions = chromeGlobal.chrome.permissions
     chromeGlobal.chrome.runtime = {
       getURL: (path: string) => `chrome-extension://fakeid${path}`,
+    }
+    chromeGlobal.chrome.permissions = {
+      contains: () => Promise.resolve(false),
+      request: () => Promise.resolve(false),
     }
     try {
       useStore.setState({
         tree, checkedIds: new Set(['10']), busy: null, error: null,
       })
       const { container } = render(<DashboardStep />)
+      expect(await screen.findByRole('button', { name: 'Allow history access' })).toBeTruthy()
       assertNoChinese(container, 'DashboardStep')
     } finally {
       chromeGlobal.chrome.runtime = originalRuntime
+      chromeGlobal.chrome.permissions = originalPermissions
     }
   })
 
