@@ -527,6 +527,9 @@ describe('DashboardStep', () => {
     await user.click(screen.getByRole('button', { name: /tasks/ }))
 
     expect(screen.getByText(t('dashVisitGroupUnnamed'))).toBeTruthy()
+    expect(screen.getByRole('checkbox', {
+      name: t('dashVisitSelectPage', t('dashVisitGroupUnnamed')),
+    })).toBeTruthy()
   })
 
   it('同一台机器上的两个端口排成两行，行内地址带上端口', async () => {

@@ -953,10 +953,11 @@ function FolderSelectBox({
   const selectedCount = ids.filter((id) => selected.has(id)).length
   const allOn = ids.length > 0 && selectedCount === ids.length
   const some = selectedCount > 0 && !allOn
+  const pageName = node.grouped === true ? node.title.trim() || t('dashVisitGroupUnnamed') : node.title
   return (
     <input
       type="checkbox"
-      aria-label={t('dashVisitSelectPage', node.title)}
+      aria-label={t('dashVisitSelectPage', pageName)}
       className="h-3.5 w-3.5 shrink-0 accent-index-ink"
       checked={allOn}
       // indeterminate 不是 React prop，每次渲染都要写到 DOM 上。
