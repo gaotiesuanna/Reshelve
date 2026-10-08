@@ -133,6 +133,7 @@ export interface DomainFolderNode {
     title: string
     url: string
     weight?: number
+    sourceUrls?: string[]
   }>
   /**
    * 这一段路径底下只有一个页面、再没有别的分支，界面直接画成页面行，不摆目录。
@@ -389,7 +390,7 @@ export function visitFolderTree(pages: readonly WeightedUrl[], domain: string): 
   return sortLevel([...folders, ...pathTree(rest, domain)])
 }
 
-function pathTree(pages: readonly WeightedUrl[], domain: string): DomainFolderNode[] {
+function pathTree(pages: readonly (WeightedUrl & { sourceUrls?: string[] })[], domain: string): DomainFolderNode[] {
   const root: MutableVisitFolder = { id: '/', title: '', bookmarks: [], children: new Map() }
 
   for (const page of pages) {
@@ -414,6 +415,7 @@ function pathTree(pages: readonly WeightedUrl[], domain: string): DomainFolderNo
       title: page.title ?? '',
       url: page.url,
       weight,
+      ...(page.sourceUrls === undefined ? {} : { sourceUrls: page.sourceUrls }),
     })
   }
 
@@ -478,15 +480,17 @@ function mergeVisitPages(pages: DomainFolderNode['bookmarks']): DomainFolderNode
     const key = parsed === null ? page.url : `${parsed.host}${parsed.path}`
     const weight = page.weight ?? 1
     const href = visitPageHref(page.url)
+    const incoming = page.sourceUrls ?? [page.url]
     const existing = byPath.get(key)
     if (existing === undefined) {
       byPath.set(key, {
-        page: { ...page, id: href, url: href, weight },
+        page: { ...page, id: href, url: href, weight, sourceUrls: [...incoming] },
         topWeight: weight,
       })
       continue
     }
     existing.page.weight = (existing.page.weight ?? 1) + weight
+    existing.page.sourceUrls = [...new Set([...(existing.page.sourceUrls ?? []), ...incoming])]
     if (weight > existing.topWeight) {
       existing.topWeight = weight
       existing.page.title = page.title
@@ -507,6 +511,7 @@ export interface SavedVisit {
   weight: number
   /** 书签所在的文件夹路径，从根往下。空数组表示直接躺在根目录。 */
   folderPath: string[]
+  sourceUrls: string[]
 }
 
 export interface VisitSplit {
@@ -554,10 +559,20 @@ export function visitSplitTree(
       url: page.url,
       weight: page.weight ?? 1,
       folderPath: entry?.folderPath ?? [],
+      sourceUrls: page.sourceUrls ?? [page.url],
     }
   })
 
   return { saved, unsaved: visitFolderTree(unsavedPages, domain) }
+}
+
+export function historyUrlsForHost(items: readonly WeightedUrl[], domain: string): string[] {
+  const urls: string[] = []
+  for (const item of items) {
+    const parsed = sanitizeUrl(item.url)
+    if (parsed !== null && parsed.host === domain) urls.push(item.url)
+  }
+  return urls
 }
 
 /**

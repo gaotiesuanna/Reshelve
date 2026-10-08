@@ -7,7 +7,9 @@ import {
   rankDomains,
   visitFolderTree,
   visitSplitTree,
+  historyUrlsForHost,
 } from '@/core/domains'
+import type { DomainFolderNode } from '@/core/domains'
 import type { BookmarkNode } from '@/core/ports'
 
 describe('rankDomains', () => {
@@ -283,7 +285,7 @@ describe('visitFolderTree', () => {
     ])
     const library = tree[0]
     expect(library?.bookmarks).toEqual([
-      { id: 'https://localhost/analysis/library', title: 'Lib', url: 'https://localhost/analysis/library', weight: 315 },
+      { id: 'https://localhost/analysis/library', title: 'Lib', url: 'https://localhost/analysis/library', weight: 315, sourceUrls: ['https://localhost/analysis/library'] },
     ])
     expect(library?.children).toEqual([
       {
@@ -294,7 +296,7 @@ describe('visitFolderTree', () => {
         children: [],
         pageOnly: true,
         bookmarks: [
-          { id: 'https://localhost/analysis/library/5', title: 'Lib5', url: 'https://localhost/analysis/library/5', weight: 155 },
+          { id: 'https://localhost/analysis/library/5', title: 'Lib5', url: 'https://localhost/analysis/library/5', weight: 155, sourceUrls: ['https://localhost/analysis/library/5'] },
         ],
       },
     ])
@@ -313,7 +315,7 @@ describe('visitFolderTree', () => {
         count: 331,
         directCount: 1,
         bookmarks: [
-          { id: 'https://localhost/settings', title: 'Settings', url: 'https://localhost/settings', weight: 121 },
+          { id: 'https://localhost/settings', title: 'Settings', url: 'https://localhost/settings', weight: 121, sourceUrls: ['https://localhost/settings'] },
         ],
         children: [
           {
@@ -324,7 +326,7 @@ describe('visitFolderTree', () => {
             children: [],
             pageOnly: true,
             bookmarks: [
-              { id: 'https://localhost/settings/tasks', title: 'Tasks', url: 'https://localhost/settings/tasks', weight: 210 },
+              { id: 'https://localhost/settings/tasks', title: 'Tasks', url: 'https://localhost/settings/tasks', weight: 210, sourceUrls: ['https://localhost/settings/tasks'] },
             ],
           },
         ],
@@ -345,7 +347,7 @@ describe('visitFolderTree', () => {
         directCount: 1,
         children: [],
         bookmarks: [
-          { id: 'https://localhost/', title: 'Root', url: 'https://localhost/', weight: 213 },
+          { id: 'https://localhost/', title: 'Root', url: 'https://localhost/', weight: 213, sourceUrls: ['https://localhost/'] },
         ],
       },
     ])
@@ -374,6 +376,11 @@ describe('visitFolderTree', () => {
         title: '墨析 · 小说拆解工作台',
         url: 'https://localhost/analysis/library',
         weight: 449,
+        sourceUrls: [
+          'https://localhost/analysis/library?tab=a',
+          'https://localhost/analysis/library',
+          'https://localhost/analysis/library?x=1#h',
+        ],
       },
     ])
   })
@@ -454,6 +461,7 @@ describe('visitSplitTree', () => {
         url: 'https://localhost/analysis/library',
         weight: 502,
         folderPath: ['书签栏', '开发'],
+        sourceUrls: ['https://localhost/analysis/library'],
       },
       {
         id: 'https://localhost/home',
@@ -461,6 +469,7 @@ describe('visitSplitTree', () => {
         url: 'https://localhost/home',
         weight: 90,
         folderPath: ['书签栏'],
+        sourceUrls: ['https://localhost/home'],
       },
     ])
   })
@@ -512,6 +521,7 @@ describe('visitSplitTree', () => {
         url: 'https://localhost/home',
         weight: 9,
         folderPath: [],
+        sourceUrls: ['https://localhost/home'],
       },
     ])
     expect(split.unsaved).toEqual([])
@@ -530,6 +540,49 @@ describe('visitSplitTree', () => {
     )
 
     expect(split.saved[0]?.title).toBe('Home')
+  })
+
+  it('query 变体并成一行，但 sourceUrls 留住每一条原始历史地址', () => {
+    const split = visitSplitTree([
+      { url: 'https://localhost/analysis/library?tab=a', title: 'A', weight: 40 },
+      { url: 'https://localhost/analysis/library#section', title: 'B', weight: 10 },
+      { url: 'https://localhost/analysis/library', title: 'Lib', weight: 5 },
+    ], tree, 'localhost')
+
+    expect(split.saved).toHaveLength(1)
+    expect(split.saved[0]?.url).toBe('https://localhost/analysis/library')
+    expect(split.saved[0]?.sourceUrls.sort()).toEqual([
+      'https://localhost/analysis/library',
+      'https://localhost/analysis/library#section',
+      'https://localhost/analysis/library?tab=a',
+    ])
+  })
+
+  it('未收藏的 query 变体同样把原始地址留在 sourceUrls', () => {
+    const split = visitSplitTree([
+      { url: 'https://example.com/datasets?x=1', title: 'A', weight: 5 },
+      { url: 'https://example.com/datasets#y', title: 'B', weight: 2 },
+    ], [], 'example.com')
+
+    const pages = split.unsaved.flatMap(function walk(node: DomainFolderNode): DomainFolderNode['bookmarks'] {
+      return [...node.bookmarks, ...node.children.flatMap(walk)]
+    })
+    expect(pages).toHaveLength(1)
+    expect(pages[0]?.url).toBe('https://example.com/datasets')
+    expect(pages[0]?.sourceUrls?.sort()).toEqual([
+      'https://example.com/datasets#y',
+      'https://example.com/datasets?x=1',
+    ])
+  })
+
+  it('historyUrlsForHost 只收当前集合里 host 相同的原始 URL', () => {
+    expect(historyUrlsForHost([
+      { url: 'https://github.com/a', weight: 2 },
+      { url: 'https://github.com/a?x=1', weight: 1 },
+      { url: 'http://localhost:8501/settings', weight: 4 },
+      { url: 'http://localhost:5629/home', weight: 9 },
+      { url: 'javascript:alert(1)', weight: 1 },
+    ], 'localhost:8501')).toEqual(['http://localhost:8501/settings'])
   })
 })
 
@@ -555,9 +608,9 @@ describe('visitFolderTree 同形 ID 段合并', () => {
         directCount: 3,
         children: [],
         bookmarks: [
-          { id: 'https://192.168.5.39/tasks/019fb349-e6f2-7407-a254-1919171a8d4a', title: 'PalClaw /tasks/019fb349-e6f2-7407-a254-1919171a8d4a', url: 'https://192.168.5.39/tasks/019fb349-e6f2-7407-a254-1919171a8d4a', weight: 9 },
-          { id: 'https://192.168.5.39/tasks/c69350df521240909ec967c712200cfa', title: 'PalClaw /tasks/c69350df521240909ec967c712200cfa', url: 'https://192.168.5.39/tasks/c69350df521240909ec967c712200cfa', weight: 8 },
-          { id: 'https://192.168.5.39/tasks/bd8c838b055c45dc984b0f28bef6684b', title: 'PalClaw /tasks/bd8c838b055c45dc984b0f28bef6684b', url: 'https://192.168.5.39/tasks/bd8c838b055c45dc984b0f28bef6684b', weight: 7 },
+          { id: 'https://192.168.5.39/tasks/019fb349-e6f2-7407-a254-1919171a8d4a', title: 'PalClaw /tasks/019fb349-e6f2-7407-a254-1919171a8d4a', url: 'https://192.168.5.39/tasks/019fb349-e6f2-7407-a254-1919171a8d4a', weight: 9, sourceUrls: ['https://192.168.5.39/tasks/019fb349-e6f2-7407-a254-1919171a8d4a'] },
+          { id: 'https://192.168.5.39/tasks/c69350df521240909ec967c712200cfa', title: 'PalClaw /tasks/c69350df521240909ec967c712200cfa', url: 'https://192.168.5.39/tasks/c69350df521240909ec967c712200cfa', weight: 8, sourceUrls: ['https://192.168.5.39/tasks/c69350df521240909ec967c712200cfa'] },
+          { id: 'https://192.168.5.39/tasks/bd8c838b055c45dc984b0f28bef6684b', title: 'PalClaw /tasks/bd8c838b055c45dc984b0f28bef6684b', url: 'https://192.168.5.39/tasks/bd8c838b055c45dc984b0f28bef6684b', weight: 7, sourceUrls: ['https://192.168.5.39/tasks/bd8c838b055c45dc984b0f28bef6684b'] },
         ],
       },
     ])
