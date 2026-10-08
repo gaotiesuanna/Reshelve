@@ -6,7 +6,9 @@ import {
   domainFolderTree,
   visitSplitTree,
   historyUrlsForHost,
+  pageIdsUnder,
   rankDomains,
+  sourceUrlsForPages,
   TOP_DOMAIN_MAX,
   TOP_DOMAIN_MIN,
   type DomainFolderNode,
@@ -66,6 +68,45 @@ const WINDOW_LABEL = {
   '6m': 'dashWindow6m',
   '1y': 'dashWindow1y',
 } as const
+
+interface PageSelection {
+  selected: ReadonlySet<string>
+  togglePage: (id: string) => void
+  toggleNode: (node: DomainFolderNode) => void
+}
+
+/** 单数句的 $window$ 是 $1，复数句才把次数放在 $1、时间窗放在 $2。 */
+function pageConfirmMessage(count: number, range: VisitWindow): string {
+  const countText = String(count)
+  const windowName = t(WINDOW_LABEL[range])
+  if (range === 'all') {
+    return plural(count, 'dashVisitDeletePagesConfirmAllOne', 'dashVisitDeletePagesConfirmAllOther', countText)
+  }
+  if (count === 1) {
+    return plural(1, 'dashVisitDeletePagesConfirmOne', 'dashVisitDeletePagesConfirmOther', windowName)
+  }
+  return plural(count, 'dashVisitDeletePagesConfirmOne', 'dashVisitDeletePagesConfirmOther', countText, windowName)
+}
+
+function selectedSourceUrls(
+  saved: readonly SavedVisit[],
+  unsaved: readonly DomainFolderNode[],
+  selectedIds: ReadonlySet<string>,
+): Map<string, string[]> {
+  const owned = new Map<string, string[]>()
+  for (const page of saved) {
+    if (selectedIds.has(page.id)) owned.set(page.id, [...page.sourceUrls])
+  }
+  const walk = (node: DomainFolderNode): void => {
+    for (const page of node.bookmarks) {
+      if (!selectedIds.has(page.id)) continue
+      owned.set(page.id, [...(page.sourceUrls ?? [page.url])])
+    }
+    for (const child of node.children) walk(child)
+  }
+  for (const node of unsaved) walk(node)
+  return owned
+}
 
 /** 域名活跃度那排小圆点的格数。 */
 const METER_SEGMENTS = 7
@@ -154,12 +195,8 @@ export function DashboardStep() {
     setVisits(items.length === 0 ? { kind: 'empty' } : { kind: 'ready', items })
   }
 
-  async function removeVisited(domain: string, urls: string[]): Promise<HistoryDeleteResult> {
-    if (deleting || urls.length === 0) return { deleted: [], failed: [] }
-    if (!await hasHistoryPermission()) {
-      setVisits({ kind: 'need' })
-      return { deleted: [], failed: [] }
-    }
+  function confirmDomainDelete(domain: string, urls: string[]): boolean {
+    if (urls.length === 0) return false
     const name = visits.kind === 'ready'
       ? rankDomains(visits.items, topN).find((row) => row.domain === domain)?.siteName ?? domain
       : domain
@@ -171,7 +208,15 @@ export function DashboardStep() {
       : urls.length === 1
         ? plural(1, 'dashVisitDeleteDomainConfirmOne', 'dashVisitDeleteDomainConfirmOther', name, windowName)
         : plural(urls.length, 'dashVisitDeleteDomainConfirmOne', 'dashVisitDeleteDomainConfirmOther', name, count, windowName)
-    if (!window.confirm(message)) return { deleted: [], failed: [] }
+    return window.confirm(message)
+  }
+
+  async function removeVisited(domain: string, urls: string[]): Promise<HistoryDeleteResult> {
+    if (deleting || urls.length === 0) return { deleted: [], failed: [] }
+    if (!await hasHistoryPermission()) {
+      setVisits({ kind: 'need' })
+      return { deleted: [], failed: [] }
+    }
     setDeleting(true)
     const { deleted, failed } = await deleteHistoryUrls(urls)
     for (const url of deleted) removed.current.add(url)
@@ -277,8 +322,12 @@ export function DashboardStep() {
           onAllow={() => void allowHistory()}
           onDeleteDomain={(domain) => {
             if (visits.kind !== 'ready') return
-            void removeVisited(domain, historyUrlsForHost(visits.items, domain))
+            const urls = historyUrlsForHost(visits.items, domain)
+            if (!confirmDomainDelete(domain, urls)) return
+            void removeVisited(domain, urls)
           }}
+          onDeletePages={(domain, urls) => removeVisited(domain, urls)}
+          confirmPages={(urls) => urls.length > 0 && window.confirm(pageConfirmMessage(urls.length, range))}
           onCollapseDomain={(domain) => {
             setDeleteError((current) => current?.domain === domain ? null : current)
           }}
@@ -305,6 +354,8 @@ function VisitedBody({
   deleteError,
   onAllow,
   onDeleteDomain,
+  onDeletePages,
+  confirmPages,
   onCollapseDomain,
 }: {
   state: VisitState
@@ -314,6 +365,8 @@ function VisitedBody({
   deleteError: { domain: string, count: number } | null
   onAllow: () => void
   onDeleteDomain: (domain: string) => void
+  onDeletePages: (domain: string, urls: string[]) => Promise<HistoryDeleteResult>
+  confirmPages: (urls: string[]) => boolean
   onCollapseDomain: (domain: string) => void
 }) {
   if (state.kind === 'need') {
@@ -347,6 +400,8 @@ function VisitedBody({
       deleting={deleting}
       deleteError={deleteError}
       onDeleteDomain={onDeleteDomain}
+      onDeletePages={onDeletePages}
+      confirmPages={confirmPages}
       onCollapseDomain={onCollapseDomain}
     />
   )
@@ -381,6 +436,8 @@ function DomainList({
   deleting = false,
   deleteError = null,
   onDeleteDomain,
+  onDeletePages,
+  confirmPages,
   onCollapseDomain,
 }: {
   rows: DomainRank[]
@@ -389,6 +446,8 @@ function DomainList({
   deleting?: boolean
   deleteError?: { domain: string, count: number } | null
   onDeleteDomain?: (domain: string) => void
+  onDeletePages?: (domain: string, urls: string[]) => Promise<HistoryDeleteResult>
+  confirmPages?: (urls: string[]) => boolean
   onCollapseDomain?: (domain: string) => void
 }) {
   const [openDomain, setOpenDomain] = useState<string | null>(null)
@@ -412,6 +471,8 @@ function DomainList({
           deleting={deleting}
           deleteError={deleteError}
           onDeleteDomain={onDeleteDomain}
+          onDeletePages={onDeletePages}
+          confirmPages={confirmPages}
           open={openDomain === row.domain}
           onToggle={() => toggle(row.domain)}
         />
@@ -430,6 +491,8 @@ function DomainRow({
   deleting = false,
   deleteError = null,
   onDeleteDomain,
+  onDeletePages,
+  confirmPages,
   open,
   onToggle,
 }: {
@@ -442,6 +505,8 @@ function DomainRow({
   deleting?: boolean
   deleteError?: { domain: string, count: number } | null
   onDeleteDomain?: (domain: string) => void
+  onDeletePages?: (domain: string, urls: string[]) => Promise<HistoryDeleteResult>
+  confirmPages?: (urls: string[]) => boolean
   open: boolean
   onToggle: () => void
 }) {
@@ -557,8 +622,15 @@ function DomainRow({
           {plural(deleteError.count, 'dashVisitDeleteFailedOne', 'dashVisitDeleteFailedOther', String(deleteError.count))}
         </p>
       )}
-      {open && visits !== undefined && (
-        <VisitBreakdown pages={visits} tree={tree ?? []} domain={row.domain} />
+      {open && visits !== undefined && onDeletePages !== undefined && confirmPages !== undefined && (
+        <VisitBreakdown
+          pages={visits}
+          tree={tree ?? []}
+          domain={row.domain}
+          deleting={deleting}
+          onDeletePages={onDeletePages}
+          confirmPages={confirmPages}
+        />
       )}
       {open && folders.length > 0 && (
         <FolderTree
@@ -583,15 +655,58 @@ function VisitBreakdown({
   pages,
   tree,
   domain,
+  deleting,
+  onDeletePages,
+  confirmPages,
 }: {
   pages: WeightedUrl[]
   tree: BookmarkNode[]
   domain: string
+  deleting: boolean
+  onDeletePages: (domain: string, urls: string[]) => Promise<HistoryDeleteResult>
+  confirmPages: (urls: string[]) => boolean
 }) {
   const split = useMemo(() => visitSplitTree(pages, tree, domain), [pages, tree, domain])
+  const [selected, setSelected] = useState<Set<string>>(() => new Set())
   const shown = useGrow()
   const savedVisits = split.saved.reduce((n, page) => n + page.weight, 0)
   const unsavedVisits = split.unsaved.reduce((n, node) => n + node.count, 0)
+  const urls = sourceUrlsForPages(split.saved, split.unsaved, selected)
+  const selection: PageSelection = {
+    selected,
+    togglePage(id) {
+      setSelected((current) => {
+        const next = new Set(current)
+        if (next.has(id)) next.delete(id)
+        else next.add(id)
+        return next
+      })
+    },
+    toggleNode(node) {
+      const ids = pageIdsUnder(node)
+      setSelected((current) => {
+        const next = new Set(current)
+        const allOn = ids.every((id) => next.has(id))
+        for (const id of ids) allOn ? next.delete(id) : next.add(id)
+        return next
+      })
+    },
+  }
+
+  async function deleteSelected() {
+    if (!confirmPages(urls)) return
+    const owned = selectedSourceUrls(split.saved, split.unsaved, selected)
+    const { deleted } = await onDeletePages(domain, urls)
+    const gone = new Set(deleted)
+    setSelected((current) => {
+      const next = new Set(current)
+      for (const [id, sources] of owned) {
+        if (sources.every((url) => gone.has(url))) next.delete(id)
+      }
+      return next
+    })
+  }
+
   return (
     <div
       className={[
@@ -600,6 +715,25 @@ function VisitBreakdown({
         shown ? 'opacity-100 translate-y-0' : 'opacity-0 -translate-y-1',
       ].join(' ')}
     >
+      {selected.size > 0 && (
+        <div className="flex items-center gap-2">
+          <button
+            type="button"
+            disabled={deleting}
+            className="inline-flex h-6 cursor-pointer items-center rounded-md bg-neutral-800 px-2 text-xs leading-caption font-medium text-white disabled:cursor-default disabled:opacity-50"
+            onClick={() => void deleteSelected()}
+          >
+            {plural(urls.length, 'dashVisitDeletePagesOne', 'dashVisitDeletePagesOther', String(urls.length))}
+          </button>
+          <button
+            type="button"
+            className="inline-flex h-6 cursor-pointer items-center rounded-md px-2 text-xs leading-caption text-neutral-500 hover:text-neutral-800"
+            onClick={() => setSelected(new Set())}
+          >
+            {t('dashVisitClearSelection')}
+          </button>
+        </div>
+      )}
       <VisitSection
         label={t('dashVisitSavedLabel', domain)}
         icon={<BookmarkIcon className="h-3.5 w-3.5 shrink-0 text-index-accent" />}
@@ -608,7 +742,7 @@ function VisitBreakdown({
         emptyText={split.saved.length === 0 ? t('dashVisitNoneSaved') : undefined}
       >
         <ul className="mt-1 space-y-1.5 border-l border-neutral-200 pl-3">
-          {split.saved.map((page) => <SavedVisitRow key={page.id} page={page} />)}
+          {split.saved.map((page) => <SavedVisitRow key={page.id} page={page} selection={selection} />)}
         </ul>
       </VisitSection>
       <VisitSection
@@ -618,7 +752,7 @@ function VisitBreakdown({
         note={t('dashVisitCount', String(unsavedVisits))}
         emptyText={split.unsaved.length === 0 ? t('dashVisitNoneUnsaved') : undefined}
       >
-        <FolderTree nodes={split.unsaved} domain={domain} depth={0} margin="mt-1" />
+        <FolderTree nodes={split.unsaved} domain={domain} depth={0} margin="mt-1" selection={selection} />
       </VisitSection>
     </div>
   )
@@ -697,7 +831,7 @@ function VisitSection({
 }
 
 /** 已收藏那半的一行：页面本身 + 它躺在哪个书签文件夹里。 */
-function SavedVisitRow({ page }: { page: SavedVisit }) {
+function SavedVisitRow({ page, selection }: { page: SavedVisit, selection?: PageSelection }) {
   const address = shortAddress(page.url)
   const folder = page.folderPath.length === 0
     ? t('dashRootFolder')
@@ -705,6 +839,15 @@ function SavedVisitRow({ page }: { page: SavedVisit }) {
   return (
     <li className="min-w-0">
       <div className="flex min-w-0 items-start gap-2">
+        {selection !== undefined && (
+          <input
+            type="checkbox"
+            aria-label={t('dashVisitSelectPage', address)}
+            className="mt-0.5 h-3.5 w-3.5 shrink-0 accent-index-ink"
+            checked={selection.selected.has(page.id)}
+            onChange={() => selection.togglePage(page.id)}
+          />
+        )}
         <LinkIcon className="mt-0.5 h-3 w-3 shrink-0 text-neutral-300" />
         <a
           href={page.url}
@@ -747,6 +890,7 @@ function FolderTree({
   depth,
   label,
   margin = depth === 0 ? 'mt-2 ml-3' : 'mt-1',
+  selection,
 }: {
   nodes: DomainFolderNode[]
   domain: string
@@ -755,6 +899,8 @@ function FolderTree({
   label?: string
   /** 最外层的外边距。分区里的树已经缩进过一次，只留 mt-1。 */
   margin?: string
+  /** 只有访问明细传入。书签夹不传，免得目录树上长出勾选框。 */
+  selection?: PageSelection
 }) {
   const shown = useGrow()
   return (
@@ -769,12 +915,40 @@ function FolderTree({
     >
       {nodes.map((node) =>
         node.grouped !== true && (node.title === '' || node.pageOnly === true) ? (
-          <FolderBookmarks key={node.id} bookmarks={node.bookmarks} />
+          <FolderBookmarks key={node.id} bookmarks={node.bookmarks} selection={selection} />
         ) : (
-          <FolderNode key={node.id} node={node} domain={domain} depth={depth} />
+          <FolderNode key={node.id} node={node} domain={domain} depth={depth} selection={selection} />
         ),
       )}
     </ol>
+  )
+}
+
+function FolderSelectBox({
+  node,
+  selected,
+  onToggle,
+}: {
+  node: DomainFolderNode
+  selected: ReadonlySet<string>
+  onToggle: () => void
+}) {
+  const ids = pageIdsUnder(node)
+  const selectedCount = ids.filter((id) => selected.has(id)).length
+  const allOn = ids.length > 0 && selectedCount === ids.length
+  const some = selectedCount > 0 && !allOn
+  return (
+    <input
+      type="checkbox"
+      aria-label={t('dashVisitSelectPage', node.title)}
+      className="h-3.5 w-3.5 shrink-0 accent-index-ink"
+      checked={allOn}
+      // indeterminate 不是 React prop，每次渲染都要写到 DOM 上。
+      ref={(el) => {
+        if (el) el.indeterminate = some
+      }}
+      onChange={onToggle}
+    />
   )
 }
 
@@ -782,10 +956,12 @@ function FolderNode({
   node,
   domain,
   depth,
+  selection,
 }: {
   node: DomainFolderNode
   domain: string
   depth: number
+  selection?: PageSelection
 }) {
   const grouped = node.grouped === true
   const expandable = node.children.length > 0 || grouped
@@ -818,32 +994,43 @@ function FolderNode({
       <span className="shrink-0 text-sm tabular-nums text-neutral-600">{node.count}</span>
     </>
   )
+  const expandButton = (
+    <button
+      type="button"
+      className={[
+        'flex min-w-0 flex-1 cursor-pointer items-center gap-2 rounded-md py-0.5 text-left',
+        'transition-colors duration-150 motion-reduce:transition-none',
+        'hover:bg-index-surface-muted active:bg-index-accent-soft',
+        'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-neutral-400',
+        selection === undefined ? '-mx-1.5 w-full px-1.5' : '',
+      ].join(' ')}
+      aria-expanded={open}
+      onClick={() => setOpen((v) => !v)}
+    >
+      {label}
+    </button>
+  )
   return (
     <li>
-      {expandable ? (
-        <button
-          type="button"
-          className={[
-            '-mx-1.5 flex w-full cursor-pointer items-center gap-2 rounded-md px-1.5 py-0.5 text-left',
-            'transition-colors duration-150 motion-reduce:transition-none',
-            'hover:bg-index-surface-muted active:bg-index-accent-soft',
-            'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-neutral-400',
-          ].join(' ')}
-          aria-expanded={open}
-          onClick={() => setOpen((v) => !v)}
-        >
-          {label}
-        </button>
+      {selection === undefined ? (
+        expandable ? expandButton : <div className="flex items-center gap-2 py-0.5">{label}</div>
       ) : (
-        <div className="flex items-center gap-2 py-0.5">{label}</div>
+        <div className="-mx-1.5 flex items-center gap-2 px-1.5">
+          <FolderSelectBox
+            node={node}
+            selected={selection.selected}
+            onToggle={() => selection.toggleNode(node)}
+          />
+          {expandable ? expandButton : <div className="flex min-w-0 flex-1 items-center gap-2 py-0.5">{label}</div>}
+        </div>
       )}
       {node.bookmarks.length > 0 && (!expandable || open) && (
         <ul className="mt-1 space-y-1 pl-5">
-          <FolderBookmarks bookmarks={node.bookmarks} folderTitle={node.title} />
+          <FolderBookmarks bookmarks={node.bookmarks} folderTitle={node.title} selection={selection} />
         </ul>
       )}
       {expandable && open && (
-        <FolderTree nodes={node.children} domain={domain} depth={depth + 1} />
+        <FolderTree nodes={node.children} domain={domain} depth={depth + 1} selection={selection} />
       )}
     </li>
   )
@@ -852,10 +1039,12 @@ function FolderNode({
 function FolderBookmarks({
   bookmarks,
   folderTitle,
+  selection,
 }: {
   bookmarks: DomainFolderNode['bookmarks']
   /** 所在文件夹的名字。页面标题和它一样时只留地址——夹名已经说过一遍了。 */
   folderTitle?: string
+  selection?: PageSelection
 }) {
   return (
     <>
@@ -865,6 +1054,15 @@ function FolderBookmarks({
         const named = title !== '' && title !== folderTitle
         return (
           <li key={bookmark.id} className="flex min-w-0 items-start gap-2">
+            {selection !== undefined && (
+              <input
+                type="checkbox"
+                aria-label={t('dashVisitSelectPage', address)}
+                className="mt-0.5 h-3.5 w-3.5 shrink-0 accent-index-ink"
+                checked={selection.selected.has(bookmark.id)}
+                onChange={() => selection.togglePage(bookmark.id)}
+              />
+            )}
             <LinkIcon className="mt-0.5 h-3 w-3 shrink-0 text-neutral-300" />
             <a
               href={bookmark.url}

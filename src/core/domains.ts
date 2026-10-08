@@ -575,6 +575,38 @@ export function historyUrlsForHost(items: readonly WeightedUrl[], domain: string
   return urls
 }
 
+/** 该节点及其子孙的展示页 id。夹本身的 id 不是页面 id。 */
+export function pageIdsUnder(node: DomainFolderNode): string[] {
+  return [
+    ...node.bookmarks.map((page) => page.id),
+    ...node.children.flatMap(pageIdsUnder),
+  ]
+}
+
+/**
+ * 选中展示行背后的原始历史地址。
+ * 书签行的 sourceUrls 可能缺席，那时退回展示地址本身。
+ */
+export function sourceUrlsForPages(
+  saved: readonly SavedVisit[],
+  unsaved: readonly DomainFolderNode[],
+  selectedIds: ReadonlySet<string>,
+): string[] {
+  const urls: string[] = []
+  for (const page of saved) {
+    if (selectedIds.has(page.id)) urls.push(...page.sourceUrls)
+  }
+  const walk = (node: DomainFolderNode): void => {
+    for (const page of node.bookmarks) {
+      if (!selectedIds.has(page.id)) continue
+      urls.push(...(page.sourceUrls ?? [page.url]))
+    }
+    for (const child of node.children) walk(child)
+  }
+  for (const node of unsaved) walk(node)
+  return [...new Set(urls)]
+}
+
 /**
  * 该域名的书签按 `域名+路径` 建索引，顺带记下所在文件夹路径。
  * 同一个地址收藏了多份时留深度优先遇到的第一条——排行榜不做去重仲裁。

@@ -169,6 +169,36 @@
     "message": "Couldn't remove $count$ pages from browsing history.",
     "placeholders": { "count": { "content": "$1" } }
   },
+  "dashVisitDeletePagesOne": {
+    "message": "Delete 1"
+  },
+  "dashVisitDeletePagesOther": {
+    "message": "Delete $count$",
+    "placeholders": { "count": { "content": "$1" } }
+  },
+  "dashVisitClearSelection": { "message": "Clear" },
+  "dashVisitSelectPage": {
+    "message": "Select $page$",
+    "placeholders": { "page": { "content": "$1" } }
+  },
+  "dashVisitDeletePagesConfirmOne": {
+    "message": "Remove browsing history for 1 page? This includes visits outside $window$. Bookmarks are not deleted. This cannot be undone.",
+    "placeholders": { "window": { "content": "$1" } }
+  },
+  "dashVisitDeletePagesConfirmOther": {
+    "message": "Remove browsing history for $count$ pages? This includes visits outside $window$. Bookmarks are not deleted. This cannot be undone.",
+    "placeholders": {
+      "count": { "content": "$1" },
+      "window": { "content": "$2" }
+    }
+  },
+  "dashVisitDeletePagesConfirmAllOne": {
+    "message": "Remove browsing history for 1 page? Bookmarks are not deleted. This cannot be undone."
+  },
+  "dashVisitDeletePagesConfirmAllOther": {
+    "message": "Remove browsing history for $count$ pages? Bookmarks are not deleted. This cannot be undone.",
+    "placeholders": { "count": { "content": "$1" } }
+  },
   "dashWindowLabel": {
     "message": "Time range"
   },

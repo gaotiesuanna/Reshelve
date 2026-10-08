@@ -896,4 +896,90 @@ describe('DashboardStep', () => {
     vi.mocked(window.confirm).mockRestore()
   })
 
+  it('展开后可勾选同标题夹，其下页面跟着选中；取消一页则夹变为未定', async () => {
+    const user = userEvent.setup()
+    contains.mockResolvedValue(true)
+    search.mockResolvedValue([
+      { url: 'https://example.com/a', title: 'Same', visitCount: 3 },
+      { url: 'https://example.com/b', title: 'Same', visitCount: 2 },
+    ])
+    render(<DashboardStep />)
+    await user.click(await screen.findByRole('button', { name: t('dashVisitDomainExpand', 'example.com') }))
+    // VisitSection 默认展开。同标题夹默认收起，先点开夹，页面 checkbox 才会出现。
+    await user.click(screen.getByRole('button', { name: /Same/, expanded: false }))
+    const group = screen.getByRole('checkbox', { name: t('dashVisitSelectPage', 'Same') })
+    await user.click(group)
+    const pageBoxes = [
+      screen.getByRole('checkbox', { name: t('dashVisitSelectPage', 'example.com/a') }),
+      screen.getByRole('checkbox', { name: t('dashVisitSelectPage', 'example.com/b') }),
+    ]
+    expect(pageBoxes.every((box) => (box as HTMLInputElement).checked)).toBe(true)
+    await user.click(pageBoxes[0]!)
+    expect((group as HTMLInputElement).indeterminate).toBe(true)
+    expect((group as HTMLInputElement).checked).toBe(false)
+  })
+
+  it('多选删除只把选中行的原始 URL 交给 deleteUrl，确认文案不是整站那句', async () => {
+    const user = userEvent.setup()
+    vi.spyOn(window, 'confirm').mockReturnValue(true)
+    contains.mockResolvedValue(true)
+    search.mockResolvedValue([
+      { url: 'https://github.com/sst/opencode?x=1', title: 'opencode', visitCount: 4 },
+      { url: 'https://github.com/openai/codex', title: 'Codex', visitCount: 1 },
+    ])
+    render(<DashboardStep />)
+    await user.click(await screen.findByRole('button', { name: t('dashVisitDomainExpand', 'github.com') }))
+    await user.click(screen.getByRole('checkbox', { name: t('dashVisitSelectPage', 'github.com/sst/opencode') }))
+    await user.click(screen.getByRole('button', { name: t('dashVisitDeletePagesOne') }))
+    const message = vi.mocked(window.confirm).mock.calls[0]?.[0] ?? ''
+    expect(message).toContain('不能撤销')
+    expect(message).toContain('书签不会删除')
+    expect(message).not.toContain('github.com')
+    expect(deleteUrl.mock.calls.map((call) => call[0])).toEqual(expect.arrayContaining([
+      { url: 'https://github.com/sst/opencode?x=1' },
+    ]))
+    expect(deleteUrl).toHaveBeenCalledTimes(1)
+    expect(screen.queryByText('github.com/sst/opencode')).toBeNull()
+    expect(screen.getByText('github.com/openai/codex')).toBeTruthy()
+    vi.mocked(window.confirm).mockRestore()
+  })
+
+  it('勾选已收藏页面只删历史，书签树不变', async () => {
+    const user = userEvent.setup()
+    vi.spyOn(window, 'confirm').mockReturnValue(true)
+    contains.mockResolvedValue(true)
+    search.mockResolvedValue([
+      { url: 'https://github.com/a', title: 'a', visitCount: 4 },
+      { url: 'https://github.com/missing', title: 'missing', visitCount: 1 },
+    ])
+    const before = useStore.getState().tree
+    render(<DashboardStep />)
+    await user.click(await screen.findByRole('button', { name: t('dashVisitDomainExpand', 'github.com') }))
+    await user.click(screen.getByRole('checkbox', { name: t('dashVisitSelectPage', 'github.com/a') }))
+    await user.click(screen.getByRole('button', { name: t('dashVisitDeletePagesOne') }))
+    expect(deleteUrl.mock.calls.map((call) => call[0])).toEqual(expect.arrayContaining([
+      { url: 'https://github.com/a' },
+    ]))
+    expect(deleteUrl).toHaveBeenCalledTimes(1)
+    expect(useStore.getState().tree).toEqual(before)
+    expect(screen.getByText('github.com/missing')).toBeTruthy()
+    vi.mocked(window.confirm).mockRestore()
+  })
+
+  it('行尾删除忽略当前勾选，仍删该主机已加载的全部 URL', async () => {
+    const user = userEvent.setup()
+    vi.spyOn(window, 'confirm').mockReturnValue(true)
+    contains.mockResolvedValue(true)
+    search.mockResolvedValue([
+      { url: 'https://github.com/a', visitCount: 4 },
+      { url: 'https://github.com/b', visitCount: 1 },
+    ])
+    render(<DashboardStep />)
+    await user.click(await screen.findByRole('button', { name: t('dashVisitDomainExpand', 'github.com') }))
+    await user.click(screen.getByRole('checkbox', { name: t('dashVisitSelectPage', 'github.com/a') }))
+    await user.click(screen.getByRole('button', { name: t('dashVisitDeleteDomain', 'github.com') }))
+    expect(deleteUrl).toHaveBeenCalledTimes(2)
+    vi.mocked(window.confirm).mockRestore()
+  })
+
 })

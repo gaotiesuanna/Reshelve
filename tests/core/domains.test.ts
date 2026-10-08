@@ -8,6 +8,8 @@ import {
   visitFolderTree,
   visitSplitTree,
   historyUrlsForHost,
+  pageIdsUnder,
+  sourceUrlsForPages,
 } from '@/core/domains'
 import type { DomainFolderNode } from '@/core/domains'
 import type { BookmarkNode } from '@/core/ports'
@@ -994,3 +996,32 @@ describe('visitFolderTree 同标题并成一个文件夹', () => {
     expect([tree[0]?.directCount, tree[0]?.count]).toEqual([2, 363])
   })
 })
+
+describe('sourceUrlsForPages', () => {
+  it('sourceUrlsForPages 只展开选中的展示行，夹下的页面 id 由 pageIdsUnder 列出', () => {
+    const split = visitSplitTree([
+      { url: 'https://example.com/datasets?x=1', title: 'A', weight: 5 },
+      { url: 'https://example.com/datasets#y', title: 'B', weight: 2 },
+      { url: 'https://example.com/other', title: 'C', weight: 1 },
+    ], [], 'example.com')
+    const datasets = walkFolder(split.unsaved, (node) => node.title === 'datasets')
+    expect(datasets).toBeDefined()
+    const ids = pageIdsUnder(datasets!)
+    expect(sourceUrlsForPages([], split.unsaved, new Set(ids)).sort()).toEqual([
+      'https://example.com/datasets#y',
+      'https://example.com/datasets?x=1',
+    ])
+  })
+})
+
+function walkFolder(
+  nodes: readonly DomainFolderNode[],
+  match: (node: DomainFolderNode) => boolean,
+): DomainFolderNode | undefined {
+  for (const node of nodes) {
+    if (match(node)) return node
+    const child = walkFolder(node.children, match)
+    if (child !== undefined) return child
+  }
+  return undefined
+}

@@ -169,6 +169,36 @@
     "message": "$count$ 个页面没能从浏览记录里删除。",
     "placeholders": { "count": { "content": "$1" } }
   },
+  "dashVisitDeletePagesOne": {
+    "message": "删除 1"
+  },
+  "dashVisitDeletePagesOther": {
+    "message": "删除 $count$",
+    "placeholders": { "count": { "content": "$1" } }
+  },
+  "dashVisitClearSelection": { "message": "清除" },
+  "dashVisitSelectPage": {
+    "message": "选中 $page$",
+    "placeholders": { "page": { "content": "$1" } }
+  },
+  "dashVisitDeletePagesConfirmOne": {
+    "message": "确定删除 1 个页面的浏览记录？当前时间范围（$window$）以外的访问也会一起删掉。书签不会删除，而且不能撤销。",
+    "placeholders": { "window": { "content": "$1" } }
+  },
+  "dashVisitDeletePagesConfirmOther": {
+    "message": "确定删除 $count$ 个页面的浏览记录？当前时间范围（$window$）以外的访问也会一起删掉。书签不会删除，而且不能撤销。",
+    "placeholders": {
+      "count": { "content": "$1" },
+      "window": { "content": "$2" }
+    }
+  },
+  "dashVisitDeletePagesConfirmAllOne": {
+    "message": "确定删除 1 个页面的浏览记录？书签不会删除，而且不能撤销。"
+  },
+  "dashVisitDeletePagesConfirmAllOther": {
+    "message": "确定删除 $count$ 个页面的浏览记录？书签不会删除，而且不能撤销。",
+    "placeholders": { "count": { "content": "$1" } }
+  },
   "dashWindowLabel": {
     "message": "时间范围"
   },
