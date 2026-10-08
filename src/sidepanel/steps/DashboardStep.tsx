@@ -1,10 +1,11 @@
 import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
-import { t } from '@/i18n'
+import { plural, t } from '@/i18n'
 import {
   bookmarkUrls,
   clampTopDomainCount,
   domainFolderTree,
   visitSplitTree,
+  historyUrlsForHost,
   rankDomains,
   TOP_DOMAIN_MAX,
   TOP_DOMAIN_MIN,
@@ -17,8 +18,8 @@ import type { BookmarkNode } from '@/core/ports'
 import { sanitizeUrl } from '@/core/sanitize'
 import { faviconSrc } from '../lib/favicons'
 import { VISIT_WINDOWS, type VisitWindow } from '@/core/visitWindow'
-import { ensureHistoryPermission, hasHistoryPermission, visitUrls } from '../lib/visits'
-import { BookmarkIcon, ChevronDownIcon, FolderIcon, LinkIcon, TrendingUpIcon } from '../components/icons'
+import { deleteHistoryUrls, ensureHistoryPermission, hasHistoryPermission, visitUrls, type HistoryDeleteResult } from '../lib/visits'
+import { BookmarkIcon, ChevronDownIcon, FolderIcon, LinkIcon, TrashIcon, TrendingUpIcon } from '../components/icons'
 import { useStore } from '../store'
 
 type Metric = 'bookmarked' | 'visited'
@@ -92,6 +93,9 @@ export function DashboardStep() {
   const cache = useRef(new Map<VisitWindow, WeightedUrl[]>())
   /** 换窗比上一次查得快时，丢掉迟到的那份结果。 */
   const latest = useRef(0)
+  const removed = useRef(new Set<string>())
+  const [deleting, setDeleting] = useState(false)
+  const [deleteError, setDeleteError] = useState<{ domain: string, count: number } | null>(null)
 
   const bookmarked = useMemo(
     () => rankDomains(bookmarkUrls(tree), topN),
@@ -129,19 +133,57 @@ export function DashboardStep() {
     void loadVisits(next)
   }
 
+  function strip(items: WeightedUrl[]): WeightedUrl[] {
+    return items.filter((item) => !removed.current.has(item.url))
+  }
+
   async function loadVisits(next: VisitWindow) {
     const cached = cache.current.get(next)
     if (cached !== undefined) {
-      setVisits(cached.length === 0 ? { kind: 'empty' } : { kind: 'ready', items: cached })
+      const items = strip(cached)
+      cache.current.set(next, items)
+      setVisits(items.length === 0 ? { kind: 'empty' } : { kind: 'ready', items })
       return
     }
     latest.current += 1
     const ticket = latest.current
     setVisits({ kind: 'loading' })
-    const items = await visitUrls(next)
+    const items = strip(await visitUrls(next))
     cache.current.set(next, items)
     if (ticket !== latest.current) return
     setVisits(items.length === 0 ? { kind: 'empty' } : { kind: 'ready', items })
+  }
+
+  async function removeVisited(domain: string, urls: string[]): Promise<HistoryDeleteResult> {
+    if (deleting || urls.length === 0) return { deleted: [], failed: [] }
+    if (!await hasHistoryPermission()) {
+      setVisits({ kind: 'need' })
+      return { deleted: [], failed: [] }
+    }
+    const name = visits.kind === 'ready'
+      ? rankDomains(visits.items, topN).find((row) => row.domain === domain)?.siteName ?? domain
+      : domain
+    const count = String(urls.length)
+    const windowName = t(WINDOW_LABEL[range])
+    // 单数句的 $window$ 是 $2，复数句才把次数放在 $2、时间窗放在 $3。共用同一串实参会把「1」写进时间窗。
+    const message = range === 'all'
+      ? plural(urls.length, 'dashVisitDeleteDomainConfirmAllOne', 'dashVisitDeleteDomainConfirmAllOther', name, count)
+      : urls.length === 1
+        ? plural(1, 'dashVisitDeleteDomainConfirmOne', 'dashVisitDeleteDomainConfirmOther', name, windowName)
+        : plural(urls.length, 'dashVisitDeleteDomainConfirmOne', 'dashVisitDeleteDomainConfirmOther', name, count, windowName)
+    if (!window.confirm(message)) return { deleted: [], failed: [] }
+    setDeleting(true)
+    const { deleted, failed } = await deleteHistoryUrls(urls)
+    for (const url of deleted) removed.current.add(url)
+    for (const [key, items] of cache.current) cache.current.set(key, strip(items))
+    setVisits((current) => {
+      if (current.kind !== 'ready') return current
+      const items = strip(current.items)
+      return items.length === 0 ? { kind: 'empty' } : { kind: 'ready', items }
+    })
+    setDeleteError(failed.length === 0 ? null : { domain, count: failed.length })
+    setDeleting(false)
+    return { deleted, failed }
   }
 
   function commitTopN(raw: string) {
@@ -230,7 +272,16 @@ export function DashboardStep() {
           state={visits}
           topN={topN}
           tree={tree}
+          deleting={deleting}
+          deleteError={deleteError}
           onAllow={() => void allowHistory()}
+          onDeleteDomain={(domain) => {
+            if (visits.kind !== 'ready') return
+            void removeVisited(domain, historyUrlsForHost(visits.items, domain))
+          }}
+          onCollapseDomain={(domain) => {
+            setDeleteError((current) => current?.domain === domain ? null : current)
+          }}
         />
       )}
     </section>
@@ -250,12 +301,20 @@ function VisitedBody({
   state,
   topN,
   tree,
+  deleting,
+  deleteError,
   onAllow,
+  onDeleteDomain,
+  onCollapseDomain,
 }: {
   state: VisitState
   topN: number
   tree: BookmarkNode[]
+  deleting: boolean
+  deleteError: { domain: string, count: number } | null
   onAllow: () => void
+  onDeleteDomain: (domain: string) => void
+  onCollapseDomain: (domain: string) => void
 }) {
   if (state.kind === 'need') {
     return (
@@ -280,7 +339,17 @@ function VisitedBody({
   if (state.kind === 'empty') {
     return <EmptyLine text={t('dashEmptyVisits')} />
   }
-  return <DomainList rows={rankDomains(state.items, topN)} tree={tree} visits={state.items} />
+  return (
+    <DomainList
+      rows={rankDomains(state.items, topN)}
+      tree={tree}
+      visits={state.items}
+      deleting={deleting}
+      deleteError={deleteError}
+      onDeleteDomain={onDeleteDomain}
+      onCollapseDomain={onCollapseDomain}
+    />
+  )
 }
 
 function VisitsSkeleton() {
@@ -309,14 +378,26 @@ function DomainList({
   rows,
   tree,
   visits,
+  deleting = false,
+  deleteError = null,
+  onDeleteDomain,
+  onCollapseDomain,
 }: {
   rows: DomainRank[]
   tree?: BookmarkNode[]
   visits?: WeightedUrl[]
+  deleting?: boolean
+  deleteError?: { domain: string, count: number } | null
+  onDeleteDomain?: (domain: string) => void
+  onCollapseDomain?: (domain: string) => void
 }) {
   const [openDomain, setOpenDomain] = useState<string | null>(null)
   const grown = useGrow()
   const max = rows[0]?.count ?? 0
+  function toggle(domain: string) {
+    if (openDomain !== null) onCollapseDomain?.(openDomain)
+    setOpenDomain((prev) => prev === domain ? null : domain)
+  }
   return (
     <ol className="space-y-0.5" aria-label={t('dashListLabel')}>
       {rows.map((row, i) => (
@@ -328,8 +409,11 @@ function DomainList({
           grown={grown}
           tree={tree}
           visits={visits}
+          deleting={deleting}
+          deleteError={deleteError}
+          onDeleteDomain={onDeleteDomain}
           open={openDomain === row.domain}
-          onToggle={() => setOpenDomain((prev) => prev === row.domain ? null : row.domain)}
+          onToggle={() => toggle(row.domain)}
         />
       ))}
     </ol>
@@ -343,6 +427,9 @@ function DomainRow({
   grown,
   tree,
   visits,
+  deleting = false,
+  deleteError = null,
+  onDeleteDomain,
   open,
   onToggle,
 }: {
@@ -352,6 +439,9 @@ function DomainRow({
   grown: boolean
   tree?: BookmarkNode[]
   visits?: WeightedUrl[]
+  deleting?: boolean
+  deleteError?: { domain: string, count: number } | null
+  onDeleteDomain?: (domain: string) => void
   open: boolean
   onToggle: () => void
 }) {
@@ -400,9 +490,45 @@ function DomainRow({
       </span>
     </>
   )
+  const visitLabel = visits === undefined
+    ? t(open ? 'dashDomainCollapse' : 'dashDomainExpand', row.domain)
+    : t(open ? 'dashVisitDomainCollapse' : 'dashVisitDomainExpand', row.domain)
   return (
     <li>
-      {expandable ? (
+      {visits !== undefined ? (
+        <div className="group -mx-1.5 flex items-center gap-1 rounded-index px-1.5 py-1.5 hover:bg-index-surface-muted">
+          <button
+            type="button"
+            className="flex min-w-0 flex-1 cursor-pointer items-center gap-2.5 text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-neutral-400"
+            aria-expanded={open}
+            aria-label={visitLabel}
+            onClick={onToggle}
+          >
+            {summary}
+            <ChevronDownIcon
+              className={[
+                'h-3.5 w-3.5 shrink-0 text-neutral-400 transition-transform duration-150 motion-reduce:transition-none',
+                open ? 'rotate-180' : '',
+              ].join(' ')}
+            />
+          </button>
+          <button
+            type="button"
+            aria-label={t('dashVisitDeleteDomain', row.siteName ?? row.domain)}
+            disabled={deleting}
+            className={[
+              'inline-flex h-6 w-6 shrink-0 items-center justify-center rounded-md text-neutral-400',
+              'hover:text-neutral-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-neutral-400',
+              open
+                ? 'opacity-100'
+                : 'opacity-0 group-hover:opacity-100 group-focus-within:opacity-100 focus-visible:opacity-100',
+            ].join(' ')}
+            onClick={() => onDeleteDomain?.(row.domain)}
+          >
+            <TrashIcon className="h-3.5 w-3.5" />
+          </button>
+        </div>
+      ) : expandable ? (
         <button
           type="button"
           className={[
@@ -412,9 +538,7 @@ function DomainRow({
             'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-neutral-400',
           ].join(' ')}
           aria-expanded={open}
-          aria-label={visits === undefined
-            ? t(open ? 'dashDomainCollapse' : 'dashDomainExpand', row.domain)
-            : t(open ? 'dashVisitDomainCollapse' : 'dashVisitDomainExpand', row.domain)}
+          aria-label={visitLabel}
           onClick={onToggle}
         >
           {summary}
@@ -427,6 +551,11 @@ function DomainRow({
         </button>
       ) : (
         <div className="-mx-1.5 flex items-center gap-2.5 px-1.5 py-1.5">{summary}</div>
+      )}
+      {deleteError?.domain === row.domain && (
+        <p className="px-1.5 text-xs text-neutral-500">
+          {plural(deleteError.count, 'dashVisitDeleteFailedOne', 'dashVisitDeleteFailedOther', String(deleteError.count))}
+        </p>
       )}
       {open && visits !== undefined && (
         <VisitBreakdown pages={visits} tree={tree ?? []} domain={row.domain} />

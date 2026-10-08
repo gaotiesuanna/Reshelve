@@ -18,6 +18,7 @@ const search = vi.fn((_query?: { startTime?: number }) =>
   Promise.resolve([] as Array<{ url?: string; title?: string; visitCount?: number }>))
 const getVisits = vi.fn((_query: { url: string }) =>
   Promise.resolve([] as Array<{ visitTime?: number }>))
+const deleteUrl = vi.fn((_query: { url: string }) => Promise.resolve())
 
 const tree: BookmarkNode[] = [
   { id: '0', title: '', children: [
@@ -36,7 +37,9 @@ beforeEach(() => {
   request.mockReset()
   search.mockReset()
   getVisits.mockReset()
+  deleteUrl.mockReset()
   getVisits.mockResolvedValue([])
+  deleteUrl.mockImplementation(() => Promise.resolve())
   contains.mockResolvedValue(false)
   request.mockResolvedValue(false)
   search.mockResolvedValue([])
@@ -44,7 +47,7 @@ beforeEach(() => {
     getURL: (path: string) => `chrome-extension://fakeid${path}`,
   }
   chromeGlobal.chrome.permissions = { contains, request }
-  chromeGlobal.chrome.history = { search, getVisits }
+  chromeGlobal.chrome.history = { search, getVisits, deleteUrl }
   useStore.setState({
     tree,
     busy: null,
@@ -260,7 +263,7 @@ describe('DashboardStep', () => {
     await user.click(await screen.findByRole('button', { name: t('dashHistoryAllow') }))
     expect(await screen.findByText('github.com')).toBeTruthy()
 
-    await user.click(screen.getByRole('button', { name: /github\.com/ }))
+    await user.click(screen.getByRole('button', { name: t('dashVisitDomainExpand', 'github.com') }))
     expect(screen.getByText('The AI coding agent')).toBeTruthy()
     expect(screen.getByText('github.com/sst/opencode')).toBeTruthy()
     expect(screen.getByText(t('dashVisitCount', '20'))).toBeTruthy()
@@ -288,7 +291,7 @@ describe('DashboardStep', () => {
     await user.click(await screen.findByRole('button', { name: t('dashHistoryAllow') }))
     expect(await screen.findByText('localhost')).toBeTruthy()
 
-    await user.click(screen.getByRole('button', { name: /localhost/ }))
+    await user.click(screen.getByRole('button', { name: t('dashVisitDomainExpand', 'localhost') }))
     expect(screen.getByText('analysis / library')).toBeTruthy()
     await user.click(screen.getByRole('button', { name: /analysis \/ library/ }))
     expect(screen.getByText('Lib')).toBeTruthy()
@@ -364,7 +367,7 @@ describe('DashboardStep', () => {
     render(<DashboardStep />)
     await user.click(screen.getByRole('tab', { name: t('dashVisited') }))
     expect(await screen.findByText('github.com')).toBeTruthy()
-    await user.click(screen.getByRole('button', { name: /github\.com/ }))
+    await user.click(screen.getByRole('button', { name: t('dashVisitDomainExpand', 'github.com') }))
 
     const saved = screen.getByRole('region', { name: t('dashVisitSavedLabel', 'github.com') })
     expect(saved.textContent).toContain('The AI coding agent')
@@ -388,7 +391,7 @@ describe('DashboardStep', () => {
     render(<DashboardStep />)
     await user.click(screen.getByRole('tab', { name: t('dashVisited') }))
     expect(await screen.findByText('localhost')).toBeTruthy()
-    await user.click(screen.getByRole('button', { name: /localhost/ }))
+    await user.click(screen.getByRole('button', { name: t('dashVisitDomainExpand', 'localhost') }))
 
     const saved = screen.getByRole('region', { name: t('dashVisitSavedLabel', 'localhost') })
     expect(saved.textContent).toContain(t('dashVisitNoneSaved'))
@@ -414,7 +417,7 @@ describe('DashboardStep', () => {
     render(<DashboardStep />)
     await user.click(screen.getByRole('tab', { name: t('dashVisited') }))
     expect(await screen.findByText('localhost')).toBeTruthy()
-    await user.click(screen.getByRole('button', { name: /localhost/ }))
+    await user.click(screen.getByRole('button', { name: t('dashVisitDomainExpand', 'localhost') }))
 
     const unsaved = screen.getByRole('region', { name: t('dashVisitUnsavedLabel', 'localhost') })
     expect(unsaved.textContent).toContain(t('dashVisitNoneUnsaved'))
@@ -431,7 +434,7 @@ describe('DashboardStep', () => {
     render(<DashboardStep />)
     await user.click(screen.getByRole('tab', { name: t('dashVisited') }))
     expect(await screen.findByText('localhost')).toBeTruthy()
-    await user.click(screen.getByRole('button', { name: /localhost/ }))
+    await user.click(screen.getByRole('button', { name: t('dashVisitDomainExpand', 'localhost') }))
     expect(screen.getByText('Lib')).toBeTruthy()
 
     const toggle = screen.getByRole('button', { name: new RegExp(t('dashVisitUnsaved')) })
@@ -467,7 +470,7 @@ describe('DashboardStep', () => {
     render(<DashboardStep />)
     await user.click(screen.getByRole('tab', { name: t('dashVisited') }))
     expect(await screen.findByText('localhost')).toBeTruthy()
-    await user.click(screen.getByRole('button', { name: /localhost/ }))
+    await user.click(screen.getByRole('button', { name: t('dashVisitDomainExpand', 'localhost') }))
     expect(screen.getByText('首页')).toBeTruthy()
 
     await user.click(screen.getByRole('button', { name: new RegExp(t('dashVisitSaved')) }))
@@ -489,7 +492,7 @@ describe('DashboardStep', () => {
     render(<DashboardStep />)
     await user.click(screen.getByRole('tab', { name: t('dashVisited') }))
     expect(await screen.findByText('192.168.5.39')).toBeTruthy()
-    await user.click(screen.getByRole('button', { name: /192\.168\.5\.39/ }))
+    await user.click(screen.getByRole('button', { name: t('dashVisitDomainExpand', '192.168.5.39') }))
 
     // 三个 ID 一行都不占；tasks 自己没有页面，直接顶替合并行成了那一行
     expect(screen.queryByText(/019fb349/)).toBeNull()
@@ -520,7 +523,7 @@ describe('DashboardStep', () => {
     render(<DashboardStep />)
     await user.click(screen.getByRole('tab', { name: t('dashVisited') }))
     expect(await screen.findByText('192.168.5.39')).toBeTruthy()
-    await user.click(screen.getByRole('button', { name: /192\.168\.5\.39/ }))
+    await user.click(screen.getByRole('button', { name: t('dashVisitDomainExpand', '192.168.5.39') }))
     await user.click(screen.getByRole('button', { name: /tasks/ }))
 
     expect(screen.getByText(t('dashVisitGroupUnnamed'))).toBeTruthy()
@@ -540,7 +543,7 @@ describe('DashboardStep', () => {
     expect(await screen.findByText('localhost:5173')).toBeTruthy()
     expect(screen.getByText('localhost:8501')).toBeTruthy()
 
-    await user.click(screen.getByRole('button', { name: /localhost:5173/ }))
+    await user.click(screen.getByRole('button', { name: t('dashVisitDomainExpand', 'localhost:5173') }))
     await user.click(screen.getByRole('button', { name: /settings/ }))
     expect(screen.getByText('localhost:5173/settings')).toBeTruthy()
     // 另一个端口的页面不该混进这棵树
@@ -585,7 +588,7 @@ describe('DashboardStep', () => {
     render(<DashboardStep />)
     await user.click(screen.getByRole('tab', { name: t('dashVisited') }))
     expect(await screen.findByText('localhost:5629')).toBeTruthy()
-    await user.click(screen.getByRole('button', { name: /localhost:5629/ }))
+    await user.click(screen.getByRole('button', { name: t('dashVisitDomainExpand', 'localhost:5629') }))
 
     const analysis = screen.getByRole('button', { name: /analysis/ })
     expect(analysis.getAttribute('aria-expanded')).toBe('false')
@@ -703,7 +706,7 @@ describe('DashboardStep', () => {
     render(<DashboardStep />)
     await user.click(screen.getByRole('tab', { name: t('dashVisited') }))
     expect(await screen.findByText('localhost')).toBeTruthy()
-    await user.click(screen.getByRole('button', { name: /localhost/ }))
+    await user.click(screen.getByRole('button', { name: t('dashVisitDomainExpand', 'localhost') }))
 
     expect(screen.getByText(t('dashVisitNoneSaved'))).toBeTruthy()
     expect(screen.queryByRole('button', { name: new RegExp(t('dashVisitSaved')) })).toBeNull()
@@ -723,7 +726,7 @@ describe('DashboardStep', () => {
     render(<DashboardStep />)
     await user.click(screen.getByRole('tab', { name: t('dashVisited') }))
     expect(await screen.findByText('192.168.5.39')).toBeTruthy()
-    await user.click(screen.getByRole('button', { name: /192\.168\.5\.39/ }))
+    await user.click(screen.getByRole('button', { name: t('dashVisitDomainExpand', '192.168.5.39') }))
 
     // 页面本身还在
     expect(screen.getByText('192.168.5.39/task')).toBeTruthy()
@@ -768,6 +771,129 @@ describe('DashboardStep', () => {
     release([{ url: 'https://github.com/x', visitCount: 3 }])
     expect(await screen.findByText('github.com')).toBeTruthy()
     expect(screen.queryByRole('status', { name: t('dashHistoryLoading') })).toBeNull()
+  })
+
+  it('书签栏没有删除浏览记录的按钮', async () => {
+    render(<DashboardStep />)
+    await showBookmarked()
+    expect(screen.queryByRole('button', { name: /浏览记录|browsing history/i })).toBeNull()
+  })
+
+  it('访问栏的删除按钮在箭头右边，且不在展开按钮里面', async () => {
+    contains.mockResolvedValue(true)
+    search.mockResolvedValue([{ url: 'https://github.com/a', title: 'GitHub', visitCount: 4 }])
+    render(<DashboardStep />)
+
+    const expand = await screen.findByRole('button', { name: t('dashVisitDomainExpand', 'github.com') })
+    const remove = screen.getByRole('button', { name: t('dashVisitDeleteDomain', 'github.com') })
+    expect(expand.contains(remove)).toBe(false)
+    expect(expand.compareDocumentPosition(remove) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+    expect(remove.className).toContain('opacity-0')
+    expect(remove.className).not.toMatch(/(?:^|\s)opacity-100(?:\s|$)/)
+  })
+
+  it('展开后删除按钮变为可见', async () => {
+    const user = userEvent.setup()
+    contains.mockResolvedValue(true)
+    search.mockResolvedValue([{ url: 'https://github.com/a', visitCount: 4 }])
+    render(<DashboardStep />)
+    await user.click(await screen.findByRole('button', { name: t('dashVisitDomainExpand', 'github.com') }))
+    const remove = screen.getByRole('button', { name: t('dashVisitDeleteDomain', 'github.com') })
+    expect(remove.className).toMatch(/(?:^|\s)opacity-100(?:\s|$)/)
+  })
+
+  it('取消确认不调用 deleteUrl', async () => {
+    const user = userEvent.setup()
+    vi.spyOn(window, 'confirm').mockReturnValue(false)
+    contains.mockResolvedValue(true)
+    search.mockResolvedValue([{ url: 'https://github.com/a', visitCount: 4 }])
+    render(<DashboardStep />)
+    await user.click(await screen.findByRole('button', { name: t('dashVisitDeleteDomain', 'github.com') }))
+    expect(window.confirm).toHaveBeenCalled()
+    expect(deleteUrl).not.toHaveBeenCalled()
+    vi.mocked(window.confirm).mockRestore()
+  })
+
+  it('确认后按已加载的原始 URL 删除该主机，行消失，且文案声明书签不动、不能撤销', async () => {
+    const user = userEvent.setup()
+    vi.spyOn(window, 'confirm').mockReturnValue(true)
+    contains.mockResolvedValue(true)
+    search.mockResolvedValue([
+      { url: 'https://github.com/a', visitCount: 4 },
+      { url: 'https://github.com/a?x=1', visitCount: 2 },
+      { url: 'https://bilibili.com/1', visitCount: 1 },
+    ])
+    render(<DashboardStep />)
+    await user.click(await screen.findByRole('button', { name: t('dashVisitDeleteDomain', 'github.com') }))
+
+    const message = vi.mocked(window.confirm).mock.calls[0]?.[0] ?? ''
+    expect(message).toContain('不能撤销')
+    expect(message).toContain('书签不会删除')
+    expect(message).toContain('2')
+    const deleted = deleteUrl.mock.calls.map((call) => call[0])
+    expect(deleted).toHaveLength(2)
+    expect(deleted).toEqual(expect.arrayContaining([
+      { url: 'https://github.com/a' },
+      { url: 'https://github.com/a?x=1' },
+    ]))
+    expect(await screen.findByText('bilibili.com')).toBeTruthy()
+    expect(screen.queryByText('github.com')).toBeNull()
+    vi.mocked(window.confirm).mockRestore()
+  })
+
+  it('部分删除失败时失败的 URL 还在，并在该行下写出条数', async () => {
+    const user = userEvent.setup()
+    vi.spyOn(window, 'confirm').mockReturnValue(true)
+    contains.mockResolvedValue(true)
+    search.mockResolvedValue([
+      { url: 'https://github.com/a', visitCount: 4 },
+      { url: 'https://github.com/b', visitCount: 1 },
+    ])
+    deleteUrl.mockImplementation(({ url }: { url: string }) =>
+      url.endsWith('/b') ? Promise.reject(new Error('nope')) : Promise.resolve())
+    render(<DashboardStep />)
+    await user.click(await screen.findByRole('button', { name: t('dashVisitDeleteDomain', 'github.com') }))
+    expect(await screen.findByText(t('dashVisitDeleteFailedOne'))).toBeTruthy()
+    expect(screen.getByText('github.com')).toBeTruthy()
+    vi.mocked(window.confirm).mockRestore()
+  })
+
+  it('删完后已缓存的另一个时间窗也不再出现这些 URL', async () => {
+    const user = userEvent.setup()
+    vi.spyOn(window, 'confirm').mockReturnValue(true)
+    contains.mockResolvedValue(true)
+    search.mockResolvedValue([
+      { url: 'https://github.com/a', visitCount: 4 },
+      { url: 'https://bilibili.com/1', visitCount: 1 },
+    ])
+    // 限了窗的排行要自己数 getVisits。空数组会被当成窗内 0 次丢掉，缓存测试到不了删除。
+    getVisits.mockResolvedValue([{ visitTime: Date.now() }])
+    render(<DashboardStep />)
+    await screen.findByText('github.com')
+    await user.click(screen.getByRole('tab', { name: t('dashWindow1m') }))
+    await screen.findByText('github.com')
+    search.mockClear()
+    await user.click(screen.getByRole('tab', { name: t('dashWindowAll') }))
+    await user.click(screen.getByRole('button', { name: t('dashVisitDeleteDomain', 'github.com') }))
+    await user.click(screen.getByRole('tab', { name: t('dashWindow1m') }))
+    expect(search).not.toHaveBeenCalled()
+    expect(screen.queryByText('github.com')).toBeNull()
+    expect(screen.getByText('bilibili.com')).toBeTruthy()
+    vi.mocked(window.confirm).mockRestore()
+  })
+
+  it('删除时已经没有历史权限就退回说明，不调用 deleteUrl', async () => {
+    const user = userEvent.setup()
+    vi.spyOn(window, 'confirm').mockReturnValue(true)
+    contains.mockResolvedValue(true)
+    search.mockResolvedValue([{ url: 'https://github.com/a', visitCount: 4 }])
+    render(<DashboardStep />)
+    await screen.findByText('github.com')
+    contains.mockResolvedValue(false)
+    await user.click(screen.getByRole('button', { name: t('dashVisitDeleteDomain', 'github.com') }))
+    expect(deleteUrl).not.toHaveBeenCalled()
+    expect(await screen.findByText(t('dashHistoryExplain'))).toBeTruthy()
+    vi.mocked(window.confirm).mockRestore()
   })
 
 })

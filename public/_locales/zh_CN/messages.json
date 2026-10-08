@@ -132,6 +132,43 @@
   "dashVisitGroupUnnamed": {
     "message": "同一批地址"
   },
+  "dashVisitDeleteDomain": {
+    "message": "删除「$name$」的浏览记录",
+    "placeholders": { "name": { "content": "$1" } }
+  },
+  "dashVisitDeleteDomainConfirmOne": {
+    "message": "确定从这台电脑的浏览记录里删除「$name$」的 1 个页面？当前时间范围（$window$）以外的访问也会一起删掉。书签不会删除，而且不能撤销。",
+    "placeholders": {
+      "name": { "content": "$1" },
+      "window": { "content": "$2" }
+    }
+  },
+  "dashVisitDeleteDomainConfirmOther": {
+    "message": "确定从这台电脑的浏览记录里删除「$name$」的 $count$ 个页面？当前时间范围（$window$）以外的访问也会一起删掉。书签不会删除，而且不能撤销。",
+    "placeholders": {
+      "name": { "content": "$1" },
+      "count": { "content": "$2" },
+      "window": { "content": "$3" }
+    }
+  },
+  "dashVisitDeleteDomainConfirmAllOne": {
+    "message": "确定从这台电脑的浏览记录里删除「$name$」的 1 个页面？书签不会删除，而且不能撤销。",
+    "placeholders": { "name": { "content": "$1" } }
+  },
+  "dashVisitDeleteDomainConfirmAllOther": {
+    "message": "确定从这台电脑的浏览记录里删除「$name$」的 $count$ 个页面？书签不会删除，而且不能撤销。",
+    "placeholders": {
+      "name": { "content": "$1" },
+      "count": { "content": "$2" }
+    }
+  },
+  "dashVisitDeleteFailedOne": {
+    "message": "1 个页面没能从浏览记录里删除。"
+  },
+  "dashVisitDeleteFailedOther": {
+    "message": "$count$ 个页面没能从浏览记录里删除。",
+    "placeholders": { "count": { "content": "$1" } }
+  },
   "dashWindowLabel": {
     "message": "时间范围"
   },

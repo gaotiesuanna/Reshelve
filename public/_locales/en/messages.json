@@ -132,6 +132,43 @@
   "dashVisitGroupUnnamed": {
     "message": "Similar addresses"
   },
+  "dashVisitDeleteDomain": {
+    "message": "Remove browsing history for $name$",
+    "placeholders": { "name": { "content": "$1" } }
+  },
+  "dashVisitDeleteDomainConfirmOne": {
+    "message": "Remove browsing history for “$name$”? This deletes 1 page from history on this computer, including visits outside $window$. Bookmarks are not deleted. This cannot be undone.",
+    "placeholders": {
+      "name": { "content": "$1" },
+      "window": { "content": "$2" }
+    }
+  },
+  "dashVisitDeleteDomainConfirmOther": {
+    "message": "Remove browsing history for “$name$”? This deletes $count$ pages from history on this computer, including visits outside $window$. Bookmarks are not deleted. This cannot be undone.",
+    "placeholders": {
+      "name": { "content": "$1" },
+      "count": { "content": "$2" },
+      "window": { "content": "$3" }
+    }
+  },
+  "dashVisitDeleteDomainConfirmAllOne": {
+    "message": "Remove browsing history for “$name$”? This deletes 1 page from history on this computer. Bookmarks are not deleted. This cannot be undone.",
+    "placeholders": { "name": { "content": "$1" } }
+  },
+  "dashVisitDeleteDomainConfirmAllOther": {
+    "message": "Remove browsing history for “$name$”? This deletes $count$ pages from history on this computer. Bookmarks are not deleted. This cannot be undone.",
+    "placeholders": {
+      "name": { "content": "$1" },
+      "count": { "content": "$2" }
+    }
+  },
+  "dashVisitDeleteFailedOne": {
+    "message": "Couldn't remove 1 page from browsing history."
+  },
+  "dashVisitDeleteFailedOther": {
+    "message": "Couldn't remove $count$ pages from browsing history.",
+    "placeholders": { "count": { "content": "$1" } }
+  },
   "dashWindowLabel": {
     "message": "Time range"
   },
