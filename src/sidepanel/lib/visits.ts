@@ -77,3 +77,24 @@ async function mapPooled<In, Out>(
   await Promise.all(Array.from({ length: Math.min(concurrency, items.length) }, worker))
   return out
 }
+
+export interface HistoryDeleteResult {
+  deleted: string[]
+  failed: string[]
+}
+
+/** 按地址删浏览记录。不查权限：没权限要走解释页，不能伪装成逐条失败。重复地址只删一次。 */
+export async function deleteHistoryUrls(urls: readonly string[]): Promise<HistoryDeleteResult> {
+  const unique = [...new Set(urls)]
+  const deleted: string[] = []
+  const failed: string[] = []
+  await mapPooled(unique, VISIT_LOOKUP_CONCURRENCY, async (url) => {
+    try {
+      await chrome.history.deleteUrl({ url })
+      deleted.push(url)
+    } catch {
+      failed.push(url)
+    }
+  })
+  return { deleted, failed }
+}

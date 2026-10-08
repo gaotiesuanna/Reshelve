@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach, afterAll, vi } from 'vitest'
-import { visitUrls } from '@/sidepanel/lib/visits'
+import { deleteHistoryUrls, visitUrls } from '@/sidepanel/lib/visits'
 
 const chromeGlobal = globalThis as unknown as { chrome: Record<string, unknown> }
 const original = chromeGlobal.chrome?.history
@@ -9,11 +9,13 @@ const DAY = 86400000
 
 let search: ReturnType<typeof vi.fn>
 let getVisits: ReturnType<typeof vi.fn>
+let deleteUrl: ReturnType<typeof vi.fn>
 
 beforeEach(() => {
   search = vi.fn(() => Promise.resolve([]))
   getVisits = vi.fn(() => Promise.resolve([]))
-  chromeGlobal.chrome = { ...chromeGlobal.chrome, history: { search, getVisits } }
+  deleteUrl = vi.fn(() => Promise.resolve())
+  chromeGlobal.chrome = { ...chromeGlobal.chrome, history: { search, getVisits, deleteUrl } }
 })
 
 afterAll(() => {
@@ -67,5 +69,31 @@ describe('visitUrls', () => {
     getVisits.mockRejectedValue(new Error('nope'))
 
     expect(await visitUrls('3m', NOW)).toEqual([])
+  })
+})
+
+describe('deleteHistoryUrls', () => {
+  it('逐条 deleteUrl，一条失败不影响其余，重复地址只删一次', async () => {
+    const deleteUrl = vi.fn(({ url }: { url: string }) =>
+      url === 'https://b.example/x'
+        ? Promise.reject(new Error('nope'))
+        : Promise.resolve())
+    chromeGlobal.chrome.history = { search, getVisits, deleteUrl }
+
+    const result = await deleteHistoryUrls([
+      'https://a.example/1',
+      'https://a.example/1',
+      'https://b.example/x',
+      'https://c.example/2',
+    ])
+
+    expect(deleteUrl.mock.calls.map((call) => call[0])).toEqual(expect.arrayContaining([
+      { url: 'https://a.example/1' },
+      { url: 'https://b.example/x' },
+      { url: 'https://c.example/2' },
+    ]))
+    expect(deleteUrl.mock.calls).toHaveLength(3)
+    expect(result.deleted.sort()).toEqual(['https://a.example/1', 'https://c.example/2'])
+    expect(result.failed).toEqual(['https://b.example/x'])
   })
 })
