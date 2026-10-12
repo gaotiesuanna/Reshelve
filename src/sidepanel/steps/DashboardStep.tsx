@@ -14,6 +14,7 @@ import {
   type DomainFolderNode,
   type DomainRank,
   type SavedVisit,
+  type UnsavedVisit,
   type WeightedUrl,
 } from '@/core/domains'
 import type { BookmarkNode } from '@/core/ports'
@@ -90,21 +91,13 @@ function pageConfirmMessage(count: number, range: VisitWindow): string {
 
 function selectedSourceUrls(
   saved: readonly SavedVisit[],
-  unsaved: readonly DomainFolderNode[],
+  unsaved: readonly UnsavedVisit[],
   selectedIds: ReadonlySet<string>,
 ): Map<string, string[]> {
   const owned = new Map<string, string[]>()
-  for (const page of saved) {
+  for (const page of [...saved, ...unsaved]) {
     if (selectedIds.has(page.id)) owned.set(page.id, [...page.sourceUrls])
   }
-  const walk = (node: DomainFolderNode): void => {
-    for (const page of node.bookmarks) {
-      if (!selectedIds.has(page.id)) continue
-      owned.set(page.id, [...(page.sourceUrls ?? [page.url])])
-    }
-    for (const child of node.children) walk(child)
-  }
-  for (const node of unsaved) walk(node)
   return owned
 }
 
@@ -686,7 +679,7 @@ function VisitBreakdown({
   }, [range])
   const shown = useGrow()
   const savedVisits = split.saved.reduce((n, page) => n + page.weight, 0)
-  const unsavedVisits = split.unsaved.reduce((n, node) => n + node.count, 0)
+  const unsavedVisits = split.unsaved.reduce((n, page) => n + page.weight, 0)
   const urls = sourceUrlsForPages(split.saved, split.unsaved, selected)
   const selection: PageSelection = {
     selected,
@@ -763,12 +756,14 @@ function VisitBreakdown({
       </VisitSection>
       <VisitSection
         label={t('dashVisitUnsavedLabel', domain)}
-        icon={<FolderIcon className="h-3.5 w-3.5 shrink-0 text-neutral-400" />}
+        icon={<LinkIcon className="h-3.5 w-3.5 shrink-0 text-neutral-400" />}
         title={t('dashVisitUnsaved')}
         note={t('dashVisitCount', String(unsavedVisits))}
         emptyText={split.unsaved.length === 0 ? t('dashVisitNoneUnsaved') : undefined}
       >
-        <FolderTree nodes={split.unsaved} domain={domain} depth={0} margin="mt-1" selection={selection} />
+        <ul className="mt-1 space-y-1.5 border-l border-neutral-200 pl-3">
+          {split.unsaved.map((page) => <UnsavedVisitRow key={page.id} page={page} selection={selection} />)}
+        </ul>
       </VisitSection>
     </div>
   )
@@ -777,7 +772,6 @@ function VisitBreakdown({
 /**
  * 「已收藏」「未收藏」各自一段，标题那一行就是收起/展开的按钮。
  *
- * 未收藏那半在开发机上动辄几十行路径树，一路顶出卡片，得能一键折上。
  * 空的那段没东西可折，标题退回不可点的一行——摆个按不动的按钮只会骗手。
  */
 function VisitSection({
@@ -888,6 +882,41 @@ function SavedVisitRow({ page, selection }: { page: SavedVisit, selection?: Page
           {folder}
         </span>
       </div>
+    </li>
+  )
+}
+
+/** 未收藏的一页：地址自己就是一行，不套路径文件夹。 */
+function UnsavedVisitRow({ page, selection }: { page: UnsavedVisit, selection?: PageSelection }) {
+  const address = shortAddress(page.url)
+  return (
+    <li className="flex min-w-0 items-start gap-2">
+      {selection !== undefined && (
+        <input
+          type="checkbox"
+          aria-label={t('dashVisitSelectPage', address)}
+          className="mt-0.5 h-3.5 w-3.5 shrink-0 accent-index-ink"
+          checked={selection.selected.has(page.id)}
+          onChange={() => selection.togglePage(page.id)}
+        />
+      )}
+      <LinkIcon className="mt-0.5 h-3 w-3 shrink-0 text-neutral-300" />
+      <a
+        href={page.url}
+        target="_blank"
+        rel="noreferrer"
+        className="min-w-0 flex-1 text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-neutral-400"
+      >
+        <span className="block break-words text-sm leading-caption text-neutral-700">
+          {page.title.trim() || address}
+        </span>
+        <span className="mt-0.5 block break-all text-xs leading-caption text-neutral-400">
+          {address}
+        </span>
+      </a>
+      <span className="shrink-0 text-xs leading-caption tabular-nums text-neutral-500">
+        {t('dashVisitCount', String(page.weight))}
+      </span>
     </li>
   )
 }

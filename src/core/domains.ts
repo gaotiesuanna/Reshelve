@@ -216,250 +216,6 @@ function sortLevel(nodes: DomainFolderNode[]): DomainFolderNode[] {
   return [...nodes].sort((a, b) => b.count - a.count || a.title.localeCompare(b.title))
 }
 
-/**
- * 只裹着一个页面的路径段不值得单独成行。标记而不是就地摊平：节点留在 children 里，
- * 才能继续跟同层的目录一起按次数排序——摊进父节点的 bookmarks 就会被顶到所有目录前面，
- * 排出一串忽大忽小的数字。
- */
-function markPageOnly(node: DomainFolderNode): DomainFolderNode {
-  return node.title !== '' && node.children.length === 0 && node.bookmarks.length === 1
-    ? { ...node, pageOnly: true }
-    : node
-}
-
-/** 页面按访问次数降序，同数按地址，两处合并都用它。 */
-function sortPages(pages: DomainFolderNode['bookmarks']): DomainFolderNode['bookmarks'] {
-  return [...pages].sort((a, b) => (b.weight ?? 1) - (a.weight ?? 1) || a.url.localeCompare(b.url))
-}
-
-/** 同层里长得一样的 ID 段至少这么多个才值得并成一行；两三个还看得过来。 */
-const MIN_ID_SIBLINGS = 3
-
-/**
- * UUID、够长的 hex、纯数字——机器编号常见的三种形状。
- *
- * 数字不设下限：`/library/3` 和 `/tasks/019fb349…` 一样是条记录的编号，位数只说明这站还年轻。
- * 会不会误伤 `/blog/2024` 这种年份？会，但得同层凑够三个纯数字才折，折完地址还原样躺在里面，
- * 代价是一次点击；反过来漏掉一位数的编号，代价是刚才那一屏。
- */
-const ID_SEGMENT_SHAPES = [
-  /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i,
-  /^[0-9a-f]{24,}$/i,
-  /^\d+$/,
-]
-
-function isIdSegment(segment: string): boolean {
-  return ID_SEGMENT_SHAPES.some((shape) => shape.test(segment))
-}
-
-/**
- * 一批 ID 段底下的子树按段名合成一棵：同名的并成一个，次数求和，页面堆在一起。
- *
- * 段名合掉了，地址没有——`5/read` 与 `1/read` 并成一行 `read`，两条完整 URL 仍在它的页面里，
- * 哪条属于哪本还点得出来。所以并子树不丢信息，只是不再为每个编号各铺一层。
- */
-function mergeSubtrees(parentId: string, nodes: DomainFolderNode[]): DomainFolderNode[] {
-  const byTitle = new Map<string, DomainFolderNode[]>()
-  for (const node of nodes) {
-    const same = byTitle.get(node.title)
-    if (same === undefined) byTitle.set(node.title, [node])
-    else same.push(node)
-  }
-  return sortLevel([...byTitle].map(([title, group]) => {
-    const id = `${parentId}/${title}`
-    if (group.length === 1) return { ...group[0]!, id }
-    const bookmarks = sortPages(group.flatMap((node) => node.bookmarks))
-    return markPageOnly({
-      id,
-      title,
-      count: group.reduce((n, node) => n + node.count, 0),
-      directCount: bookmarks.length,
-      children: mergeSubtrees(id, group.flatMap((node) => node.children)),
-      bookmarks,
-    })
-  }))
-}
-
-/**
- * 同层的 ID 段并成一行。
- *
- * 判定不看单独一段长什么样，看同层有没有一批长得一样的：一个 `tasks/abc123` 可能是人起的名字，
- * 四十个 UUID 只可能是机器编的号。够不上 MIN_ID_SIBLINGS 就原样留着，宁可多几行也别吞掉真名字。
- *
- * 底下有没有分支不影响并不并——一个编号有没有子页面，是那站怎么排路由的事，跟它是不是编号无关。
- * 子树交给 mergeSubtrees 按段名合。
- *
- * 标题不参与判定：SPA 常常整站一个标题，那时它对该并的和不该并的一视同仁，什么也区分不了；
- * 它只用来给并出来的那行起名。
- */
-function groupIdSiblings(parentId: string, children: DomainFolderNode[]): DomainFolderNode[] {
-  const ids = children.filter((child) => isIdSegment(child.title))
-  if (ids.length < MIN_ID_SIBLINGS) return children
-
-  const merged = new Set(ids)
-  const id = `${parentId === '/' ? '' : parentId}/*`
-  const bookmarks = sortPages(ids.flatMap((child) => child.bookmarks))
-  return [
-    ...children.filter((child) => !merged.has(child)),
-    {
-      id,
-      title: '',
-      grouped: true,
-      count: ids.reduce((n, child) => n + child.count, 0),
-      directCount: bookmarks.length,
-      children: mergeSubtrees(id, ids.flatMap((child) => child.children)),
-      bookmarks,
-    },
-  ]
-}
-
-interface MutableVisitFolder {
-  id: string
-  title: string
-  bookmarks: DomainFolderNode['bookmarks']
-  children: Map<string, MutableVisitFolder>
-}
-
-/** 标题相同的页面至少这么多个才收成一夹；一个页面顶着一个标题，那就是它自己。 */
-const MIN_TITLE_PAGES = 2
-
-/**
- * 标题相同的页面收成一夹，夹名就是那个标题。
- *
- * 路径能告诉你一个站怎么排路由，可它排得怎么样常常不是你关心的事——同一个应用的四十个页面
- * 铺成三层目录，你要的其实只是「这个应用我用了多少」。标题一样就说明它们是同一个东西，
- * 收进一夹、点开是一串地址，比让你一层层点下去有用。
- *
- * 收不进夹的(标题空着、或者顶着这个标题的只有它一个)退回去搭路径树。
- */
-function foldByTitle(pages: DomainFolderNode['bookmarks']): {
-  folders: DomainFolderNode[]
-  rest: DomainFolderNode['bookmarks']
-} {
-  const byTitle = new Map<string, DomainFolderNode['bookmarks']>()
-  const rest: DomainFolderNode['bookmarks'] = []
-  for (const page of pages) {
-    const title = page.title.trim()
-    if (title === '') {
-      rest.push(page)
-      continue
-    }
-    const same = byTitle.get(title)
-    if (same === undefined) byTitle.set(title, [page])
-    else same.push(page)
-  }
-
-  const folders: DomainFolderNode[] = []
-  for (const [title, group] of byTitle) {
-    if (group.length < MIN_TITLE_PAGES) {
-      rest.push(...group)
-      continue
-    }
-    const bookmarks = sortPages(group)
-    folders.push({
-      id: `title:${title}`,
-      title,
-      grouped: true,
-      count: bookmarks.reduce((n, page) => n + (page.weight ?? 1), 0),
-      directCount: bookmarks.length,
-      children: [],
-      bookmarks,
-    })
-  }
-  return { folders, rest }
-}
-
-/**
- * 某来源的访问记录搭成的树。
- *
- * 先按标题收夹(见 foldByTitle)，收不进夹的才按 URL 路径搭树，结构和 domainFolderTree 对齐：
- * 过道折叠、每层 count 降序。count 是访问次数之和。根路径 `/` 落在空标题节点，
- * 界面上不成行，只露出页面。
- */
-export function visitFolderTree(pages: readonly WeightedUrl[], domain: string): DomainFolderNode[] {
-  const mine: DomainFolderNode['bookmarks'] = []
-  for (const page of pages) {
-    const weight = page.weight ?? 1
-    if (weight <= 0) continue
-    const parsed = sanitizeUrl(page.url)
-    if (parsed === null || parsed.host !== domain) continue
-    mine.push({ id: page.url, title: page.title ?? '', url: page.url, weight })
-  }
-  // 先按地址合掉 query 变体，不然同一个页面会在夹里数成两个。
-  const { folders, rest } = foldByTitle(mergeVisitPages(mine))
-  return sortLevel([...folders, ...pathTree(rest, domain)])
-}
-
-function pathTree(pages: readonly (WeightedUrl & { sourceUrls?: string[] })[], domain: string): DomainFolderNode[] {
-  const root: MutableVisitFolder = { id: '/', title: '', bookmarks: [], children: new Map() }
-
-  for (const page of pages) {
-    const weight = page.weight ?? 1
-    if (weight <= 0) continue
-    const parsed = sanitizeUrl(page.url)
-    if (parsed === null || parsed.host !== domain) continue
-    const segments = parsed.path === '/' ? [] : parsed.path.split('/').filter((segment) => segment !== '')
-    let node = root
-    let path = ''
-    for (const segment of segments) {
-      path = path === '' ? segment : `${path}/${segment}`
-      let child = node.children.get(segment)
-      if (child === undefined) {
-        child = { id: path, title: segment, bookmarks: [], children: new Map() }
-        node.children.set(segment, child)
-      }
-      node = child
-    }
-    node.bookmarks.push({
-      id: page.url,
-      title: page.title ?? '',
-      url: page.url,
-      weight,
-      ...(page.sourceUrls === undefined ? {} : { sourceUrls: page.sourceUrls }),
-    })
-  }
-
-  const collapse = (node: DomainFolderNode): DomainFolderNode => {
-    const only = node.children.length === 1 ? node.children[0] : undefined
-    // 编号段不参与过道折叠：拼成 `019fb349… / edit` 之后它就不像编号了，
-    // 会从同层的聚合里漏出去，反倒多留一行读不懂的名字。
-    if (node.directCount === 0 && only !== undefined && node.title !== '' && !isIdSegment(node.title)) {
-      // 刚并出来的合并行没有段名，父段的名字直接给它——不然 `works` 和它底下那个合并行
-      // 会顶着同一个数字各占一行。已经有段名的照旧接成 `甲 / 乙`。
-      return { ...only, title: only.title === '' ? node.title : `${node.title} / ${only.title}` }
-    }
-    return node
-  }
-
-  function freeze(node: MutableVisitFolder): DomainFolderNode {
-    const children = groupIdSiblings(node.id, [...node.children.values()].map(freeze))
-    const bookmarks = mergeVisitPages(node.bookmarks)
-    const directWeight = bookmarks.reduce((n, bookmark) => n + (bookmark.weight ?? 1), 0)
-    const count = directWeight + children.reduce((n, child) => n + child.count, 0)
-    return markPageOnly(collapse({
-      id: node.id,
-      title: node.title,
-      count,
-      directCount: bookmarks.length,
-      children: sortLevel(children),
-      bookmarks,
-    }))
-  }
-
-  const frozen = freeze(root)
-  if (frozen.directCount === 0) return frozen.children
-  return sortLevel([
-    ...frozen.children,
-    {
-      id: frozen.id,
-      title: '',
-      count: frozen.bookmarks.reduce((n, bookmark) => n + (bookmark.weight ?? 1), 0),
-      directCount: frozen.directCount,
-      children: [],
-      bookmarks: frozen.bookmarks,
-    },
-  ])
-}
 
 function visitPageHref(raw: string): string {
   try {
@@ -514,11 +270,19 @@ export interface SavedVisit {
   sourceUrls: string[]
 }
 
+export interface UnsavedVisit {
+  id: string
+  title: string
+  url: string
+  weight: number
+  sourceUrls: string[]
+}
+
 export interface VisitSplit {
   /** 访问过、并且已经收进书签的页面，按访问次数降序。 */
   saved: SavedVisit[]
-  /** 访问过但没收藏的页面，仍按 URL 路径搭树。 */
-  unsaved: DomainFolderNode[]
+  /** 访问过但没收藏的页面。一行一个地址，不按路径收成文件夹。 */
+  unsaved: UnsavedVisit[]
 }
 
 /**
@@ -526,8 +290,7 @@ export interface VisitSplit {
  *
  * 收没收藏按 `域名+路径` 判断，和 mergeVisitPages 的合并口径一致：
  * 带 query/hash 的访问算命中同一条书签，不然同一个页面会两边各出现一次。
- * 已收藏那半不再按路径搭树——用户要的是「它躺在哪个文件夹」，直接给路径就够了；
- * 未收藏那半没有文件夹可言，继续走 visitFolderTree 的路径树。
+ * 已收藏那半给出文件夹路径。未收藏那半没有文件夹，一行一个页面。
  */
 export function visitSplitTree(
   pages: readonly WeightedUrl[],
@@ -536,7 +299,7 @@ export function visitSplitTree(
 ): VisitSplit {
   const index = domainBookmarkIndex(tree, domain)
   const savedPages: DomainFolderNode['bookmarks'] = []
-  const unsavedPages: WeightedUrl[] = []
+  const unsavedPages: DomainFolderNode['bookmarks'] = []
   for (const page of pages) {
     const weight = page.weight ?? 1
     if (weight <= 0) continue
@@ -545,7 +308,7 @@ export function visitSplitTree(
     if (index.has(`${parsed.host}${parsed.path}`)) {
       savedPages.push({ id: page.url, title: page.title ?? '', url: page.url, weight })
     } else {
-      unsavedPages.push(page)
+      unsavedPages.push({ id: page.url, title: page.title ?? '', url: page.url, weight })
     }
   }
 
@@ -563,7 +326,13 @@ export function visitSplitTree(
     }
   })
 
-  return { saved, unsaved: visitFolderTree(unsavedPages, domain) }
+  return { saved, unsaved: mergeVisitPages(unsavedPages).map((page) => ({
+    id: page.id,
+    title: page.title,
+    url: page.url,
+    weight: page.weight ?? 1,
+    sourceUrls: page.sourceUrls ?? [page.url],
+  })) }
 }
 
 export function historyUrlsForHost(items: readonly WeightedUrl[], domain: string): string[] {
@@ -589,21 +358,16 @@ export function pageIdsUnder(node: DomainFolderNode): string[] {
  */
 export function sourceUrlsForPages(
   saved: readonly SavedVisit[],
-  unsaved: readonly DomainFolderNode[],
+  unsaved: readonly UnsavedVisit[],
   selectedIds: ReadonlySet<string>,
 ): string[] {
   const urls: string[] = []
   for (const page of saved) {
     if (selectedIds.has(page.id)) urls.push(...page.sourceUrls)
   }
-  const walk = (node: DomainFolderNode): void => {
-    for (const page of node.bookmarks) {
-      if (!selectedIds.has(page.id)) continue
-      urls.push(...(page.sourceUrls ?? [page.url]))
-    }
-    for (const child of node.children) walk(child)
+  for (const page of unsaved) {
+    if (selectedIds.has(page.id)) urls.push(...page.sourceUrls)
   }
-  for (const node of unsaved) walk(node)
   return [...new Set(urls)]
 }
 

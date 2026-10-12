@@ -276,7 +276,7 @@ describe('DashboardStep', () => {
     ])
   })
 
-  it('访问栏按 URL 路径展开文件夹', async () => {
+  it('未收藏的页面直接成行，不按 URL 路径收成文件夹', async () => {
     const user = userEvent.setup()
     contains.mockResolvedValue(false)
     request.mockResolvedValue(true)
@@ -292,13 +292,12 @@ describe('DashboardStep', () => {
     expect(await screen.findByText('localhost')).toBeTruthy()
 
     await user.click(screen.getByRole('button', { name: t('dashVisitDomainExpand', 'localhost') }))
-    expect(screen.getByText('analysis / library')).toBeTruthy()
-    await user.click(screen.getByRole('button', { name: /analysis \/ library/ }))
     expect(screen.getByText('Lib')).toBeTruthy()
-    // /home 底下没有别的分支，只出页面行，不摆一行叫 home 的目录
+    expect(screen.getByText('localhost/analysis/library')).toBeTruthy()
+    expect(screen.getByText('Lib5')).toBeTruthy()
     expect(screen.getByText('Home')).toBeTruthy()
-    expect(screen.getByText('localhost/home')).toBeTruthy()
-    expect(screen.queryByText('home')).toBeNull()
+    expect(screen.queryByRole('button', { name: /analysis/ })).toBeNull()
+    expect(screen.queryByText('analysis / library')).toBeNull()
   })
 
   it('文件夹树深层默认折叠，点父节点才继续展开', async () => {
@@ -479,7 +478,7 @@ describe('DashboardStep', () => {
     expect(screen.getByText('Other')).toBeTruthy()
   })
 
-  it('同形 ID 段并成一行，默认收起，点开才露出每个页面', async () => {
+  it('未收藏的编号页面各自成行，不并成一夹', async () => {
     const user = userEvent.setup()
     contains.mockResolvedValue(true)
     search.mockResolvedValue([
@@ -494,29 +493,20 @@ describe('DashboardStep', () => {
     expect(await screen.findByText('192.168.5.39')).toBeTruthy()
     await user.click(screen.getByRole('button', { name: t('dashVisitDomainExpand', '192.168.5.39') }))
 
-    // 三个 ID 一行都不占；tasks 自己没有页面，直接顶替合并行成了那一行
-    expect(screen.queryByText(/019fb349/)).toBeNull()
-    expect(screen.getByText(/documents/)).toBeTruthy()
-    expect(screen.getByText(t('dashVisitGroupPages', '3'))).toBeTruthy()
-
-    const group = screen.getByRole('button', { name: /tasks/ })
-    expect(group.getAttribute('aria-expanded')).toBe('false')
-
-    await user.click(group)
-    expect(group.getAttribute('aria-expanded')).toBe('true')
+    expect(screen.getByText('任务甲')).toBeTruthy()
     expect(screen.getByText(/019fb349/)).toBeTruthy()
     expect(screen.getByText(/c69350df/)).toBeTruthy()
     expect(screen.getByText(/bd8c838b/)).toBeTruthy()
+    expect(screen.getByText('文档')).toBeTruthy()
+    expect(screen.queryByText(t('dashVisitGroupPages', '3'))).toBeNull()
   })
 
-  it('合并行标题取这批页面共有的那个，各不相同时用占位名', async () => {
+  it('标题各不相同的未收藏页面各自成行，不收成无名夹', async () => {
     const user = userEvent.setup()
     contains.mockResolvedValue(true)
     search.mockResolvedValue([
       { url: 'https://192.168.5.39/tasks/019fb349-e6f2-7407-a254-1919171a8d4a', title: '任务甲', visitCount: 9 },
       { url: 'https://192.168.5.39/tasks/c69350df521240909ec967c712200cfa', title: '任务乙', visitCount: 8 },
-      { url: 'https://192.168.5.39/tasks/bd8c838b055c45dc984b0f28bef6684b', title: '任务丙', visitCount: 7 },
-      // 给 tasks 添个兄弟，合并行才不会被父段顶替，才看得到「连名字都报不出」这一步
       { url: 'https://192.168.5.39/tasks/new', title: '新建', visitCount: 5 },
     ])
 
@@ -524,12 +514,12 @@ describe('DashboardStep', () => {
     await user.click(screen.getByRole('tab', { name: t('dashVisited') }))
     expect(await screen.findByText('192.168.5.39')).toBeTruthy()
     await user.click(screen.getByRole('button', { name: t('dashVisitDomainExpand', '192.168.5.39') }))
-    await user.click(screen.getByRole('button', { name: /tasks/ }))
 
-    expect(screen.getByText(t('dashVisitGroupUnnamed'))).toBeTruthy()
-    expect(screen.getByRole('checkbox', {
-      name: t('dashVisitSelectPage', t('dashVisitGroupUnnamed')),
-    })).toBeTruthy()
+    expect(screen.getByText('任务甲')).toBeTruthy()
+    expect(screen.getByText('任务乙')).toBeTruthy()
+    expect(screen.getByText('新建')).toBeTruthy()
+    expect(screen.queryByText(t('dashVisitGroupUnnamed'))).toBeNull()
+    expect(screen.queryByRole('button', { name: /tasks/ })).toBeNull()
   })
 
   it('同一台机器上的两个端口排成两行，行内地址带上端口', async () => {
@@ -547,10 +537,10 @@ describe('DashboardStep', () => {
     expect(screen.getByText('localhost:8501')).toBeTruthy()
 
     await user.click(screen.getByRole('button', { name: t('dashVisitDomainExpand', 'localhost:5173') }))
-    await user.click(screen.getByRole('button', { name: /settings/ }))
     expect(screen.getByText('localhost:5173/settings')).toBeTruthy()
-    // 另一个端口的页面不该混进这棵树
+    expect(screen.getByText('localhost:5173/settings/tasks')).toBeTruthy()
     expect(screen.queryByText(/license/)).toBeNull()
+    expect(screen.queryByRole('button', { name: /^settings/ })).toBeNull()
   })
 
   it('域名行报站点名，地址退到下面一行', async () => {
@@ -580,7 +570,7 @@ describe('DashboardStep', () => {
     expect(await screen.findByText('github.com')).toBeTruthy()
   })
 
-  it('展开来源只展一层，下一层要自己点', async () => {
+  it('未收藏的页面展开来源后就都在，不必再点路径层', async () => {
     const user = userEvent.setup()
     contains.mockResolvedValue(true)
     search.mockResolvedValue([
@@ -593,15 +583,12 @@ describe('DashboardStep', () => {
     expect(await screen.findByText('localhost:5629')).toBeTruthy()
     await user.click(screen.getByRole('button', { name: t('dashVisitDomainExpand', 'localhost:5629') }))
 
-    const analysis = screen.getByRole('button', { name: /analysis/ })
-    expect(analysis.getAttribute('aria-expanded')).toBe('false')
-    expect(screen.queryByText(/analysis\/library/)).toBeNull()
-
-    await user.click(analysis)
     expect(screen.getByText('localhost:5629/analysis/library')).toBeTruthy()
+    expect(screen.getByText('localhost:5629/analysis/upload')).toBeTruthy()
+    expect(screen.queryByRole('button', { name: /analysis/ })).toBeNull()
   })
 
-  it('同标题的页面收成一夹，默认收起，点开是一串地址', async () => {
+  it('标题相同的未收藏页面也各自成行，不收成一夹', async () => {
     const user = userEvent.setup()
     contains.mockResolvedValue(true)
     search.mockResolvedValue([
@@ -615,20 +602,14 @@ describe('DashboardStep', () => {
     expect(await screen.findByText('墨析 · 小说拆解工作台')).toBeTruthy()
     await user.click(screen.getByRole('button', { name: /localhost:5629/ }))
 
-    // analysis / settings 这些路径层一个都不出现
-    expect(screen.queryByText('analysis')).toBeNull()
-    expect(screen.queryByText('settings')).toBeNull()
-
-    const folder = screen.getByRole('button', { name: new RegExp(t('dashVisitGroupPages', '3')) })
-    expect(folder.getAttribute('aria-expanded')).toBe('false')
-
-    await user.click(folder)
     expect(screen.getByText('localhost:5629/analysis/library')).toBeTruthy()
     expect(screen.getByText('localhost:5629/settings/tasks')).toBeTruthy()
     expect(screen.getByText('localhost:5629/home')).toBeTruthy()
+    expect(screen.queryByText(t('dashVisitGroupPages', '3'))).toBeNull()
+    expect(screen.queryByRole('button', { name: /analysis/ })).toBeNull()
   })
 
-  it('夹里不把同一个标题再抄一遍，页面行只留地址', async () => {
+  it('标题相同的未收藏页面行仍带上各自的地址', async () => {
     const user = userEvent.setup()
     contains.mockResolvedValue(true)
     search.mockResolvedValue([
@@ -639,10 +620,10 @@ describe('DashboardStep', () => {
     render(<DashboardStep />)
     await user.click(screen.getByRole('tab', { name: t('dashVisited') }))
     await user.click(await screen.findByRole('button', { name: /localhost:5629/ }))
-    await user.click(screen.getByRole('button', { name: new RegExp(t('dashVisitGroupPages', '2')) }))
 
-    // 域名行一次、夹名一次，页面行不再各来一遍
-    expect(screen.getAllByText('墨析 · 小说拆解工作台')).toHaveLength(2)
+    expect(screen.getByText('localhost:5629/home')).toBeTruthy()
+    expect(screen.getByText('localhost:5629/settings')).toBeTruthy()
+    expect(screen.queryByText(t('dashVisitGroupPages', '2'))).toBeNull()
   })
 
   it('时间窗只在「访问」那一格出现', async () => {
@@ -716,7 +697,7 @@ describe('DashboardStep', () => {
     expect(screen.getByRole('button', { name: new RegExp(t('dashVisitUnsaved')) })).toBeTruthy()
   })
 
-  it('访问栏不给只裹着一个页面的路径段单独摆一行目录', async () => {
+  it('未收藏的页面不把路径段摆成目录', async () => {
     const user = userEvent.setup()
     contains.mockResolvedValue(true)
     search.mockResolvedValue([
@@ -731,15 +712,11 @@ describe('DashboardStep', () => {
     expect(await screen.findByText('192.168.5.39')).toBeTruthy()
     await user.click(screen.getByRole('button', { name: t('dashVisitDomainExpand', '192.168.5.39') }))
 
-    // 页面本身还在
     expect(screen.getByText('192.168.5.39/task')).toBeTruthy()
-    await user.click(screen.getByRole('button', { name: /mailbox/ }))
     expect(screen.getByText('192.168.5.39/mailbox/inbox')).toBeTruthy()
-    // 但 task、inbox 不再各自占一行目录
-    expect(screen.queryByText('task')).toBeNull()
-    expect(screen.queryByText('inbox')).toBeNull()
-    // mailbox 底下有别的分支，还是个目录
-    expect(screen.getByText('mailbox')).toBeTruthy()
+    expect(screen.getByText('任务')).toBeTruthy()
+    expect(screen.getByText('收件')).toBeTruthy()
+    expect(screen.queryByRole('button', { name: /mailbox/ })).toBeNull()
   })
 
   it('书签栏的单书签文件夹照样成行——那是真的目录名，不能吞', async () => {
@@ -899,7 +876,7 @@ describe('DashboardStep', () => {
     vi.mocked(window.confirm).mockRestore()
   })
 
-  it('展开后可勾选同标题夹，其下页面跟着选中；取消一页则夹变为未定', async () => {
+  it('标题相同的未收藏页面各自可勾选，没有夹一级的勾选框', async () => {
     const user = userEvent.setup()
     contains.mockResolvedValue(true)
     search.mockResolvedValue([
@@ -908,18 +885,14 @@ describe('DashboardStep', () => {
     ])
     render(<DashboardStep />)
     await user.click(await screen.findByRole('button', { name: t('dashVisitDomainExpand', 'example.com') }))
-    // VisitSection 默认展开。同标题夹默认收起，先点开夹，页面 checkbox 才会出现。
-    await user.click(screen.getByRole('button', { name: /Same/, expanded: false }))
-    const group = screen.getByRole('checkbox', { name: t('dashVisitSelectPage', 'Same') })
-    await user.click(group)
     const pageBoxes = [
       screen.getByRole('checkbox', { name: t('dashVisitSelectPage', 'example.com/a') }),
       screen.getByRole('checkbox', { name: t('dashVisitSelectPage', 'example.com/b') }),
     ]
-    expect(pageBoxes.every((box) => (box as HTMLInputElement).checked)).toBe(true)
+    expect(screen.queryByRole('checkbox', { name: t('dashVisitSelectPage', 'Same') })).toBeNull()
     await user.click(pageBoxes[0]!)
-    expect((group as HTMLInputElement).indeterminate).toBe(true)
-    expect((group as HTMLInputElement).checked).toBe(false)
+    expect((pageBoxes[0] as HTMLInputElement).checked).toBe(true)
+    expect((pageBoxes[1] as HTMLInputElement).checked).toBe(false)
   })
 
   it('多选删除只把选中行的原始 URL 交给 deleteUrl，确认文案不是整站那句', async () => {
